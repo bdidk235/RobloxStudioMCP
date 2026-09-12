@@ -1,0 +1,12 @@
+{
+  // Full typecheck (src + tests + examples). The build itself (tsconfig.json)
+  // only covers src so that dist/ mirrors the package entry points.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src/**/*", "tests/**/*", "examples/**/*", "vitest.config.ts"]
+}
