@@ -145,8 +145,9 @@ and measured performance numbers.
 The `*-studio` jobs install Studio (versioned zip + cache on Windows,
 `RobloxStudio.dmg` straight from `setup.rbxcdn.com` on macOS), log in with a `ROBLOSECURITY`
 secret (a burner account is recommended) stored as a Repository secret,
-launch Studio, and poll
-`examples/wait_for_studio` before running the suites. Without the secret the
+a first-run initializes Studio's profile (killed after 30 s), the MCP flag
+is seeded from the cookie, then Studio launches and `examples/wait_for_studio`
+polls before running the suites. Without the secret the
 studio jobs skip gracefully. They need three things
 from that account:
 

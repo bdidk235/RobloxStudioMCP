@@ -168,7 +168,20 @@ jobs:
           rm -f "$dmg"
           open -W "/Applications/$(basename "$app")"
 
-      - name: Pre-seed MCP enabled flag (Windows)
+      - name: First-run init (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        run: |
+          # Let Studio create its profile dirs, then kill it; the MCP flag
+          # is seeded after, so first-run setup can't wipe it.
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
+            ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw "RobloxStudioBeta.exe not found after install" }
+          Start-Process -FilePath $exe
+          Start-Sleep -Seconds 30
+          Stop-Process -Name "RobloxStudioBeta" -ErrorAction SilentlyContinue
+
+      - name: Seed MCP enabled flag (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
@@ -201,7 +214,20 @@ jobs:
           # account needs edit access to it, or swap in your own IDs).
           Start-Process -FilePath $exe -ArgumentList "roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
 
-      - name: Pre-seed MCP enabled flag (macOS)
+      - name: First-run init (macOS)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
+        run: |
+          # Let Studio create its profile dirs, then kill it; the MCP flag
+          # is seeded after, so first-run setup can't wipe it.
+          if [ -d "/Applications/RobloxStudio.app" ]; then
+            open "/Applications/RobloxStudio.app"
+          else
+            open -a "Roblox Studio"
+          fi
+          sleep 30
+          pkill -x RobloxStudio || true
+
+      - name: Seed MCP enabled flag (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
@@ -375,7 +401,20 @@ jobs:
           rm -f "$dmg"
           open -W "/Applications/$(basename "$app")"
 
-      - name: Pre-seed MCP enabled flag (Windows)
+      - name: First-run init (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        run: |
+          # Let Studio create its profile dirs, then kill it; the MCP flag
+          # is seeded after, so first-run setup can't wipe it.
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
+            ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw "RobloxStudioBeta.exe not found after install" }
+          Start-Process -FilePath $exe
+          Start-Sleep -Seconds 30
+          Stop-Process -Name "RobloxStudioBeta" -ErrorAction SilentlyContinue
+
+      - name: Seed MCP enabled flag (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
@@ -408,7 +447,20 @@ jobs:
           # account needs edit access to it, or swap in your own IDs).
           Start-Process -FilePath $exe -ArgumentList "roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
 
-      - name: Pre-seed MCP enabled flag (macOS)
+      - name: First-run init (macOS)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
+        run: |
+          # Let Studio create its profile dirs, then kill it; the MCP flag
+          # is seeded after, so first-run setup can't wipe it.
+          if [ -d "/Applications/RobloxStudio.app" ]; then
+            open "/Applications/RobloxStudio.app"
+          else
+            open -a "Roblox Studio"
+          fi
+          sleep 30
+          pkill -x RobloxStudio || true
+
+      - name: Seed MCP enabled flag (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
