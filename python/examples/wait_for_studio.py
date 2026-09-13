@@ -24,6 +24,8 @@ POLL_INTERVAL = 5.0
 
 async def main(timeout: float) -> int:
     deadline = time.monotonic() + max(0.0, timeout)
+    start = time.monotonic()
+    logged = 0.0
     async with await RobloxStudio.connect(singleton=False) as studio:
         while True:
             try:
@@ -42,6 +44,10 @@ async def main(timeout: float) -> int:
                     file=sys.stderr,
                 )
                 return 1
+            elapsed = time.monotonic() - start
+            if elapsed - logged >= 60:
+                logged = elapsed
+                print(f"still waiting for Studio... ({int(elapsed)}s elapsed)", flush=True)
             await asyncio.sleep(POLL_INTERVAL)
 
 

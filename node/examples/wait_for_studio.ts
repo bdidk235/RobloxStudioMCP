@@ -20,6 +20,8 @@ async function main(): Promise<void> {
   const raw = Number(process.argv[2] ?? 600);
   const timeoutSeconds = Number.isFinite(raw) && raw >= 0 ? raw : 600;
   const deadline = Date.now() + Math.max(0, timeoutSeconds) * 1000;
+  const start = Date.now();
+  let logged = 0;
   const studio = await RobloxStudio.connect({ singleton: false });
   try {
     for (;;) {
@@ -40,6 +42,11 @@ async function main(): Promise<void> {
         );
         process.exitCode = 1;
         return;
+      }
+      const elapsed = Date.now() - start;
+      if (elapsed - logged >= 60_000) {
+        logged = elapsed;
+        console.log(`still waiting for Studio... (${Math.floor(elapsed / 1000)}s elapsed)`);
       }
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }

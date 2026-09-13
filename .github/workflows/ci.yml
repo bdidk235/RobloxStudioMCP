@@ -106,13 +106,41 @@ jobs:
         if: steps.check.outputs.has_secret == 'true'
         run: pip install -e "./python[dev]"
 
+      - name: Resolve Studio version (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        id: studio-version
+        run: |
+          $ver = (Invoke-RestMethod -Uri "https://clientsettingscdn.roblox.com/v2/client-version/WindowsStudio64").clientVersionUpload
+          if (-not $ver) { throw "Could not resolve Studio version" }
+          "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Restore cached Studio (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        id: cache-studio
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Roblox\Versions
+          key: studio-windows-${{ steps.studio-version.outputs.version }}
+          restore-keys: |
+            studio-windows-
+
       - name: Install Roblox Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         timeout-minutes: 5
-        uses: OrbitalOwen/roblox-win-installer-action@1.1
-        with:
-          cookie: ${{ secrets.ROBLOSECURITY }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Single-file download + unzip beats the bootstrapper (dozens of
+          # packages). Skipped entirely on an exact cache hit.
+          $version = "${{ steps.studio-version.outputs.version }}"
+          $dest = Join-Path $env:LOCALAPPDATA "Roblox\Versions\$version"
+          $exe = Join-Path $dest "RobloxStudioBeta.exe"
+          if (-not (Test-Path $exe)) {
+            $zip = Join-Path $env:TEMP "RobloxStudio.zip"
+            curl.exe -L --fail --retry 3 -o $zip "https://setup.rbxcdn.com/$version-RobloxStudio.zip"
+            New-Item -Path $dest -ItemType Directory -Force | Out-Null
+            Expand-Archive -Path $zip -DestinationPath $dest -Force
+            Remove-Item -Path $zip -Force
+          }
+          if (-not (Test-Path $exe)) { throw "RobloxStudioBeta.exe not found after install" }
 
       - name: Install Roblox Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -122,11 +150,14 @@ jobs:
           set -euo pipefail
           dmg="/tmp/RobloxStudio-$(openssl rand -hex 4).dmg"
           curl -L --fail --retry 3 -o "$dmg" "https://setup.rbxcdn.com/mac/RobloxStudio.dmg"
+          # Strip quarantine so Gatekeeper doesn't stall first launch.
+          xattr -d com.apple.quarantine "$dmg" 2>/dev/null || true
           mnt="/tmp/rbx-studio-mnt"
           hdiutil attach "$dmg" -nobrowse -mountpoint "$mnt"
           app="$(find "$mnt" -maxdepth 1 -name '*.app' -type d -print -quit)"
           if [ -z "$app" ]; then echo "No .app found in $dmg"; hdiutil detach "$mnt" || true; exit 1; fi
           cp -R "$app" /Applications/
+          xattr -dr com.apple.quarantine "/Applications/$(basename "$app")" || true
           hdiutil detach "$mnt"
           rm -f "$dmg"
           open -W "/Applications/$(basename "$app")"
@@ -145,8 +176,14 @@ jobs:
 
       - name: Launch Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
-          # The installer action leaves Studio authenticated; locate it.
+          # Seed the legacy cookie path so Studio opens logged in.
+          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
+          New-Item -Path $reg -Force | Out-Null
+          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
+          # Locate the installed Studio.
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
             ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
             Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -181,9 +218,13 @@ jobs:
           # Best-effort legacy plist cookie seeding (Studio also picks up
           # HTTPStorages sessions when the account is already logged in).
           defaults write com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" -string "COOK::<${ROBLOSECURITY}>"
+          defaults read com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" > /dev/null || echo "WARNING: cookie not readable back"
           # Open this place in edit mode (minimized protocol URL; the CI
           # account needs edit access to it, or swap in your own IDs).
           args="roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
+          # Fresh instance: macOS ignores --args for an already-running app.
+          pkill -x RobloxStudio || true
+          sleep 2
           if [ -d "/Applications/RobloxStudio.app" ]; then
             open "/Applications/RobloxStudio.app" --args "$args"
           else
@@ -245,13 +286,41 @@ jobs:
         if: steps.check.outputs.has_secret == 'true'
         run: pnpm --dir node install --frozen-lockfile
 
+      - name: Resolve Studio version (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        id: studio-version
+        run: |
+          $ver = (Invoke-RestMethod -Uri "https://clientsettingscdn.roblox.com/v2/client-version/WindowsStudio64").clientVersionUpload
+          if (-not $ver) { throw "Could not resolve Studio version" }
+          "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Restore cached Studio (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        id: cache-studio
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Roblox\Versions
+          key: studio-windows-${{ steps.studio-version.outputs.version }}
+          restore-keys: |
+            studio-windows-
+
       - name: Install Roblox Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         timeout-minutes: 5
-        uses: OrbitalOwen/roblox-win-installer-action@1.1
-        with:
-          cookie: ${{ secrets.ROBLOSECURITY }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Single-file download + unzip beats the bootstrapper (dozens of
+          # packages). Skipped entirely on an exact cache hit.
+          $version = "${{ steps.studio-version.outputs.version }}"
+          $dest = Join-Path $env:LOCALAPPDATA "Roblox\Versions\$version"
+          $exe = Join-Path $dest "RobloxStudioBeta.exe"
+          if (-not (Test-Path $exe)) {
+            $zip = Join-Path $env:TEMP "RobloxStudio.zip"
+            curl.exe -L --fail --retry 3 -o $zip "https://setup.rbxcdn.com/$version-RobloxStudio.zip"
+            New-Item -Path $dest -ItemType Directory -Force | Out-Null
+            Expand-Archive -Path $zip -DestinationPath $dest -Force
+            Remove-Item -Path $zip -Force
+          }
+          if (-not (Test-Path $exe)) { throw "RobloxStudioBeta.exe not found after install" }
 
       - name: Install Roblox Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -261,11 +330,14 @@ jobs:
           set -euo pipefail
           dmg="/tmp/RobloxStudio-$(openssl rand -hex 4).dmg"
           curl -L --fail --retry 3 -o "$dmg" "https://setup.rbxcdn.com/mac/RobloxStudio.dmg"
+          # Strip quarantine so Gatekeeper doesn't stall first launch.
+          xattr -d com.apple.quarantine "$dmg" 2>/dev/null || true
           mnt="/tmp/rbx-studio-mnt"
           hdiutil attach "$dmg" -nobrowse -mountpoint "$mnt"
           app="$(find "$mnt" -maxdepth 1 -name '*.app' -type d -print -quit)"
           if [ -z "$app" ]; then echo "No .app found in $dmg"; hdiutil detach "$mnt" || true; exit 1; fi
           cp -R "$app" /Applications/
+          xattr -dr com.apple.quarantine "/Applications/$(basename "$app")" || true
           hdiutil detach "$mnt"
           rm -f "$dmg"
           open -W "/Applications/$(basename "$app")"
@@ -284,8 +356,14 @@ jobs:
 
       - name: Launch Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
-          # The installer action leaves Studio authenticated; locate it.
+          # Seed the legacy cookie path so Studio opens logged in.
+          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
+          New-Item -Path $reg -Force | Out-Null
+          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
+          # Locate the installed Studio.
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
             ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
             Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -320,9 +398,13 @@ jobs:
           # Best-effort legacy plist cookie seeding (Studio also picks up
           # HTTPStorages sessions when the account is already logged in).
           defaults write com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" -string "COOK::<${ROBLOSECURITY}>"
+          defaults read com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" > /dev/null || echo "WARNING: cookie not readable back"
           # Open this place in edit mode (minimized protocol URL; the CI
           # account needs edit access to it, or swap in your own IDs).
           args="roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
+          # Fresh instance: macOS ignores --args for an already-running app.
+          pkill -x RobloxStudio || true
+          sleep 2
           if [ -d "/Applications/RobloxStudio.app" ]; then
             open "/Applications/RobloxStudio.app" --args "$args"
           else

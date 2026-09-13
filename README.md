@@ -142,8 +142,8 @@ and measured performance numbers.
 | `python-studio` | installs Studio, waits for it, then `pytest` with the live integration suite | Yes |
 | `node-studio` | installs Studio, waits for it, then vitest with the live integration suite | Yes |
 
-The `*-studio` jobs install Studio (`roblox-win-installer-action` on
-Windows, `RobloxStudio.dmg` straight from `setup.rbxcdn.com` on macOS), log in with a `ROBLOSECURITY`
+The `*-studio` jobs install Studio (versioned zip + cache on Windows,
+`RobloxStudio.dmg` straight from `setup.rbxcdn.com` on macOS), log in with a `ROBLOSECURITY`
 secret (a burner account is recommended) stored as a Repository secret,
 launch Studio, and poll
 `examples/wait_for_studio` before running the suites. Without the secret the
