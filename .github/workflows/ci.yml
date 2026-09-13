@@ -272,6 +272,8 @@ jobs:
           Get-Content "$env:LOCALAPPDATA\Roblox\mcp.bat" -ErrorAction SilentlyContinue
           Write-Host "--- plugin settings files ---"
           Get-ChildItem "$env:LOCALAPPDATA\Roblox\*\InstalledPlugins\0\settings.json" -ErrorAction SilentlyContinue | Select-Object FullName
+          # Let pending log output flush before grepping.
+          Start-Sleep -Seconds 5
           Write-Host "--- Studio logs mentioning place 95206881 ---"
           $logs = Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 3
           if (-not $logs) { Write-Host "WARNING: no Studio logs found" }
@@ -290,6 +292,8 @@ jobs:
           echo "--- MCP flag ---"
           defaults read com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" > /dev/null 2>&1 && echo "cookie stored" || echo "WARNING: cookie not readable back"
           find "$HOME/Library/Roblox" -name "settings.json" -path "*InstalledPlugins*" 2>/dev/null || echo "WARNING: no plugin settings file found"
+          # Let pending log output flush before grepping.
+          sleep 5
           echo "--- Studio logs mentioning place 95206881 ---"
           if [ -d "$HOME/Library/Logs/Roblox" ]; then
             ls -t "$HOME/Library/Logs/Roblox" 2>/dev/null | head -n 3 | while read -r f; do
@@ -521,6 +525,8 @@ jobs:
           Get-Content "$env:LOCALAPPDATA\Roblox\mcp.bat" -ErrorAction SilentlyContinue
           Write-Host "--- plugin settings files ---"
           Get-ChildItem "$env:LOCALAPPDATA\Roblox\*\InstalledPlugins\0\settings.json" -ErrorAction SilentlyContinue | Select-Object FullName
+          # Let pending log output flush before grepping.
+          Start-Sleep -Seconds 5
           Write-Host "--- Studio logs mentioning place 95206881 ---"
           $logs = Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 3
           if (-not $logs) { Write-Host "WARNING: no Studio logs found" }
@@ -539,6 +545,8 @@ jobs:
           echo "--- MCP flag ---"
           defaults read com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" > /dev/null 2>&1 && echo "cookie stored" || echo "WARNING: cookie not readable back"
           find "$HOME/Library/Roblox" -name "settings.json" -path "*InstalledPlugins*" 2>/dev/null || echo "WARNING: no plugin settings file found"
+          # Let pending log output flush before grepping.
+          sleep 5
           echo "--- Studio logs mentioning place 95206881 ---"
           if [ -d "$HOME/Library/Logs/Roblox" ]; then
             ls -t "$HOME/Library/Logs/Roblox" 2>/dev/null | head -n 3 | while read -r f; do
