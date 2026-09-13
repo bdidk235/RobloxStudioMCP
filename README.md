@@ -144,8 +144,10 @@ and measured performance numbers.
 
 The `*-studio` jobs install Studio (winget on Windows, `RobloxStudio.dmg`
 straight from `setup.rbxcdn.com` on macOS), log in with a `ROBLOSECURITY`
-secret (a burner account is recommended), launch Studio, and poll
-`examples/wait_for_studio` before running the suites. They need three things
+secret (a burner account is recommended) stored as a Repository secret,
+launch Studio, and poll
+`examples/wait_for_studio` before running the suites. Without the secret the
+studio jobs skip gracefully. They need three things
 from that account:
 
 - It must be able to log in (the `ROBLOSECURITY` cookie).

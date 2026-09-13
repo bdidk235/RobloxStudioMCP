@@ -8,10 +8,11 @@ on:
 # integration per language against a real Studio with MCP enabled.
 #
 # The *-studio jobs need a ROBLOSECURITY secret (a burner account is
-# recommended) for an account that has "Enable Studio as MCP server" turned
-# on (Assistant -> Manage MCP Servers; the setting roams with the account,
-# so enabling it once on any machine covers CI). Without the secret the
-# studio jobs skip instead of failing.
+# recommended) stored as a Repository secret, for an account that has
+# "Enable Studio as MCP server" turned on (Assistant -> Manage MCP Servers;
+# the setting roams with the account, so enabling it once on any machine
+# covers CI). Job-level `if:` cannot see secrets, so each studio job checks
+# for the secret in its first step and skips the rest gracefully when absent.
 
 jobs:
   python-test:
@@ -75,7 +76,6 @@ jobs:
   python-studio:
     name: Python + Studio (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    if: ${{ secrets.ROBLOSECURITY != '' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -84,20 +84,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check for ROBLOSECURITY secret
+        id: check
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.ROBLOSECURITY }}" ]; then
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Studio tests need a ROBLOSECURITY secret — skipping
+        if: steps.check.outputs.has_secret != 'true'
+        run: |
+          echo "Add a ROBLOSECURITY Repository secret for an account with Studio MCP enabled, then rerun."
+
       - name: Set up Python
+        if: steps.check.outputs.has_secret == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install client (with dev extras)
+        if: steps.check.outputs.has_secret == 'true'
         run: pip install -e "./python[dev]"
 
       - name: Install Roblox Studio (Windows)
-        if: runner.os == 'Windows'
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         run: winget install --id Roblox.RobloxStudio --exact --silent --accept-package-agreements --accept-source-agreements
 
       - name: Install Roblox Studio (macOS)
-        if: runner.os == 'macOS'
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
         run: |
           # Direct download from Roblox's own CDN:
           # mount the dmg, copy out the installer app, run it, clean up.
@@ -114,7 +131,7 @@ jobs:
           open -W "/Applications/$(basename "$app")"
 
       - name: Log in and launch Studio (Windows)
-        if: runner.os == 'Windows'
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
@@ -131,7 +148,7 @@ jobs:
           Start-Process -FilePath $exe -ArgumentList "roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
 
       - name: Log in and launch Studio (macOS)
-        if: runner.os == 'macOS'
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
@@ -148,11 +165,13 @@ jobs:
           fi
 
       - name: Wait for Studio MCP
+        if: steps.check.outputs.has_secret == 'true'
         working-directory: python
         timeout-minutes: 15
         run: python -m examples.wait_for_studio 600
 
       - name: Python integration tests (live Studio)
+        if: steps.check.outputs.has_secret == 'true'
         working-directory: python
         timeout-minutes: 15
         env:
@@ -162,7 +181,6 @@ jobs:
   node-studio:
     name: Node + Studio (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    if: ${{ secrets.ROBLOSECURITY != '' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -171,7 +189,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check for ROBLOSECURITY secret
+        id: check
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.ROBLOSECURITY }}" ]; then
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Studio tests need a ROBLOSECURITY secret — skipping
+        if: steps.check.outputs.has_secret != 'true'
+        run: |
+          echo "Add a ROBLOSECURITY Repository secret for an account with Studio MCP enabled, then rerun."
+
       - name: Set up Node.js
+        if: steps.check.outputs.has_secret == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -179,19 +213,21 @@ jobs:
           cache-dependency-path: node/pnpm-lock.yaml
 
       - name: Set up pnpm
+        if: steps.check.outputs.has_secret == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
       - name: Install Node deps
+        if: steps.check.outputs.has_secret == 'true'
         run: pnpm --dir node install --frozen-lockfile
 
       - name: Install Roblox Studio (Windows)
-        if: runner.os == 'Windows'
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         run: winget install --id Roblox.RobloxStudio --exact --silent --accept-package-agreements --accept-source-agreements
 
       - name: Install Roblox Studio (macOS)
-        if: runner.os == 'macOS'
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
         run: |
           # Direct download from Roblox's own CDN:
           # mount the dmg, copy out the installer app, run it, clean up.
@@ -208,7 +244,7 @@ jobs:
           open -W "/Applications/$(basename "$app")"
 
       - name: Log in and launch Studio (Windows)
-        if: runner.os == 'Windows'
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
@@ -225,7 +261,7 @@ jobs:
           Start-Process -FilePath $exe -ArgumentList "roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
 
       - name: Log in and launch Studio (macOS)
-        if: runner.os == 'macOS'
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
@@ -242,10 +278,12 @@ jobs:
           fi
 
       - name: Wait for Studio MCP
+        if: steps.check.outputs.has_secret == 'true'
         timeout-minutes: 15
         run: pnpm --dir node exec tsx examples/wait_for_studio.ts 600
 
       - name: Node integration tests (live Studio)
+        if: steps.check.outputs.has_secret == 'true'
         timeout-minutes: 15
         env:
           ROBLOX_STUDIO_MCP_INTEGRATION: "1"
