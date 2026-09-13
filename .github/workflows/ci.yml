@@ -181,28 +181,31 @@ jobs:
           Start-Sleep -Seconds 30
           Stop-Process -Name "RobloxStudioBeta" -ErrorAction SilentlyContinue
 
-      - name: Seed MCP enabled flag (Windows)
+      - name: Seed auth and MCP flag (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
-          # Resolve the account's user ID from the cookie, then write the
-          # Assistant plugin setting so Studio starts with MCP enabled.
+          # Resolve the account's user ID from the cookie.
           $me = Invoke-RestMethod -Uri "https://users.roblox.com/v1/users/authenticated" -Headers @{ Cookie = ".ROBLOSECURITY=$env:ROBLOSECURITY" }
+          # Seed every credential store Studio reads (wincreds primary with
+          # the exact target names it uses, registry legacy) so it opens
+          # logged in.
+          cmdkey /add:"https://www.roblox.com:RobloxStudioAuthuserid" /user:"$($me.id)" /pass:"$($me.id)"
+          cmdkey /add:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY$($me.id)" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
+          cmdkey /add:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
+          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
+          New-Item -Path $reg -Force | Out-Null
+          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
+          # Write the Assistant plugin setting so Studio starts with MCP enabled.
           $dir = Join-Path $env:LOCALAPPDATA "Roblox\$($me.id)\InstalledPlugins\0"
           New-Item -Path $dir -ItemType Directory -Force | Out-Null
           Set-Content -Path (Join-Path $dir "settings.json") -Value '{ "Assistant-ExternalMCPEnabled":true }' -Encoding utf8NoBOM
 
       - name: Launch Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
-        env:
-          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
-          # Seed the legacy cookie path so Studio opens logged in.
-          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
-          New-Item -Path $reg -Force | Out-Null
-          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
-          # Locate the installed Studio.
+          # Auth already seeded above; locate the installed Studio.
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
             ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
             Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -279,7 +282,8 @@ jobs:
           if (-not $logs) { Write-Host "WARNING: no Studio logs found" }
           foreach ($log in $logs) {
             Write-Host "== $($log.Name) =="
-            Select-String -Path $log.FullName -Pattern "95206881" -ErrorAction SilentlyContinue | Select-Object -First 5
+            $hits = Select-String -Path $log.FullName -Pattern "95206881" -ErrorAction SilentlyContinue | Select-Object -First 5
+            if ($hits) { $hits } else { Write-Host "(no match)" }
           }
 
       - name: Diagnose Studio (macOS)
@@ -434,28 +438,31 @@ jobs:
           Start-Sleep -Seconds 30
           Stop-Process -Name "RobloxStudioBeta" -ErrorAction SilentlyContinue
 
-      - name: Seed MCP enabled flag (Windows)
+      - name: Seed auth and MCP flag (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
-          # Resolve the account's user ID from the cookie, then write the
-          # Assistant plugin setting so Studio starts with MCP enabled.
+          # Resolve the account's user ID from the cookie.
           $me = Invoke-RestMethod -Uri "https://users.roblox.com/v1/users/authenticated" -Headers @{ Cookie = ".ROBLOSECURITY=$env:ROBLOSECURITY" }
+          # Seed every credential store Studio reads (wincreds primary with
+          # the exact target names it uses, registry legacy) so it opens
+          # logged in.
+          cmdkey /add:"https://www.roblox.com:RobloxStudioAuthuserid" /user:"$($me.id)" /pass:"$($me.id)"
+          cmdkey /add:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY$($me.id)" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
+          cmdkey /add:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
+          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
+          New-Item -Path $reg -Force | Out-Null
+          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
+          # Write the Assistant plugin setting so Studio starts with MCP enabled.
           $dir = Join-Path $env:LOCALAPPDATA "Roblox\$($me.id)\InstalledPlugins\0"
           New-Item -Path $dir -ItemType Directory -Force | Out-Null
           Set-Content -Path (Join-Path $dir "settings.json") -Value '{ "Assistant-ExternalMCPEnabled":true }' -Encoding utf8NoBOM
 
       - name: Launch Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
-        env:
-          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
-          # Seed the legacy cookie path so Studio opens logged in.
-          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
-          New-Item -Path $reg -Force | Out-Null
-          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
-          # Locate the installed Studio.
+          # Auth already seeded above; locate the installed Studio.
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
             ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
             Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -532,7 +539,8 @@ jobs:
           if (-not $logs) { Write-Host "WARNING: no Studio logs found" }
           foreach ($log in $logs) {
             Write-Host "== $($log.Name) =="
-            Select-String -Path $log.FullName -Pattern "95206881" -ErrorAction SilentlyContinue | Select-Object -First 5
+            $hits = Select-String -Path $log.FullName -Pattern "95206881" -ErrorAction SilentlyContinue | Select-Object -First 5
+            if ($hits) { $hits } else { Write-Host "(no match)" }
           }
 
       - name: Diagnose Studio (macOS)
