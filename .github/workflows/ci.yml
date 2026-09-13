@@ -141,6 +141,12 @@ jobs:
             Remove-Item -Path $zip -Force
           }
           if (-not (Test-Path $exe)) { throw "RobloxStudioBeta.exe not found after install" }
+          # The zip skips the bootstrapper, which normally lays down mcp.bat
+          # (a forwarder to Versions\<version>\StudioMCP.exe); recreate its
+          # equivalent so the default proxy launch works.
+          $proxy = Join-Path $dest "StudioMCP.exe"
+          if (-not (Test-Path $proxy)) { throw "StudioMCP.exe not found after install" }
+          Set-Content -Path (Join-Path $env:LOCALAPPDATA "Roblox\mcp.bat") -Value "@echo off`r`n`"$proxy`" %*`r`n" -Encoding ascii
 
       - name: Install Roblox Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -230,6 +236,27 @@ jobs:
           else
             open -a "Roblox Studio" --args "$args"
           fi
+
+      - name: Diagnose Studio (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        run: |
+          Write-Host "--- Studio processes ---"
+          Get-Process RobloxStudioBeta -ErrorAction SilentlyContinue | Select-Object Id,MainWindowTitle | Format-Table -AutoSize | Out-String -Width 200
+          Write-Host "--- mcp.bat ---"
+          Get-Content "$env:LOCALAPPDATA\Roblox\mcp.bat" -ErrorAction SilentlyContinue
+          Write-Host "--- plugin settings files ---"
+          Get-ChildItem "$env:LOCALAPPDATA\Roblox\*\InstalledPlugins\0\settings.json" -ErrorAction SilentlyContinue | Select-Object FullName
+
+      - name: Diagnose Studio (macOS)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
+        run: |
+          echo "--- Studio processes ---"
+          pgrep -fl "RobloxStudio" || echo "WARNING: no Studio process running"
+          echo "--- Installed apps ---"
+          ls -d /Applications/*Roblox* /Applications/*roblox* 2>/dev/null || echo "WARNING: no Roblox app in /Applications"
+          echo "--- MCP flag ---"
+          defaults read com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" > /dev/null 2>&1 && echo "cookie stored" || echo "WARNING: cookie not readable back"
+          find "$HOME/Library/Roblox" -name "settings.json" -path "*InstalledPlugins*" 2>/dev/null || echo "WARNING: no plugin settings file found"
 
       - name: Wait for Studio MCP
         if: steps.check.outputs.has_secret == 'true'
@@ -321,6 +348,12 @@ jobs:
             Remove-Item -Path $zip -Force
           }
           if (-not (Test-Path $exe)) { throw "RobloxStudioBeta.exe not found after install" }
+          # The zip skips the bootstrapper, which normally lays down mcp.bat
+          # (a forwarder to Versions\<version>\StudioMCP.exe); recreate its
+          # equivalent so the default proxy launch works.
+          $proxy = Join-Path $dest "StudioMCP.exe"
+          if (-not (Test-Path $proxy)) { throw "StudioMCP.exe not found after install" }
+          Set-Content -Path (Join-Path $env:LOCALAPPDATA "Roblox\mcp.bat") -Value "@echo off`r`n`"$proxy`" %*`r`n" -Encoding ascii
 
       - name: Install Roblox Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -410,6 +443,27 @@ jobs:
           else
             open -a "Roblox Studio" --args "$args"
           fi
+
+      - name: Diagnose Studio (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        run: |
+          Write-Host "--- Studio processes ---"
+          Get-Process RobloxStudioBeta -ErrorAction SilentlyContinue | Select-Object Id,MainWindowTitle | Format-Table -AutoSize | Out-String -Width 200
+          Write-Host "--- mcp.bat ---"
+          Get-Content "$env:LOCALAPPDATA\Roblox\mcp.bat" -ErrorAction SilentlyContinue
+          Write-Host "--- plugin settings files ---"
+          Get-ChildItem "$env:LOCALAPPDATA\Roblox\*\InstalledPlugins\0\settings.json" -ErrorAction SilentlyContinue | Select-Object FullName
+
+      - name: Diagnose Studio (macOS)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
+        run: |
+          echo "--- Studio processes ---"
+          pgrep -fl "RobloxStudio" || echo "WARNING: no Studio process running"
+          echo "--- Installed apps ---"
+          ls -d /Applications/*Roblox* /Applications/*roblox* 2>/dev/null || echo "WARNING: no Roblox app in /Applications"
+          echo "--- MCP flag ---"
+          defaults read com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" > /dev/null 2>&1 && echo "cookie stored" || echo "WARNING: cookie not readable back"
+          find "$HOME/Library/Roblox" -name "settings.json" -path "*InstalledPlugins*" 2>/dev/null || echo "WARNING: no plugin settings file found"
 
       - name: Wait for Studio MCP
         if: steps.check.outputs.has_secret == 'true'
