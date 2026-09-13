@@ -26,10 +26,10 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -47,10 +47,10 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -73,13 +73,13 @@ jobs:
     name: Python + Studio (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     environment: ROBLOSECURITY
-    timeout-minutes: 40
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check for ROBLOSECURITY secret
         id: check
@@ -98,7 +98,7 @@ jobs:
 
       - name: Set up Python
         if: steps.check.outputs.has_secret == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -108,22 +108,11 @@ jobs:
 
       - name: Install Roblox Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
-        timeout-minutes: 15
-        run: |
-          # Direct download from Roblox's own CDN (winget manifests lag the
-          # installer and fail hash checks); the installer needs no arguments.
-          curl.exe -L --fail --retry 3 -o "$env:TEMP\RobloxStudioInstaller.exe" "https://setup.rbxcdn.com/RobloxStudioInstaller.exe"
-          Start-Process -FilePath "$env:TEMP\RobloxStudioInstaller.exe"
-          # Wait for the installed binary to appear.
-          $exe = $null
-          $deadline = (Get-Date).AddMinutes(10)
-          while (-not $exe -and (Get-Date) -lt $deadline) {
-            $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue |
-              ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
-              Where-Object { Test-Path $_ } | Select-Object -First 1
-            if (-not $exe) { Start-Sleep -Seconds 10 }
-          }
-          if (-not $exe) { throw "RobloxStudioBeta.exe not found after install" }
+        timeout-minutes: 5
+        uses: OrbitalOwen/roblox-win-installer-action@1.1
+        with:
+          cookie: ${{ secrets.ROBLOSECURITY }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Roblox Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -154,15 +143,10 @@ jobs:
           New-Item -Path $dir -ItemType Directory -Force | Out-Null
           Set-Content -Path (Join-Path $dir "settings.json") -Value '{ "Assistant-ExternalMCPEnabled":true }' -Encoding utf8NoBOM
 
-      - name: Log in and launch Studio (Windows)
+      - name: Launch Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
-        env:
-          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
-          # Seed the legacy cookie path so Studio opens logged in.
-          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
-          New-Item -Path $reg -Force | Out-Null
-          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
+          # The installer action leaves Studio authenticated; locate it.
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
             ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
             Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -209,13 +193,13 @@ jobs:
       - name: Wait for Studio MCP
         if: steps.check.outputs.has_secret == 'true'
         working-directory: python
-        timeout-minutes: 15
-        run: python -m examples.wait_for_studio 600
+        timeout-minutes: 5
+        run: python -m examples.wait_for_studio 240
 
       - name: Python integration tests (live Studio)
         if: steps.check.outputs.has_secret == 'true'
         working-directory: python
-        timeout-minutes: 15
+        timeout-minutes: 5
         env:
           ROBLOX_STUDIO_MCP_INTEGRATION: "1"
         run: python -m pytest tests
@@ -224,13 +208,13 @@ jobs:
     name: Node + Studio (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     environment: ROBLOSECURITY
-    timeout-minutes: 40
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check for ROBLOSECURITY secret
         id: check
@@ -249,7 +233,7 @@ jobs:
 
       - name: Set up Node.js
         if: steps.check.outputs.has_secret == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -263,22 +247,11 @@ jobs:
 
       - name: Install Roblox Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
-        timeout-minutes: 15
-        run: |
-          # Direct download from Roblox's own CDN (winget manifests lag the
-          # installer and fail hash checks); the installer needs no arguments.
-          curl.exe -L --fail --retry 3 -o "$env:TEMP\RobloxStudioInstaller.exe" "https://setup.rbxcdn.com/RobloxStudioInstaller.exe"
-          Start-Process -FilePath "$env:TEMP\RobloxStudioInstaller.exe"
-          # Wait for the installed binary to appear.
-          $exe = $null
-          $deadline = (Get-Date).AddMinutes(10)
-          while (-not $exe -and (Get-Date) -lt $deadline) {
-            $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue |
-              ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
-              Where-Object { Test-Path $_ } | Select-Object -First 1
-            if (-not $exe) { Start-Sleep -Seconds 10 }
-          }
-          if (-not $exe) { throw "RobloxStudioBeta.exe not found after install" }
+        timeout-minutes: 5
+        uses: OrbitalOwen/roblox-win-installer-action@1.1
+        with:
+          cookie: ${{ secrets.ROBLOSECURITY }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Roblox Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -309,15 +282,10 @@ jobs:
           New-Item -Path $dir -ItemType Directory -Force | Out-Null
           Set-Content -Path (Join-Path $dir "settings.json") -Value '{ "Assistant-ExternalMCPEnabled":true }' -Encoding utf8NoBOM
 
-      - name: Log in and launch Studio (Windows)
+      - name: Launch Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
-        env:
-          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
         run: |
-          # Seed the legacy cookie path so Studio opens logged in.
-          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
-          New-Item -Path $reg -Force | Out-Null
-          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
+          # The installer action leaves Studio authenticated; locate it.
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
             ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
             Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -363,12 +331,12 @@ jobs:
 
       - name: Wait for Studio MCP
         if: steps.check.outputs.has_secret == 'true'
-        timeout-minutes: 15
-        run: pnpm --dir node exec tsx examples/wait_for_studio.ts 600
+        timeout-minutes: 5
+        run: pnpm --dir node exec tsx examples/wait_for_studio.ts 240
 
       - name: Node integration tests (live Studio)
         if: steps.check.outputs.has_secret == 'true'
-        timeout-minutes: 15
+        timeout-minutes: 5
         env:
           ROBLOX_STUDIO_MCP_INTEGRATION: "1"
         run: pnpm --dir node test
