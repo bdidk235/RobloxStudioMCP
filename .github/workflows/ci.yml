@@ -272,6 +272,13 @@ jobs:
           Get-Content "$env:LOCALAPPDATA\Roblox\mcp.bat" -ErrorAction SilentlyContinue
           Write-Host "--- plugin settings files ---"
           Get-ChildItem "$env:LOCALAPPDATA\Roblox\*\InstalledPlugins\0\settings.json" -ErrorAction SilentlyContinue | Select-Object FullName
+          Write-Host "--- Studio logs mentioning place 95206881 ---"
+          $logs = Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 3
+          if (-not $logs) { Write-Host "WARNING: no Studio logs found" }
+          foreach ($log in $logs) {
+            Write-Host "== $($log.Name) =="
+            Select-String -Path $log.FullName -Pattern "95206881" -ErrorAction SilentlyContinue | Select-Object -First 5
+          }
 
       - name: Diagnose Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -283,12 +290,21 @@ jobs:
           echo "--- MCP flag ---"
           defaults read com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" > /dev/null 2>&1 && echo "cookie stored" || echo "WARNING: cookie not readable back"
           find "$HOME/Library/Roblox" -name "settings.json" -path "*InstalledPlugins*" 2>/dev/null || echo "WARNING: no plugin settings file found"
+          echo "--- Studio logs mentioning place 95206881 ---"
+          if [ -d "$HOME/Library/Logs/Roblox" ]; then
+            ls -t "$HOME/Library/Logs/Roblox" 2>/dev/null | head -n 3 | while read -r f; do
+              echo "== $f =="
+              grep -m 5 "95206881" "$HOME/Library/Logs/Roblox/$f" || echo "(no match)"
+            done
+          else
+            echo "WARNING: no Studio logs dir"
+          fi
 
       - name: Wait for Studio MCP
         if: steps.check.outputs.has_secret == 'true'
         working-directory: python
         timeout-minutes: 5
-        run: python -m examples.wait_for_studio 240
+        run: python -m examples.wait_for_studio 60
 
       - name: Python integration tests (live Studio)
         if: steps.check.outputs.has_secret == 'true'
@@ -505,6 +521,13 @@ jobs:
           Get-Content "$env:LOCALAPPDATA\Roblox\mcp.bat" -ErrorAction SilentlyContinue
           Write-Host "--- plugin settings files ---"
           Get-ChildItem "$env:LOCALAPPDATA\Roblox\*\InstalledPlugins\0\settings.json" -ErrorAction SilentlyContinue | Select-Object FullName
+          Write-Host "--- Studio logs mentioning place 95206881 ---"
+          $logs = Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 3
+          if (-not $logs) { Write-Host "WARNING: no Studio logs found" }
+          foreach ($log in $logs) {
+            Write-Host "== $($log.Name) =="
+            Select-String -Path $log.FullName -Pattern "95206881" -ErrorAction SilentlyContinue | Select-Object -First 5
+          }
 
       - name: Diagnose Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -516,11 +539,20 @@ jobs:
           echo "--- MCP flag ---"
           defaults read com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" > /dev/null 2>&1 && echo "cookie stored" || echo "WARNING: cookie not readable back"
           find "$HOME/Library/Roblox" -name "settings.json" -path "*InstalledPlugins*" 2>/dev/null || echo "WARNING: no plugin settings file found"
+          echo "--- Studio logs mentioning place 95206881 ---"
+          if [ -d "$HOME/Library/Logs/Roblox" ]; then
+            ls -t "$HOME/Library/Logs/Roblox" 2>/dev/null | head -n 3 | while read -r f; do
+              echo "== $f =="
+              grep -m 5 "95206881" "$HOME/Library/Logs/Roblox/$f" || echo "(no match)"
+            done
+          else
+            echo "WARNING: no Studio logs dir"
+          fi
 
       - name: Wait for Studio MCP
         if: steps.check.outputs.has_secret == 'true'
         timeout-minutes: 5
-        run: pnpm --dir node exec tsx examples/wait_for_studio.ts 240
+        run: pnpm --dir node exec tsx examples/wait_for_studio.ts 60
 
       - name: Node integration tests (live Studio)
         if: steps.check.outputs.has_secret == 'true'
