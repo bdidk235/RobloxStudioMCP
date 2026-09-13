@@ -152,7 +152,8 @@ from that account:
 
 - It must be able to log in (the `ROBLOSECURITY` cookie).
 - It must have *Enable Studio as MCP server* turned on at least once
-  (Assistant → Manage MCP Servers) — the setting roams with the account.
+  (Assistant → Manage MCP Servers) — the setting roams with the account,
+  and the jobs additionally pre-seed it from the cookie.
 - It opens place `95206881` in edit mode, so the account needs
   edit access to it (or swap in your own `placeId`/`universeId` in
   `.github/workflows/ci.yml`).

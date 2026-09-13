@@ -142,6 +142,18 @@ jobs:
           rm -f "$dmg"
           open -W "/Applications/$(basename "$app")"
 
+      - name: Pre-seed MCP enabled flag (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Resolve the account's user ID from the cookie, then write the
+          # Assistant plugin setting so Studio starts with MCP enabled.
+          $me = Invoke-RestMethod -Uri "https://users.roblox.com/v1/users/authenticated" -Headers @{ Cookie = ".ROBLOSECURITY=$env:ROBLOSECURITY" }
+          $dir = Join-Path $env:LOCALAPPDATA "Roblox\$($me.id)\InstalledPlugins\0"
+          New-Item -Path $dir -ItemType Directory -Force | Out-Null
+          Set-Content -Path (Join-Path $dir "settings.json") -Value '{ "Assistant-ExternalMCPEnabled":true }' -Encoding utf8NoBOM
+
       - name: Log in and launch Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         env:
@@ -161,6 +173,21 @@ jobs:
           # Open this place in edit mode (minimized protocol URL; the CI
           # account needs edit access to it, or swap in your own IDs).
           Start-Process -FilePath $exe -ArgumentList "roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
+
+      - name: Pre-seed MCP enabled flag (macOS)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Resolve the account's user ID from the cookie, then write the
+          # Assistant plugin setting so Studio starts with MCP enabled.
+          # (macOS data dir mirrors Windows %LOCALAPPDATA%\Roblox.)
+          set -euo pipefail
+          user_id="$(curl -s --fail -H "Cookie: .ROBLOSECURITY=${ROBLOSECURITY}" https://users.roblox.com/v1/users/authenticated | grep -o '"id":[0-9]*' | head -n 1 | grep -o '[0-9]*')"
+          if [ -z "$user_id" ]; then echo "Could not resolve user ID from ROBLOSECURITY"; exit 1; fi
+          dir="$HOME/Library/Roblox/$user_id/InstalledPlugins/0"
+          mkdir -p "$dir"
+          printf '{ "Assistant-ExternalMCPEnabled":true }' > "$dir/settings.json"
 
       - name: Log in and launch Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -225,8 +252,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: node/pnpm-lock.yaml
 
       - name: Set up pnpm
         if: steps.check.outputs.has_secret == 'true'
@@ -272,6 +297,18 @@ jobs:
           rm -f "$dmg"
           open -W "/Applications/$(basename "$app")"
 
+      - name: Pre-seed MCP enabled flag (Windows)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Resolve the account's user ID from the cookie, then write the
+          # Assistant plugin setting so Studio starts with MCP enabled.
+          $me = Invoke-RestMethod -Uri "https://users.roblox.com/v1/users/authenticated" -Headers @{ Cookie = ".ROBLOSECURITY=$env:ROBLOSECURITY" }
+          $dir = Join-Path $env:LOCALAPPDATA "Roblox\$($me.id)\InstalledPlugins\0"
+          New-Item -Path $dir -ItemType Directory -Force | Out-Null
+          Set-Content -Path (Join-Path $dir "settings.json") -Value '{ "Assistant-ExternalMCPEnabled":true }' -Encoding utf8NoBOM
+
       - name: Log in and launch Studio (Windows)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'Windows'
         env:
@@ -291,6 +328,21 @@ jobs:
           # Open this place in edit mode (minimized protocol URL; the CI
           # account needs edit access to it, or swap in your own IDs).
           Start-Process -FilePath $exe -ArgumentList "roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
+
+      - name: Pre-seed MCP enabled flag (macOS)
+        if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Resolve the account's user ID from the cookie, then write the
+          # Assistant plugin setting so Studio starts with MCP enabled.
+          # (macOS data dir mirrors Windows %LOCALAPPDATA%\Roblox.)
+          set -euo pipefail
+          user_id="$(curl -s --fail -H "Cookie: .ROBLOSECURITY=${ROBLOSECURITY}" https://users.roblox.com/v1/users/authenticated | grep -o '"id":[0-9]*' | head -n 1 | grep -o '[0-9]*')"
+          if [ -z "$user_id" ]; then echo "Could not resolve user ID from ROBLOSECURITY"; exit 1; fi
+          dir="$HOME/Library/Roblox/$user_id/InstalledPlugins/0"
+          mkdir -p "$dir"
+          printf '{ "Assistant-ExternalMCPEnabled":true }' > "$dir/settings.json"
 
       - name: Log in and launch Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
