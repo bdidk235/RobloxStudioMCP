@@ -181,7 +181,7 @@ export class MCPClient {
       this.request("initialize", {
         protocolVersion: this.protocolVersion,
         capabilities: {},
-        clientInfo: { name: "roblox-studio-mcp-node", version: VERSION },
+        clientInfo: { name: "roblox-studio-mcp", version: VERSION },
       }),
       spawnError,
     ])) as Record<string, unknown>;

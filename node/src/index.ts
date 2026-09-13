@@ -1,5 +1,5 @@
 /**
- * roblox-studio-mcp-node: a dependency-free Node.js client for MCP servers.
+ * roblox-studio-mcp: a dependency-free Node.js client for MCP servers.
  *
  * Built with the Roblox Studio MCP in mind, but {@link MCPClient} is a
  * generic stdio MCP client that works with any server.

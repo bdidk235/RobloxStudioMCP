@@ -8,7 +8,7 @@
  *
  * @example
  * ```ts
- * import { RobloxStudio, writeLikeMultiEdit } from "roblox-studio-mcp-node/extended";
+  * import { RobloxStudio, writeLikeMultiEdit } from "roblox-studio-mcp/extended";
  *
  * const studio = await RobloxStudio.connect();
  * try {

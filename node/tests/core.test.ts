@@ -1,5 +1,5 @@
 /**
- * Tests for the pure-logic parts of roblox-studio-mcp-node (no Studio required).
+ * Tests for the pure-logic parts of roblox-studio-mcp (no Studio required).
  *
  * Port of the Python `tests/test_core.py`. Run with:
  *

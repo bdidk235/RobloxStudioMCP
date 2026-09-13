@@ -17,7 +17,7 @@
 
 import { createInterface } from "node:readline";
 import { MCPClient } from "./client.js";
-import { RobloxStudio, defaultArgs, defaultCommand } from "./roblox.js";
+import { RobloxStudio, defaultArgs, defaultCommand, defaultShell } from "./roblox.js";
 import { Tool } from "./types.js";
 import type { SendFn } from "./server.js";
 import { sendMessage as baseSend } from "./server.js";
@@ -496,7 +496,7 @@ export async function serve(client?: MCPClient): Promise<void> {
   if (client) {
     active = client;
   } else {
-    active = new MCPClient(defaultCommand(), defaultArgs(), { shell: true });
+    active = new MCPClient(defaultCommand(), defaultArgs(), { shell: defaultShell() });
     await active.connect();
     owned = true;
   }

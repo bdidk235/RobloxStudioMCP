@@ -100,7 +100,7 @@ export interface StudioClientLike {
  *
  * @example
  * ```ts
- * import { RobloxStudio } from "roblox-studio-mcp-node";
+  * import { RobloxStudio } from "roblox-studio-mcp";
  *
  * const studio = await RobloxStudio.connect();
  * try {

@@ -14,7 +14,7 @@
 
 import { createInterface } from "node:readline";
 import { MCPClient } from "./client.js";
-import { defaultArgs, defaultCommand } from "./roblox.js";
+import { defaultArgs, defaultCommand, defaultShell } from "./roblox.js";
 
 export type SendFn = (message: Record<string, unknown>) => void;
 
@@ -140,7 +140,7 @@ export async function serve(client?: ProxyClientLike): Promise<void> {
   if (client) {
     active = client;
   } else {
-    const real = new MCPClient(defaultCommand(), defaultArgs(), { shell: true });
+    const real = new MCPClient(defaultCommand(), defaultArgs(), { shell: defaultShell() });
     await real.connect();
     active = real;
     owned = true;

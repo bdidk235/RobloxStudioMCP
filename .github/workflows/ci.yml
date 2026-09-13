@@ -1,0 +1,252 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Four jobs: unit tests per language (no Studio needed), plus live
+# integration per language against a real Studio with MCP enabled.
+#
+# The *-studio jobs need a ROBLOSECURITY secret (a burner account is
+# recommended) for an account that has "Enable Studio as MCP server" turned
+# on (Assistant -> Manage MCP Servers; the setting roams with the account,
+# so enabling it once on any machine covers CI). Without the secret the
+# studio jobs skip instead of failing.
+
+jobs:
+  python-test:
+    name: Python tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install client (with dev extras)
+        run: pip install -e ".[dev]"
+
+      - name: Python tests
+        run: python -m pytest tests
+
+  node-test:
+    name: Node tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: node/pnpm-lock.yaml
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node deps
+        run: pnpm --dir node install --frozen-lockfile
+
+      - name: Node typecheck
+        run: pnpm --dir node typecheck
+
+      - name: Node tests
+        run: pnpm --dir node test
+
+      - name: Node build
+        run: pnpm --dir node build
+
+  python-studio:
+    name: Python + Studio (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ secrets.ROBLOSECURITY != '' }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install client (with dev extras)
+        run: pip install -e "./python[dev]"
+
+      - name: Install Roblox Studio (Windows)
+        if: runner.os == 'Windows'
+        run: winget install --id Roblox.RobloxStudio --exact --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Install Roblox Studio (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Direct download from Roblox's own CDN:
+          # mount the dmg, copy out the installer app, run it, clean up.
+          set -euo pipefail
+          dmg="/tmp/RobloxStudio-$(openssl rand -hex 4).dmg"
+          curl -L --fail --retry 3 -o "$dmg" "https://setup.rbxcdn.com/mac/RobloxStudio.dmg"
+          mnt="/tmp/rbx-studio-mnt"
+          hdiutil attach "$dmg" -nobrowse -mountpoint "$mnt"
+          app="$(find "$mnt" -maxdepth 1 -name '*.app' -type d -print -quit)"
+          if [ -z "$app" ]; then echo "No .app found in $dmg"; hdiutil detach "$mnt" || true; exit 1; fi
+          cp -R "$app" /Applications/
+          hdiutil detach "$mnt"
+          rm -f "$dmg"
+          open -W "/Applications/$(basename "$app")"
+
+      - name: Log in and launch Studio (Windows)
+        if: runner.os == 'Windows'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Seed the legacy cookie path so Studio opens logged in.
+          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
+          New-Item -Path $reg -Force | Out-Null
+          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
+            ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw "RobloxStudioBeta.exe not found after install" }
+          # Open this place in edit mode (minimized protocol URL; the CI
+          # account needs edit access to it, or swap in your own IDs).
+          Start-Process -FilePath $exe -ArgumentList "roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
+
+      - name: Log in and launch Studio (macOS)
+        if: runner.os == 'macOS'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Best-effort legacy plist cookie seeding (Studio also picks up
+          # HTTPStorages sessions when the account is already logged in).
+          defaults write com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" "COOK::<${ROBLOSECURITY}>"
+          # Open this place in edit mode (minimized protocol URL; the CI
+          # account needs edit access to it, or swap in your own IDs).
+          args="roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
+          if [ -d "/Applications/RobloxStudio.app" ]; then
+            open "/Applications/RobloxStudio.app" --args "$args"
+          else
+            open -a "Roblox Studio" --args "$args"
+          fi
+
+      - name: Wait for Studio MCP
+        working-directory: python
+        timeout-minutes: 15
+        run: python -m examples.wait_for_studio 600
+
+      - name: Python integration tests (live Studio)
+        working-directory: python
+        timeout-minutes: 15
+        env:
+          ROBLOX_STUDIO_MCP_INTEGRATION: "1"
+        run: python -m pytest tests
+
+  node-studio:
+    name: Node + Studio (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ secrets.ROBLOSECURITY != '' }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: node/pnpm-lock.yaml
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node deps
+        run: pnpm --dir node install --frozen-lockfile
+
+      - name: Install Roblox Studio (Windows)
+        if: runner.os == 'Windows'
+        run: winget install --id Roblox.RobloxStudio --exact --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Install Roblox Studio (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Direct download from Roblox's own CDN:
+          # mount the dmg, copy out the installer app, run it, clean up.
+          set -euo pipefail
+          dmg="/tmp/RobloxStudio-$(openssl rand -hex 4).dmg"
+          curl -L --fail --retry 3 -o "$dmg" "https://setup.rbxcdn.com/mac/RobloxStudio.dmg"
+          mnt="/tmp/rbx-studio-mnt"
+          hdiutil attach "$dmg" -nobrowse -mountpoint "$mnt"
+          app="$(find "$mnt" -maxdepth 1 -name '*.app' -type d -print -quit)"
+          if [ -z "$app" ]; then echo "No .app found in $dmg"; hdiutil detach "$mnt" || true; exit 1; fi
+          cp -R "$app" /Applications/
+          hdiutil detach "$mnt"
+          rm -f "$dmg"
+          open -W "/Applications/$(basename "$app")"
+
+      - name: Log in and launch Studio (Windows)
+        if: runner.os == 'Windows'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Seed the legacy cookie path so Studio opens logged in.
+          $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
+          New-Item -Path $reg -Force | Out-Null
+          New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory |
+            ForEach-Object { Join-Path $_.FullName "RobloxStudioBeta.exe" } |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) { throw "RobloxStudioBeta.exe not found after install" }
+          # Open this place in edit mode (minimized protocol URL; the CI
+          # account needs edit access to it, or swap in your own IDs).
+          Start-Process -FilePath $exe -ArgumentList "roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
+
+      - name: Log in and launch Studio (macOS)
+        if: runner.os == 'macOS'
+        env:
+          ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Best-effort legacy plist cookie seeding (Studio also picks up
+          # HTTPStorages sessions when the account is already logged in).
+          defaults write com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" "COOK::<${ROBLOSECURITY}>"
+          # Open this place in edit mode (minimized protocol URL; the CI
+          # account needs edit access to it, or swap in your own IDs).
+          args="roblox-studio:1+launchmode:edit+task:EditPlace+placeId:95206881+universeId:28220420"
+          if [ -d "/Applications/RobloxStudio.app" ]; then
+            open "/Applications/RobloxStudio.app" --args "$args"
+          else
+            open -a "Roblox Studio" --args "$args"
+          fi
+
+      - name: Wait for Studio MCP
+        timeout-minutes: 15
+        run: pnpm --dir node exec tsx examples/wait_for_studio.ts 600
+
+      - name: Node integration tests (live Studio)
+        timeout-minutes: 15
+        env:
+          ROBLOX_STUDIO_MCP_INTEGRATION: "1"
+        run: pnpm --dir node test

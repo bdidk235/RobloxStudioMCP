@@ -43,15 +43,15 @@ window.DOC = {
       blocks: [
         {
           type: "p",
-          html: "<code>node dist/server.js</code> is a transparent proxy: same tools, same raw responses as " +
+          html: "<code>node node/dist/server.js</code> (from the repo root) is a transparent proxy: same tools, same raw responses as " +
             "StudioMCP, one upstream process reused for the server's lifetime. " +
-            "<code>node dist/extendedServer.js</code> layers 8 convenience tools on top and is what opencode " +
+            "<code>node node/dist/extendedServer.js</code> layers 8 convenience tools on top and is what opencode " +
             "actually runs (<code>Roblox_Studio</code> in <code>opencode.jsonc</code>). Measured " +
             "<code>tools/list</code> through it: <strong>36 tools</strong> — 28 relayed, 8 extended.",
         },
         {
           type: "code",
-          text: '{\n  "Roblox_Studio": {\n    "type": "local",\n    "command": ["node", "C:\\\\Users\\\\User\\\\Source\\\\RobloxStudioMCP\\\\dist\\\\extendedServer.js"],\n    "enabled": true\n  }\n}',
+          text: '{\n  "Roblox_Studio": {\n    "type": "local",\n    "command": ["node", "node/dist/extendedServer.js"],\n    "enabled": true\n  }\n}',
         },
       ],
     },
@@ -146,15 +146,15 @@ window.DOC = {
       blocks: [
         {
           type: "code",
-          text: "src/\n  index.ts          public API (MCPClient, RobloxStudio, …)\n  client.ts         generic stdio JSON-RPC client, unbounded line reader\n  roblox.ts         studio_id auto-inject, singleton, resolve retry\n  server.ts         transparent stdio proxy\n  extendedServer.ts stdio proxy + 8 extended tools\n  extended/\n    writer.ts       full-file write + chunked write\n    updater.ts      batch edits with graceful skipping\n    extensions.ts   search/read, insert-from-file, watch, modules, tests, exec-from-file\ntests/              vitest suites (core, improvements, web removed)\n",
+          text: "node/\n  src/              public API (MCPClient, RobloxStudio, …), servers, extended/\n  tests/            vitest suites (core, improvements, live-Studio integration)\n  examples/         runnable TS examples (incl. wait_for_studio for CI)\npython/               original Python client (same API, snake_case)\n  src/roblox_studio_mcp/\n  tests/            unittest suites (test_core, test_improvements, live-Studio integration)\n  examples/         runnable Python examples\ndocs/               this site (opens from disk)\n",
         },
         {
           type: "list",
           items: [
-            "<code>pnpm install</code> (if pnpm demands a TTY purge: <code>CI=true pnpm install</code>)",
-            "<code>pnpm typecheck</code> — strict tsc over src, tests, examples",
-            "<code>pnpm test</code> — vitest, no Studio needed (fakes throughout)",
-            "<code>pnpm build</code> — wipes and rebuilds <code>dist/</code> to mirror package entry points",
+            "<code>pnpm --dir node install</code> (if pnpm demands a TTY purge: <code>CI=true pnpm --dir node install</code>)",
+            "<code>pnpm --dir node typecheck</code> — strict tsc over src, tests, examples",
+            "<code>pnpm --dir node test</code> — vitest, no Studio needed (fakes throughout)",
+            "<code>pnpm --dir node build</code> — wipes and rebuilds <code>node/dist/</code> to mirror package entry points",
           ],
         },
         {

@@ -1,4 +1,4 @@
-/** Exceptions raised by the `roblox-studio-mcp-node` package. */
+/** Exceptions raised by the `roblox-studio-mcp` package. */
 
 /** Base class for all errors raised by this package. */
 export class MCPError extends Error {

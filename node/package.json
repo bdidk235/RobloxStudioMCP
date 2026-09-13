@@ -1,7 +1,7 @@
 {
-  "name": "roblox-studio-mcp-node",
+  "name": "roblox-studio-mcp",
   "version": "0.1.0",
-  "description": "A lightweight, dependency-free Node.js/TypeScript client for MCP (Model Context Protocol) servers, with built-in convenience for the Roblox Studio MCP. Port of the Python roblox-studio-mcp package.",
+  "description": "A lightweight, dependency-free Node.js/TypeScript client for MCP (Model Context Protocol) servers, with built-in convenience for the Roblox Studio MCP.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.js",

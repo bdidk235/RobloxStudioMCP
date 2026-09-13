@@ -1,178 +1,169 @@
-# roblox-studio-mcp-node
+# roblox-studio-mcp
 
-A lightweight, **dependency-free** Node.js/TypeScript client for
-[MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers —
-with built-in convenience for the **Roblox Studio MCP**.
+Two **dependency-free** clients for
+[MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers, with
+built-in convenience for the **Roblox Studio MCP**:
 
-Port of the Python [`roblox-studio-mcp`](../RobloxMCP) package. Zero runtime
-dependencies: only Node.js built-ins (`node:child_process`, `node:readline`).
-Requires Node 18+.
+- `python/` — the **original** Python client (stdlib only, Python 3.9+).
+  Full guide: `python/README.md`.
+- `node/` — the TypeScript/Node port (Node.js built-ins only, Node 18+).
+  Full guide: `node/README.md`.
 
-## What it does
+Both speak the same protocol to the same Studio MCP proxy, expose the same
+tool catalog, and ship the same extended helpers. Pick whichever language fits
+your tooling — behavior is kept in parity, and each side's test suite
+(`python/tests`, `node/tests`) covers the same ground without needing Studio.
 
-- Launches any MCP server over the **stdio** transport and speaks JSON-RPC 2.0.
-- Performs the `initialize` handshake, lists tools, and calls tools.
-- Ships a `RobloxStudio` convenience client that resolves `studio_id` once and
-  injects it into every tool call that needs it.
-- Ships transparent (`server`) and extended (`extendedServer`) stdio proxies,
-  plus `extended/` helpers (`writeLikeMultiEdit`, `updateLikeMultiEdit`, …).
+## How both work
 
-## Install
+Roblox Studio exposes its MCP server through a local proxy process: on
+Windows it is launched as
+`cmd.exe /c "cd /d %LOCALAPPDATA%\Roblox && .\mcp.bat"`, on macOS it is the
+`StudioMCP` binary inside the Studio app bundle (run directly, no shell).
+Either way it speaks newline-delimited JSON-RPC 2.0 over stdio: one JSON
+object per line, with an `initialize` handshake followed by `tools/list` and
+`tools/call`.
 
-```powershell
-pnpm install
-pnpm build
+Both clients follow the same shape around that protocol:
+
+- `MCPClient` — a generic stdio MCP client (works with any MCP server):
+  connect + handshake, list tools, call tools.
+- `RobloxStudio` — a convenience wrapper that resolves `studio_id` once
+  (via `list_roblox_studios`, first instance wins) and injects it into every
+  tool call whose schema declares it.
+- Singleton connection — `connect()` returns a process-wide shared
+  connection by default; close it explicitly (`close_singleton()` /
+  `closeSingleton()`).
+- Readiness retry — a fresh proxy answers `list_roblox_studios` with
+  "Unable to reach Roblox Studio" for a beat after its handshake; both
+  clients ride through exactly that transient symptom (up to ~10 s) and let
+  every other error throw immediately.
+- Extended helpers — full-file writes (`write_like_multi_edit` /
+  `writeLikeMultiEdit`), batch edits with graceful skipping
+  (`update_like_multi_edit` / `updateLikeMultiEdit`), script search-and-read,
+  insert-from-file, console watch, module scaffolding, play-test summaries,
+  and execute-from-file. Also served as `extended_*` tools by the extended
+  stdio proxy.
+- Wire format is identical on both sides (`studio_id`, `datamodel_type`,
+  `target_path`, …); only the local naming differs (Python `snake_case`,
+  TypeScript `camelCase`).
+
+## Layout
+
+```text
+node/                   TypeScript/Node client (port)
+  src/                    MCPClient, RobloxStudio, servers, extended/
+  tests/                  vitest suites (no Studio needed)
+  examples/               runnable TS examples (npx tsx examples/<name>.ts)
+python/                 Python client (original)
+  src/roblox_studio_mcp/  MCPClient, RobloxStudio, servers, extended/
+  tests/                  unittest suites (no Studio needed)
+  examples/               runnable Python examples (python -m examples.<name>)
+docs/                   docs site, opens from disk (docs/index.html)
+README.md               this overview
 ```
 
-## Quick start (Roblox Studio)
+## Prerequisites
 
-Make sure Roblox Studio is open (and its MCP plugin enabled), then:
+Roblox Studio open with a place loaded, and its MCP server enabled
+(Assistant → Manage MCP Servers → *Enable Studio as MCP server*).
 
-```ts
-import { RobloxStudio } from "roblox-studio-mcp-node";
+## Examples
 
-const studio = await RobloxStudio.connect();
-try {
-  for (const tool of await studio.listTools()) {
-    console.log(tool.name);
-  }
+Each example exists on both sides with the same behavior:
 
-  // Run Luau in Studio (datamodelType: "Edit", "Client", or "Server")
-  const result = await studio.executeLuau("return 1 + 1");
-  console.log(result.text()); // -> 2
+| What it shows | Python | TypeScript |
+| --- | --- | --- |
+| List every tool | `python -m examples.list_tools` | `npx tsx examples/list_tools.ts` |
+| Run Luau, print result | `python -m examples.run_luau` | `npx tsx examples/run_luau.ts` |
+| Shared connection + disabled tools | `python -m examples.singleton_usage` | `npx tsx examples/singleton_usage.ts` |
+| Play, walk, jump, leave | `python -m examples.walk_jump` | `npx tsx examples/walk_jump.ts` |
+| Full-file write helper | `python -m examples.write_like_multi_edit <target> [--create]` | `npx tsx examples/write_like_multi_edit.ts <target> [--create]` |
+| Wait for Studio over MCP | `python -m examples.wait_for_studio [timeout_seconds]` | `npx tsx examples/wait_for_studio.ts [timeoutSeconds]` |
 
-  // Or call any tool by name; studio_id is injected automatically
-  const inspected = await studio.call("inspect_instance", { path: "Workspace" });
-  console.log(inspected.text());
-} finally {
-  await studio.close();
-}
-```
+(Python commands run from `python/`; TypeScript commands run from `node/`.)
 
-> `RobloxStudio.connect()` returns the process-wide shared connection by
-> default. `asyncDisposable`/`await using` is **not** used because the
-> singleton must stay alive across calls — close it explicitly with
-> `await studio.close()` or `await closeSingleton()`.
+## Naming map
 
-## Using the generic client
-
-The underlying `MCPClient` works with **any** stdio MCP server:
-
-```ts
-import { MCPClient } from "roblox-studio-mcp-node";
-
-const client = new MCPClient("npx", ["-y", "@modelcontextprotocol/server-filesystem", "."]);
-await client.connect();
-try {
-  for (const tool of await client.listTools()) console.log(tool.name);
-} finally {
-  await client.close();
-}
-```
-
-The Roblox Studio server itself is launched as
-`cmd.exe /c "cd /d %LOCALAPPDATA%\Roblox && .\mcp.bat"` — the default
-`command`/`args` used by `RobloxStudio.connect()` on Windows. On macOS it
-instead runs `/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP`
-directly (no shell); `defaultCommand()` / `defaultArgs()` / `defaultShell()`
-pick per platform, and explicit `command`/`args`/`shell` options always win.
-
-## Handling multiple Studio instances
-
-```ts
-const studio = await RobloxStudio.connect();
-try {
-  for (const s of await studio.listStudios()) console.log(s["id"], s["name"]);
-  studio.setStudioId("the-id-you-want"); // or pass studioId to connect()
-} finally {
-  await studio.close();
-}
-```
-
-## Disabling tools
-
-```ts
-const studio = await RobloxStudio.connect({
-  disabledTools: new Set(["generate_mesh", "segment_mesh", "generate_material"]),
-});
-```
-
-`MCPClient` accepts the same `disabledTools` option.
-
-## Singleton connection
-
-```ts
-import { RobloxStudio, closeSingleton } from "roblox-studio-mcp-node";
-
-const a = await RobloxStudio.connect(); // launches the shared process (once)
-const b = await RobloxStudio.connect(); // same connection, same process
-await closeSingleton();
-```
-
-`studioId` is optional and auto-resolves to the first open Studio.
-Pass `singleton: false` to `connect()` for an isolated connection, or use
-`getSingleton()` / `closeSingleton()` directly.
-
-A fresh proxy needs a moment after its handshake before its Studio uplink is
-usable. `resolveStudioId()` rides through that transient "Unable to reach
-Roblox Studio" symptom (retrying up to `timeoutMs: 10_000`) so the first tool
-call through a new connection just works; tune with
-`resolveStudioId({ timeoutMs, intervalMs })`. Any other error — including a
-genuinely empty Studio list — still throws immediately.
+| Concept | Python | TypeScript |
+| --- | --- | --- |
+| Connect | `RobloxStudio.connect(studio_id=…)` | `RobloxStudio.connect({ studioId: … })` |
+| List tools | `studio.list_tools()` | `studio.listTools()` |
+| Call a tool | `studio.call(name, args)` | `studio.call(name, args)` |
+| Run Luau | `studio.execute_luau(code)` | `studio.executeLuau(code)` |
+| Shared connection | `get_singleton()` / `close_singleton()` | `getSingleton()` / `closeSingleton()` |
+| Full-file write | `write_like_multi_edit(…, create_if_missing=…)` | `writeLikeMultiEdit(…, { createIfMissing: … })` |
+| Batch edits | `update_like_multi_edit(…, skip_missing=…)` | `updateLikeMultiEdit(…, { skipMissing: … })` |
 
 ## Stdio servers
 
+Each side ships a transparent proxy (same tools as StudioMCP) and an
+extended proxy (adds the `extended_*` tools):
+
 ```powershell
-# Transparent proxy (same tools as StudioMCP)
+# Node (run from node/)
 node ./dist/server.js
-
-# Extended proxy (adds extended_* tools)
 node ./dist/extendedServer.js
+
+# Python (run from python/)
+python -m roblox_studio_mcp.server
+python -m roblox_studio_mcp.extended_server
 ```
-
-## Extended helpers
-
-```ts
-import { RobloxStudio, writeLikeMultiEdit } from "roblox-studio-mcp-node/extended";
-
-const studio = await RobloxStudio.connect();
-const status = await writeLikeMultiEdit(
-  studio,
-  "game.ServerScriptService.MyScript",
-  "print('hello')",
-  { createIfMissing: true },
-);
-// status is "created" | "wrote" | "unchanged"
-await studio.close();
-```
-
-## API overview
-
-| Symbol | Purpose |
-| --- | --- |
-| `MCPClient(command, args, …)` | Generic stdio MCP client |
-| `RobloxStudio.connect(…)` | Studio-specific convenience client |
-| `client.listTools()` | `Tool[]` |
-| `client.callTool(name, args)` | `CallToolResult` |
-| `studio.call(name, args)` | Like above, but auto-injects `studio_id` |
-| `studio.executeLuau(code, datamodelType)` | Run Luau in Studio |
-| `studio.getStudioState()` / `startPlay()` / `stopPlay()` | Play-mode helpers |
-| `getSingleton()` / `closeSingleton()` | Process-wide shared connection |
-| `disabledTools` | Hide and refuse specific tools |
-
-`CallToolResult` exposes `.text()` and `.json()`.
-
-Naming follows TypeScript camelCase (`listTools`, `callTool`, `executeLuau`,
-`studioId`, `datamodelType`, `targetPath`, `createIfMissing`, …). Wire-format
-keys (`studio_id`, `datamodel_type`, `target_path`, …) are preserved when
-talking to Studio.
 
 ## Development
 
 ```powershell
+# Node (run from node/)
 pnpm install
 pnpm typecheck
 pnpm test
+
+# Python (run from python/)
+pip install -e .[dev]
+python -m unittest discover -s tests
+# or, with the dev extras installed:
+python -m pytest tests
+```
+
+## Docs site
+
+`docs/index.html` opens straight from disk (no server or build step) and
+explains the architecture, the full tool catalog with inputs and outputs,
+and measured performance numbers.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs four jobs on Windows and macOS:
+
+| Job | What it runs | Needs Studio? |
+| --- | --- | --- |
+| `python-test` | `pytest` in `python/` | No (fakes throughout) |
+| `node-test` | typecheck + vitest + build in `node/` | No (fakes throughout) |
+| `python-studio` | installs Studio, waits for it, then `pytest` with the live integration suite | Yes |
+| `node-studio` | installs Studio, waits for it, then vitest with the live integration suite | Yes |
+
+The `*-studio` jobs install Studio (winget on Windows, `RobloxStudio.dmg`
+straight from `setup.rbxcdn.com` on macOS), log in with a `ROBLOSECURITY`
+secret (a burner account is recommended), launch Studio, and poll
+`examples/wait_for_studio` before running the suites. They need three things
+from that account:
+
+- It must be able to log in (the `ROBLOSECURITY` cookie).
+- It must have *Enable Studio as MCP server* turned on at least once
+  (Assistant → Manage MCP Servers) — the setting roams with the account.
+- It opens place `95206881` in edit mode, so the account needs
+  edit access to it (or swap in your own `placeId`/`universeId` in
+  `.github/workflows/ci.yml`).
+
+Without the secret the studio jobs skip instead of failing. Locally, the
+same integration suites run with `ROBLOX_STUDIO_MCP_INTEGRATION=1` once
+Studio is open with a place loaded:
+
+```powershell
+# Python (run from python/)
+python -m examples.wait_for_studio 600
+$env:ROBLOX_STUDIO_MCP_INTEGRATION = "1"
+python -m pytest tests/test_integration_studio.py
 ```
 
 ## License

@@ -1,6 +1,20 @@
-node_modules/
-dist/
-coverage/
+# Node client (node/)
+node/node_modules/
+node/dist/
+node/coverage/
 *.tsbuildinfo
+
+# Python client (python/)
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+python/build/
+python/dist/
+.venv/
+venv/
+
+# OS
 .DS_Store
 Thumbs.db
