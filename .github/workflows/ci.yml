@@ -191,9 +191,9 @@ jobs:
           # Seed every credential store Studio reads (wincreds primary with
           # the exact target names it uses, registry legacy) so it opens
           # logged in.
-          cmdkey /add:"https://www.roblox.com:RobloxStudioAuthuserid" /user:"$($me.id)" /pass:"$($me.id)"
-          cmdkey /add:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY$($me.id)" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
-          cmdkey /add:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
+          cmdkey /generic:"https://www.roblox.com:RobloxStudioAuthuserid" /user:"$($me.id)" /pass:"$($me.id)"
+          cmdkey /generic:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY$($me.id)" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
+          cmdkey /generic:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
           $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
           New-Item -Path $reg -Force | Out-Null
           New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
@@ -230,7 +230,7 @@ jobs:
           sleep 30
           pkill -x RobloxStudio || true
 
-      - name: Seed MCP enabled flag (macOS)
+      - name: Seed auth and MCP flag (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
@@ -244,6 +244,32 @@ jobs:
           dir="$HOME/Library/Roblox/$user_id/InstalledPlugins/0"
           mkdir -p "$dir"
           printf '{ "Assistant-ExternalMCPEnabled":true }' > "$dir/settings.json"
+          # Seed the primary cookie store as well: the plist alone may be
+          # ignored in favor of ~/Library/HTTPStorages/...binarycookies.
+          python -m pip install -q binarycookies
+          python - "$HOME/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies" <<'EOF'
+          import binarycookies, datetime, os, sys
+          path = sys.argv[1]
+          cookie = os.environ["ROBLOSECURITY"]
+          now = datetime.datetime.now(datetime.timezone.utc)
+          far = now + datetime.timedelta(days=3650)
+          entry = {
+              "name": ".ROBLOSECURITY",
+              "value": cookie,
+              "url": "https://roblox.com",
+              "path": "/",
+              "create_datetime": now.isoformat(),
+              "expiry_datetime": far.isoformat(),
+              "flag": "Secure; HttpOnly",
+          }
+          os.makedirs(os.path.dirname(path), exist_ok=True)
+          with open(path, "wb") as f:
+              binarycookies.dump(entry, f)
+          with open(path, "rb") as f:
+              names = [c.get("name") for c in binarycookies.load(f)]
+          assert ".ROBLOSECURITY" in names, f"round-trip failed: {names}"
+          print("HTTPStorages cookie written and verified")
+          EOF
 
       - name: Log in and launch Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
@@ -448,9 +474,9 @@ jobs:
           # Seed every credential store Studio reads (wincreds primary with
           # the exact target names it uses, registry legacy) so it opens
           # logged in.
-          cmdkey /add:"https://www.roblox.com:RobloxStudioAuthuserid" /user:"$($me.id)" /pass:"$($me.id)"
-          cmdkey /add:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY$($me.id)" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
-          cmdkey /add:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
+          cmdkey /generic:"https://www.roblox.com:RobloxStudioAuthuserid" /user:"$($me.id)" /pass:"$($me.id)"
+          cmdkey /generic:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY$($me.id)" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
+          cmdkey /generic:"https://www.roblox.com:RobloxStudioAuth.ROBLOSECURITY" /user:"$($me.id)" /pass:"$env:ROBLOSECURITY"
           $reg = "HKCU:\Software\Roblox\RobloxStudioBrowser\roblox.com"
           New-Item -Path $reg -Force | Out-Null
           New-ItemProperty -Path $reg -Name ".ROBLOSECURITY" -Value $env:ROBLOSECURITY -PropertyType String -Force | Out-Null
@@ -487,7 +513,7 @@ jobs:
           sleep 30
           pkill -x RobloxStudio || true
 
-      - name: Seed MCP enabled flag (macOS)
+      - name: Seed auth and MCP flag (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
         env:
           ROBLOSECURITY: ${{ secrets.ROBLOSECURITY }}
@@ -501,6 +527,32 @@ jobs:
           dir="$HOME/Library/Roblox/$user_id/InstalledPlugins/0"
           mkdir -p "$dir"
           printf '{ "Assistant-ExternalMCPEnabled":true }' > "$dir/settings.json"
+          # Seed the primary cookie store as well: the plist alone may be
+          # ignored in favor of ~/Library/HTTPStorages/...binarycookies.
+          python -m pip install -q binarycookies
+          python - "$HOME/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies" <<'EOF'
+          import binarycookies, datetime, os, sys
+          path = sys.argv[1]
+          cookie = os.environ["ROBLOSECURITY"]
+          now = datetime.datetime.now(datetime.timezone.utc)
+          far = now + datetime.timedelta(days=3650)
+          entry = {
+              "name": ".ROBLOSECURITY",
+              "value": cookie,
+              "url": "https://roblox.com",
+              "path": "/",
+              "create_datetime": now.isoformat(),
+              "expiry_datetime": far.isoformat(),
+              "flag": "Secure; HttpOnly",
+          }
+          os.makedirs(os.path.dirname(path), exist_ok=True)
+          with open(path, "wb") as f:
+              binarycookies.dump(entry, f)
+          with open(path, "rb") as f:
+              names = [c.get("name") for c in binarycookies.load(f)]
+          assert ".ROBLOSECURITY" in names, f"round-trip failed: {names}"
+          print("HTTPStorages cookie written and verified")
+          EOF
 
       - name: Log in and launch Studio (macOS)
         if: steps.check.outputs.has_secret == 'true' && runner.os == 'macOS'
