@@ -17,8 +17,8 @@ import {
   luaLongBracket,
   pickBracketLevel,
   stripLinePrefixes,
-  writeLikeMultiEdit,
   STRING_PROPERTY_SIZE_LIMIT,
+  writeLikeMultiEdit,
 } from "../src/extended/writer.js";
 import { updateLikeMultiEdit } from "../src/extended/updater.js";
 import * as extMod from "../src/extended/extensions.js";
@@ -222,6 +222,12 @@ describe("writer", () => {
     const status = await writeLikeMultiEdit(studio.asStudio(), "game.S.A", "new");
     expect(status).toBe("wrote");
     expect(studio.calls.some(([c]) => c === "multi_edit")).toBe(true);
+  });
+
+  it("writes control bytes by default", async () => {
+    const studio = new FakeStudio({ "game.S.A": "old" });
+    await writeLikeMultiEdit(studio.asStudio(), "game.S.A", "a\nb");
+    expect(studio.files["game.S.A"]).toBe("a\nb");
   });
 
   it("creates when missing", async () => {

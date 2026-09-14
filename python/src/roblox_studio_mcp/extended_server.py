@@ -286,7 +286,7 @@ async def _call_extended_update(
 
 # --------------------------------------------------------------------------------- #
 # Additional extended tools: search_and_read, insert_asset_from_file, watch_output,
-# create_module_with_deps, run_tests
+# run_tests
 # --------------------------------------------------------------------------------- #
 
 _EXTENDED_TOOLS.extend(
@@ -388,44 +388,6 @@ _EXTENDED_TOOLS.extend(
                         "description": "Optional explicit studio_id to target.",
                     },
                 },
-            },
-        ),
-        Tool(
-            name="extended_create_module_with_deps",
-            description=(
-                "Create a new ModuleScript and optionally add a require() statement "
-                "to a target script.  Returns the write status."
-            ),
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "module_path": {
-                        "type": "string",
-                        "description": "DataModel path for the new module.",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Source code for the module.",
-                    },
-                    "className": {
-                        "type": "string",
-                        "default": "ModuleScript",
-                        "description": "Roblox class (default: ModuleScript).",
-                    },
-                    "require_target_path": {
-                        "type": "string",
-                        "description": "Optional script to inject require() into.",
-                    },
-                    "require_statement": {
-                        "type": "string",
-                        "description": "The require() line to add to the target.",
-                    },
-                    "studio_id": {
-                        "type": "string",
-                        "description": "Optional explicit studio_id to target.",
-                    },
-                },
-                "required": ["module_path", "content"],
             },
         ),
         Tool(
@@ -551,31 +513,6 @@ async def _call_watch_output(
     }
 
 
-async def _call_create_module(
-    client: MCPClient, arguments: Dict[str, Any]
-) -> Dict[str, Any]:
-    from .extended.extensions import create_module_with_deps
-
-    module_path: str = _require_str(arguments, "module_path")
-    content: str = arguments.get("content", "")
-    if not isinstance(content, str):
-        raise ValueError("Missing required string argument: 'content'.")
-    class_name: str = arguments.get("className", "ModuleScript")
-    require_target: Optional[str] = arguments.get("require_target_path")
-    require_stmt: Optional[str] = arguments.get("require_statement")
-    studio_id: Optional[str] = arguments.get("studio_id")
-    studio = _RobloxStudio(client=client, studio_id=studio_id)
-    status = await create_module_with_deps(
-        studio,
-        module_path,
-        content,
-        className=class_name,
-        require_target_path=require_target,
-        require_statement=require_stmt,
-    )
-    return {"content": [{"type": "text", "text": status}], "isError": False, "is_error": False}
-
-
 async def _call_run_tests(
     client: MCPClient, arguments: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -613,7 +550,6 @@ _EXTENDED_HANDLERS = {
     "extended_script_search_and_read": _call_script_search_read,
     "extended_insert_asset_from_file": _call_insert_asset,
     "extended_watch_output": _call_watch_output,
-    "extended_create_module_with_deps": _call_create_module,
     "extended_run_tests": _call_run_tests,
     "extended_execute_luau_from_file": _call_execute_file,
 }

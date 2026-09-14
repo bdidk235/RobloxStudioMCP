@@ -7,8 +7,8 @@
  * - `extended_write_like_multi_edit` — full-body script replacement
  * - `extended_update_like_multi_edit` — batch edits with graceful skipping
  * - `extended_script_search_and_read`, `extended_insert_asset_from_file`,
- *   `extended_watch_output`, `extended_create_module_with_deps`,
- *   `extended_run_tests`, `extended_execute_luau_from_file`
+ *   `extended_watch_output`, `extended_run_tests`,
+ *   `extended_execute_luau_from_file`
  *
  * Run as a stdio server:
  *
@@ -147,22 +147,6 @@ export const EXTENDED_TOOLS: Tool[] = [
       properties: {
         studio_id: { type: "string", description: "Optional explicit studio_id to target." },
       },
-    },
-  ),
-  new Tool(
-    "extended_create_module_with_deps",
-    "Create a new ModuleScript and optionally add a require() statement to a target script. Returns the write status.",
-    {
-      type: "object",
-      properties: {
-        module_path: { type: "string", description: "DataModel path for the new module." },
-        content: { type: "string", description: "Source code for the module." },
-        className: { type: "string", default: "ModuleScript", description: "Roblox class (default: ModuleScript)." },
-        require_target_path: { type: "string", description: "Optional script to inject require() into." },
-        require_statement: { type: "string", description: "The require() line to add to the target." },
-        studio_id: { type: "string", description: "Optional explicit studio_id to target." },
-      },
-      required: ["module_path", "content"],
     },
   ),
   new Tool(
@@ -313,26 +297,6 @@ async function callWatchOutput(client: MCPClient, args: Record<string, unknown>)
   return okText(JSON.stringify(result, null, 2));
 }
 
-async function callCreateModule(client: MCPClient, args: Record<string, unknown>): Promise<ExtendedResult> {
-  const { createModuleWithDeps } = await import("./extended/extensions.js");
-  const modulePath = requireStr(args, "module_path");
-  const content = args["content"];
-  if (typeof content !== "string") {
-    throw new Error("Missing required string argument: 'content'.");
-  }
-  const className = String(args["className"] ?? "ModuleScript");
-  const requireTarget = (args["require_target_path"] as string | undefined) ?? null;
-  const requireStmt = (args["require_statement"] as string | undefined) ?? null;
-  const studioId = (args["studio_id"] as string | undefined) ?? null;
-  const studio = new RobloxStudio(client, studioId);
-  const status = await createModuleWithDeps(studio, modulePath, content, {
-    className,
-    requireTargetPath: requireTarget,
-    requireStatement: requireStmt,
-  });
-  return okText(status);
-}
-
 async function callRunTests(client: MCPClient, args: Record<string, unknown>): Promise<ExtendedResult> {
   const { runTests } = await import("./extended/extensions.js");
   const testPaths = (args["test_paths"] as string[] | undefined) ?? null;
@@ -359,7 +323,6 @@ export const EXTENDED_HANDLERS: Record<string, (client: MCPClient, args: Record<
   extended_script_search_and_read: callScriptSearchRead,
   extended_insert_asset_from_file: callInsertAsset,
   extended_watch_output: callWatchOutput,
-  extended_create_module_with_deps: callCreateModule,
   extended_run_tests: callRunTests,
   extended_execute_luau_from_file: callExecuteFile,
 };

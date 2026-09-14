@@ -249,7 +249,6 @@ export async function writeLikeMultiEdit(
 
   if (returnString) {
     className = "ModuleScript";
-    // Raw long-bracket return — no escapes needed.
     const level = pickBracketLevel(body);
     body = `return ${luaLongBracket(body, level)}`;
   }

@@ -5,7 +5,6 @@ create_module wiring, search_and_read batching, run_tests polling, JSON parsing,
 singleton ownership, and server disabled-tools filtering.
 """
 
-import asyncio
 import json
 import os
 import tempfile
@@ -24,7 +23,6 @@ from roblox_studio_mcp.extended.updater import update_like_multi_edit
 from roblox_studio_mcp.extended import extensions as ext_mod
 from roblox_studio_mcp.extended.extensions import (
     _ConsoleWatch,
-    create_module_with_deps,
     get_watch_state,
     run_tests,
     script_search_and_read,
@@ -350,72 +348,6 @@ class TestConsoleWatch(unittest.IsolatedAsyncioTestCase):
         ext_mod._WATCH_STATES.clear()
         self.assertIs(get_watch_state("s1"), get_watch_state("s1"))
         self.assertIsNot(get_watch_state("s1"), get_watch_state("s2"))
-
-
-class TestCreateModule(unittest.IsolatedAsyncioTestCase):
-    async def test_appends_require_once(self):
-        studio = FakeStudio(
-            files={"game.ReplicatedStorage.Util": "return {}", "game.ServerScriptService.Main": "print(1)\n"}
-        )
-        # Point writer at the fake studio files.
-        orig = writer_mod.write_like_multi_edit
-
-        async def fake_write(st, path, content, **kw):
-            st.files[path] = content
-            return "wrote"
-
-        with mock.patch.object(writer_mod, "write_like_multi_edit", side_effect=fake_write):
-            # create_module imports writer inside the function, so patch the module attr.
-            import roblox_studio_mcp.extended.writer as wmod
-            with mock.patch.object(wmod, "write_like_multi_edit", side_effect=fake_write):
-                # Need the fake studio to serve script_read from files.
-                status = await create_module_with_deps(
-                    studio,
-                    "game.ReplicatedStorage.NewMod",
-                    "return 42",
-                    require_target_path="game.ServerScriptService.Main",
-                    require_statement='require(game.ReplicatedStorage.NewMod)',
-                )
-                self.assertIn(status, ("wrote", "created", "unchanged"))
-
-    async def test_skips_when_require_present(self):
-        req = "require(game.ReplicatedStorage.Util)"
-        studio = FakeStudio(files={"game.S.Main": f"print(1)\n{req}\n"})
-        with mock.patch(
-            "roblox_studio_mcp.extended.writer.write_like_multi_edit",
-            wraps=writer_mod.write_like_multi_edit,
-        ) as spy:
-            # First call creates the module; second (target rewrite) must not happen.
-            studio.files["game.S.Mod"] = "old"
-            await create_module_with_deps(
-                studio,
-                "game.S.Mod",
-                "old",
-                require_target_path="game.S.Main",
-                require_statement=req,
-            )
-            # Only the module write path touched multi_edit/execute; target unchanged.
-            self.assertIn(req, studio.files["game.S.Main"])
-
-    async def test_require_append_is_idempotent(self):
-        studio = FakeStudio(
-            files={
-                "game.ReplicatedStorage.NewMod": "old",
-                "game.ServerScriptService.Main": "print(1)\n",
-            }
-        )
-        req = "require(game.ReplicatedStorage.NewMod)"
-        for _ in range(2):
-            await create_module_with_deps(
-                studio,
-                "game.ReplicatedStorage.NewMod",
-                "return 42",
-                require_target_path="game.ServerScriptService.Main",
-                require_statement=req,
-            )
-        self.assertEqual(
-            studio.files["game.ServerScriptService.Main"].count(req), 1
-        )
 
 
 class TestSearchAndRead(unittest.IsolatedAsyncioTestCase):

@@ -10,7 +10,6 @@ convenience tools on top of the raw Studio MCP tools:
 - `extended_script_search_and_read` — search for scripts + batch-read their source
 - `extended_insert_asset_from_file` — insert local files (images via store_image, scripts via write_like_multi_edit)
 - `extended_watch_output` — live-tail Studio console output (new lines only)
-- `extended_create_module_with_deps` — create ModuleScript + optionally add require() to target
 - `extended_run_tests` — play test + capture console output as test summary
 - `extended_execute_luau_from_file` — execute Luau source read from a local file
 
@@ -34,7 +33,6 @@ convenience tools on top of the raw Studio MCP tools:
 
 ### Extended Conveniences
 - `mcp__Roblox_Studio__extended_watch_output` (live-tail console output)
-- `mcp__Roblox_Studio__extended_create_module_with_deps` (create ModuleScript + require)
 - `mcp__Roblox_Studio__extended_run_tests` (play testing + console summary)
 
 ### Code Execution
@@ -109,8 +107,7 @@ src/roblox_studio_mcp/
 │   ├── writer.py    ← write_like_multi_edit + chunked _chunked_write
 │   ├── updater.py   ← update_like_multi_edit + UpdateResult
 │   └── extensions.py ← script_search_and_read, insert_asset_from_file,
-│                       watch_output, create_module_with_deps, run_tests,
-│                       execute_luau_from_file
+│                       watch_output, run_tests, execute_luau_from_file
 └── ... (types, errors, _version, etc.)
 ```
 

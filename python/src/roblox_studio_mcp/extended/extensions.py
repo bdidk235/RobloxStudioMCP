@@ -306,43 +306,6 @@ async def watch_output(
     return await watch_state.poll(studio)
 
 
-async def create_module_with_deps(
-    studio: RobloxStudio,
-    module_path: str,
-    content: str,
-    className: str = "ModuleScript",
-    require_target_path: Optional[str] = None,
-    require_statement: Optional[str] = None,
-) -> str:
-    """Create a new ModuleScript and optionally wire it into a target script.
-
-    When ``require_target_path`` + ``require_statement`` are given, the
-    statement is appended to the target (once) if not already present.
-
-    Returns status from write_like_multi_edit.
-    """
-    from .writer import write_like_multi_edit, _strip_line_prefixes
-
-    status = await write_like_multi_edit(
-        studio,
-        module_path,
-        content,
-        className=className,
-        create_if_missing=True,
-    )
-    if require_target_path and require_statement:
-        target_result = await studio.script_read(require_target_path)
-        target_source = _strip_line_prefixes(target_result.text())
-        if require_statement not in target_source:
-            new_source = target_source.rstrip("\n") + "\n" + require_statement + "\n"
-            await write_like_multi_edit(
-                studio,
-                require_target_path,
-                new_source,
-            )
-    return status
-
-
 _ERROR_HINTS = ("error", "failed", "stack trace", "exception")
 
 
