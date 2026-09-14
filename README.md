@@ -133,35 +133,18 @@ and measured performance numbers.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs four jobs on Windows and macOS:
+`.github/workflows/ci.yml` runs unit tests per language on Windows and
+macOS — no Studio needed anywhere (fakes throughout):
 
-| Job | What it runs | Needs Studio? |
-| --- | --- | --- |
-| `python-test` | `pytest` in `python/` | No (fakes throughout) |
-| `node-test` | typecheck + vitest + build in `node/` | No (fakes throughout) |
-| `python-studio` | installs Studio, waits for it, then `pytest` with the live integration suite | Yes |
-| `node-studio` | installs Studio, waits for it, then vitest with the live integration suite | Yes |
+| Job | What it runs |
+| --- | --- |
+| `python-test` | `pytest` in `python/` |
+| `node-test` | typecheck + vitest + build in `node/` |
 
-The `*-studio` jobs install Studio (versioned zip + cache on Windows,
-`RobloxStudio.dmg` straight from `setup.rbxcdn.com` on macOS), log in with a `ROBLOSECURITY`
-secret (a burner account is recommended) stored as a Repository secret,
-a first-run initializes Studio's profile (killed after 30 s), the MCP flag
-is seeded from the cookie, then Studio launches and `examples/wait_for_studio`
-polls before running the suites. Without the secret the
-studio jobs skip gracefully. They need three things
-from that account:
-
-- It must be able to log in (the `ROBLOSECURITY` cookie).
-- It must have *Enable Studio as MCP server* turned on at least once
-  (Assistant → Manage MCP Servers) — the setting roams with the account,
-  and the jobs additionally pre-seed it from the cookie.
-- It opens place `95206881` in edit mode, so the account needs
-  edit access to it (or swap in your own `placeId`/`universeId` in
-  `.github/workflows/ci.yml`).
-
-Without the secret the studio jobs skip instead of failing. Locally, the
-same integration suites run with `ROBLOX_STUDIO_MCP_INTEGRATION=1` once
-Studio is open with a place loaded:
+The live-Studio integration suites (`test_integration_studio`,
+`integration.test.ts`) run locally with `ROBLOX_STUDIO_MCP_INTEGRATION=1`
+once Studio is open with a place loaded and the MCP server enabled
+(Assistant → Manage MCP Servers):
 
 ```powershell
 # Python (run from python/)
