@@ -7,14 +7,34 @@
 # zip satisfies both, and the diagnose step then found no process, no profile and
 # no logs. File existence was reported as a successful install.
 #
-# So this asks exactly one question, with no authentication and no MCP, so that a
-# failure is unambiguous:
+# So this asks exactly one question, with no MCP, so that a failure is
+# unambiguous:
 #
 #     does a Studio process actually come up on this runner?
 #
-# Asserted on a RUNNING PROCESS, never on a file. The bootstrapper route is used
-# rather than the zip, because the zip is what skipped the install state last
-# time.
+# Asserted on a RUNNING PROCESS, never on a file.
+#
+# MEASURED, in order, 2026-10-01:
+#
+#   attempt 1  macOS  OK   alive=1, outcome=running
+#             win    FAIL  "No such host is known" from Invoke-WebRequest
+#
+#   attempt 2  macOS  OK   alive=1, outcome=running
+#             win    FAIL  bootstrapper downloads 200 / 7.6 MB, then does nothing:
+#                           after a full 120s poll alive=0, versions_dir_exists
+#                           False, versions_entries 0, log_files 0. Not one byte
+#                           written under %LOCALAPPDATA%\Roblox.
+#                           => the bootstrapper is a GUI installer and will not
+#                              run headless.
+#
+#   attempt 3  win    the community installer, which drives the same download
+#                   headlessly and seeds the credential stores. Its repository
+#                   runs a workflow every 12 hours to check it still works
+#                   against the current installer, which is the property that
+#                   matters. This is the route commit 0f87c48 chose on
+#                   2026-09-14; that run was CANCELLED, so it never got a
+#                   verdict and the escalation moved on to a route that could
+#                   not work. First actual evaluation, 2026-10-01.
 #
 # Fold the working version into ci.yml once both platforms are green here.
 
@@ -30,6 +50,8 @@ jobs:
   smoke:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # Required for the environment secret the Windows installer authenticates with.
+    environment: ROBLOSECURITY
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -88,8 +110,8 @@ jobs:
 
           report alive "$alive"
           report process_count "$(pgrep -x RobloxStudio | wc -l | tr -d ' ')"
-          # Did it get far enough to write a profile and a log? A process can be
-          # alive and still useless, and these two distinguish the cases.
+          # A process can be alive and still useless, and these distinguish that
+          # from a Studio that is genuinely up.
           report profile_dirs "$(find "$HOME/Library/Roblox" -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
           report log_files "$(ls -1 "$HOME/Library/Logs/Roblox" 2>/dev/null | wc -l | tr -d ' ')"
           report log_dir_exists "$([ -d "$HOME/Library/Logs/Roblox" ] && echo yes || echo no)"
@@ -101,14 +123,19 @@ jobs:
 
           if [ "$alive" != "1" ]; then
             report outcome "process-never-started"
-            # Startup is the usual culprit and it is invisible without this.
-            report console_log "$(tail -c 400 /Users/runner/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -c 300)"
             exit 1
           fi
           report outcome "running"
 
       # -------------------------------------------------------------- Windows
-      - name: Install and launch Studio (Windows)
+      - name: Install Studio via the community installer (Windows)
+        if: runner.os == 'Windows'
+        uses: OrbitalOwen/roblox-win-installer-action@1.1
+        with:
+          cookie: ${{ secrets.ROBLOSECURITY }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify a Studio process is actually running (Windows)
         if: runner.os == 'Windows'
         id: win
         shell: pwsh
@@ -119,73 +146,27 @@ jobs:
             Write-Host "$k : $v"
           }
 
-          # Resolver preflight, before anything else. Attempt 1 failed with "No
-          # such host is known" from Invoke-WebRequest, while the same URL
-          # returned 200 from a workstation - a runner DNS blip, not a bad URL.
-          # Those two are indistinguishable from the step's exit code, so they
-          # are separated here rather than guessed at on the next attempt.
-          foreach ($h in @('setup.rbxcdn.com', 'setup.roblox.com', 'clientsettingscdn.roblox.com')) {
-            $key = "dns_$($h -replace '[.]', '_')"
-            try {
-              $null = [System.Net.Dns]::GetHostAddresses($h)
-              Report $key 'ok'
-            } catch {
-              Report $key "FAIL: $($_.Exception.Message)"
-            }
-          }
-
-          # The bootstrapper, not the zip. The zip lays down the two binaries
-          # without the install state, which is what made the previous attempt
-          # report a successful install and then find nothing running.
-          $bootstrapper = Join-Path $env:RUNNER_TEMP 'RobloxStudioLauncherBeta.exe'
-          $urls = @(
-            'https://setup.rbxcdn.com/RobloxStudioLauncherBeta.exe',
-            'https://setup.roblox.com/RobloxStudioLauncherBeta.exe'
-          )
-          $fetched = $false
-          foreach ($u in $urls) {
-            # curl.exe rather than Invoke-WebRequest: it *reports* the status code
-            # instead of throwing, and it retries, so a blip is not a verdict.
-            $code = & curl.exe -sS -L --retry 3 --retry-delay 2 --max-time 180 -o $bootstrapper -w '%{http_code}' $u 2>&1
-            Report "http_$(($u -split '/')[2] -replace '[.]', '_')" "$code"
-            if ("$code" -eq '200' -and (Test-Path $bootstrapper)) {
-              $len = (Get-Item $bootstrapper).Length
-              # A 200 that is not an installer is still a failure, and an HTML
-              # error page is the usual way that happens.
-              if ($len -gt 100000) {
-                Report bootstrapper_url $u
-                Report bootstrapper_mb ([math]::Round($len / 1MB, 1))
-                $fetched = $true
-                break
-              }
-              Report size_rejected $len
-            }
-          }
-          if (-not $fetched) {
-            Report outcome 'download-failed'
-            exit 1
-          }
-
-          Start-Process -FilePath $bootstrapper | Out-Null
-
-          # Poll for a RUNNING Studio, which is the only assertion that means
-          # anything. Installing writes files; running is the question.
           $exe = $null
-          for ($i = 0; $i -lt 60; $i++) {
+          for ($i = 0; $i -lt 30; $i++) {
             $p = Get-Process RobloxStudioBeta -ErrorAction SilentlyContinue |
                  Select-Object -First 1
             if ($p) { $exe = $p; break }
             Start-Sleep -Seconds 2
           }
 
+          # What the installer left, reported either way. A failure that says
+          # what exists is worth ten that say only "it failed".
+          Report versions_dir_exists (Test-Path "$env:LOCALAPPDATA\Roblox\Versions")
+          Report versions_entries (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue).Count)
+          Report log_files (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue).Count)
+          Report mcp_proxy_exists (Test-Path "$env:LOCALAPPDATA\Roblox\mcp.bat")
+          $proxy = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue |
+                   ForEach-Object { Join-Path $_.FullName 'StudioMCP.exe' } |
+                   Where-Object { Test-Path $_ } | Select-Object -First 1
+          Report studiomcp_exe ([bool]$proxy)
+
           if (-not $exe) {
             Report alive 0
-            Report versions_dir_exists (Test-Path "$env:LOCALAPPDATA\Roblox\Versions")
-            Report versions_entries (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue).Count)
-            Report log_files (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue).Count)
-            Report mcp_proxy_exists (Test-Path "$env:LOCALAPPDATA\Roblox\mcp.bat")
-            # Whatever the installer did leave behind, so the next attempt reads
-            # evidence instead of guessing.
             Report roblox_dir ((@(Get-ChildItem "$env:LOCALAPPDATA\Roblox" -ErrorAction SilentlyContinue |
                                  Select-Object -ExpandProperty Name) -join ','))
             Report outcome 'process-never-started'
@@ -194,41 +175,30 @@ jobs:
 
           Report alive 1
           Report exe_path $exe.Path
-          Report versions_entries (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue).Count)
-          Report log_files (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue).Count)
-
-          # Does the MCP proxy exist now that the bootstrapper has run? The zip
-          # route had to fabricate mcp.bat by hand; if this is present natively
-          # that workaround is unnecessary.
-          Report mcp_proxy_exists (Test-Path "$env:LOCALAPPDATA\Roblox\mcp.bat")
-          $proxy = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue |
-                   ForEach-Object { Join-Path $_.FullName 'StudioMCP.exe' } |
-                   Where-Object { Test-Path $_ } | Select-Object -First 1
-          Report studiomcp_exe ([bool]$proxy)
-
-          # Names only. A Studio log runs to megabytes.
           $log = Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue |
                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if ($log) { Report newest_log $log.Name }
-
           Report outcome 'running'
 
       - name: Verdict
         if: always()
         shell: bash
         run: |
+          outcome="${{ steps.mac.outputs.outcome || steps.win.outputs.outcome }}"
           {
             echo "### Studio install smoke - ${{ matrix.os }}"
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| outcome | \`${{ steps.mac.outputs.outcome || steps.win.outputs.outcome }}\` |"
+            echo "| outcome | \`$outcome\` |"
             echo "| alive | \`${{ steps.mac.outputs.alive || steps.win.outputs.alive }}\` |"
-            echo "| log files | \`${{ steps.win.outputs.log_files }}\` |"
+            echo "| log files | \`${{ steps.mac.outputs.log_files || steps.win.outputs.log_files }}\` |"
             echo "| newest log | \`${{ steps.mac.outputs.newest_log || steps.win.outputs.newest_log }}\` |"
+            echo "| mcp proxy | \`${{ steps.win.outputs.mcp_proxy_exists }}\` |"
+            echo "| StudioMCP.exe | \`${{ steps.win.outputs.studiomcp_exe }}\` |"
             echo ""
-            if [ "${{ steps.mac.outputs.outcome || steps.win.outputs.outcome }}" = "running" ]; then
-              echo "A Studio process came up. Install is viable on this runner;"
-              echo "the next question is authentication, not installation."
+            if [ "$outcome" = "running" ]; then
+              echo "A Studio process came up. Install is viable on this runner, so the"
+              echo "next question is authentication and MCP attach, not installation."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
