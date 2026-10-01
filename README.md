@@ -11,8 +11,16 @@ built-in convenience for the **Roblox Studio MCP**:
 
 Both speak the same protocol to the same Studio MCP proxy, expose the same
 tool catalog, and ship the same extended helpers. Pick whichever language fits
-your tooling — behavior is kept in parity, and each side's test suite
-(`python/tests`, `node/tests`) covers the same ground without needing Studio.
+your tooling.
+
+Parity is enforced for the **tool surface** and is best-effort underneath. A
+generated contract (`parity/tools.json`, asserted by both test suites) fails
+either side if a tool, parameter, or required argument drifts, so neither can
+change its surface unnoticed. Behaviour is not provably equal: Python resolves
+`studio_id → PID` by parsing the Studio's own log and Node does not, so Node's
+instance-stop **refuses** rather than guessing — see
+`node/src/extended/IDENTITY.md`. Both suites cover the same ground without
+needing Studio.
 
 ## How both work
 
@@ -28,9 +36,12 @@ Both clients follow the same shape around that protocol:
 
 - `MCPClient` — a generic stdio MCP client (works with any MCP server):
   connect + handshake, list tools, call tools.
-- `RobloxStudio` — a convenience wrapper that resolves `studio_id` once
-  (via `list_roblox_studios`, first instance wins) and injects it into every
-  tool call whose schema declares it.
+- `RobloxStudio` — a convenience wrapper that resolves `studio_id` via
+  `list_roblox_studios` and injects it into every tool call whose schema
+  declares it. An implicit id is accepted **only when exactly one Studio is
+  connected**; with more than one, the call raises and names the candidates
+  rather than guessing, because list order is the proxy mesh's and carries no
+  intent. Pass `studio_id=` to pin one.
 - Singleton connection — `connect()` returns a process-wide shared
   connection by default; close it explicitly (`close_singleton()` /
   `closeSingleton()`).
@@ -38,12 +49,21 @@ Both clients follow the same shape around that protocol:
   "Unable to reach Roblox Studio" for a beat after its handshake; both
   clients ride through exactly that transient symptom (up to ~10 s) and let
   every other error throw immediately.
-- Extended helpers — full-file writes (`write_like_multi_edit` /
-  `writeLikeMultiEdit`), batch edits with graceful skipping
-  (`update_like_multi_edit` / `updateLikeMultiEdit`), script search-and-read,
-  insert-from-file, console watch, module scaffolding, play-test summaries,
-  and execute-from-file. Also served as `extended_*` tools by the extended
-  stdio proxy.
+- Extended helpers — full-file writes (`write_script` / `writeScript`), batch
+  edits with graceful skipping (`update_script` / `updateScript`), script
+  search, search-and-read, insert-from-file, lossless viewport capture,
+  non-halting breakpoints, console watch, host-side waiting, play-test
+  summaries, execute-from-file, Studio identity, and instance control. Also
+  served as `extended_*` tools by the extended stdio proxy. See
+  [The extended tools](#the-extended-tools) below.
+- Stable Studio identity — `studio_id` is minted by the proxy and changes on
+  every Studio restart, so it is a transport token rather than an identity.
+  `game.UniqueId` is unreadable from this context (it needs the `RobloxScript`
+  capability), but `game:GetDebugId()` is not, so instances are paired with
+  that and kept in a registry in this machine's state directory — host-side
+  only, never written into the DataModel, so it cannot reach the place file, a
+  published place, or a team create. Read in Edit mode: a play session reports a
+  different value for the same Studio.
 - Wire format is identical on both sides (`studio_id`, `datamodel_type`,
   `target_path`, …); only the local naming differs (Python `snake_case`,
   TypeScript `camelCase`).
@@ -60,6 +80,10 @@ python/                 Python client (original)
   tests/                  unittest suites (no Studio needed)
   examples/               runnable Python examples (python -m examples.<name>)
 docs/                   docs site, opens from disk (docs/index.html)
+parity/                 generated tool contract (tools.json) both suites assert
+skills/                 rsx-* transport skills, served by extended_skill
+AGENTS.md               standing rules, gates, and where the two sides differ
+TODO.md                 measured-vs-inferred evidence log, with provenance
 README.md               this overview
 ```
 
@@ -67,6 +91,96 @@ README.md               this overview
 
 Roblox Studio open with a place loaded, and its MCP server enabled
 (Assistant → Manage MCP Servers → *Enable Studio as MCP server*).
+
+Windows and macOS are both supported. The macOS paths, process enumeration and
+log discovery are written from Roblox's own documentation and exercised against
+macOS-shaped fixtures, but the macOS branch has **never been run against a real
+macOS Studio** — see `TODO.md` for which parts are measured and which are
+inferred.
+
+## The extended tools (for agents)
+
+This section and the traps below are for driving the tools; everything above is
+for deciding which client to install. If you are an agent, start at
+`extended_skill` rather than here.
+
+There is no tool count quoted in this file — it is a generated contract, and a
+number in prose drifts. The live list is whatever `tools/list` returns; the
+enforced copy is `parity/tools.json`. Grouped by what you are trying to do,
+with the one to reach for first.
+
+### Find things
+
+| Tool | Use it for |
+| --- | --- |
+| `extended_skill` | **Start here.** Fetches a transport skill (`rsx-*`), or lists them. |
+| `extended_script_grep` | Search script *contents* with surrounding context, in file order. Substring by default, regex with `regex:true`. |
+| `extended_script_search_and_read` | Find scripts by name under a path and batch-read their sources. |
+
+### Change things
+
+| Tool | Use it for |
+| --- | --- |
+| `extended_write_script` | Replace a whole script body. Atomic; reports `wrote` / `unchanged` / `created`. |
+| `extended_update_script` | Batch exact replacements. One bad edit skips with a warning instead of sinking the rest. |
+| `extended_insert_asset_from_file` | Put a local script, model, or image into the game tree. |
+
+### Look at it
+
+| Tool | Use it for |
+| --- | --- |
+| `extended_capture` | Lossless PNG of the viewport. Use when the pixels *are* the measurement. |
+| `extended_watch_output` | Console lines since your last poll, filtered and capped. Use instead of `get_console_output` in a loop. |
+| `extended_studio_identity` | This Studio's `game:GetDebugId()`. Session-scoped — see the traps below. |
+| `extended_list_studios` | Every attached Studio with its id and debug id paired. |
+
+### Run and wait
+
+| Tool | Use it for |
+| --- | --- |
+| `extended_execute_luau_from_file` | Run Luau read from a `.luau` file on disk, for anything too long to inline. |
+| `extended_wait_for` | Poll a condition host-side until true. The only way to wait — you cannot sleep between calls. |
+| `extended_run_tests` | Play test, then a `{passed, console_lines, errors}` summary. Green-check only. |
+| `extended_breakpoints` | Non-halting logpoint on a running server script; each hit prints one console line. |
+| `extended_clear_breakpoints` | Remove every breakpoint. Needs a play session. |
+
+### Control Studios
+
+| Tool | Use it for |
+| --- | --- |
+| `extended_manage_instance` | `list`, `places`, `make_place`, `launch`, `stop`. `stop` terminates a process and is irreversible. |
+
+**Full detail for every tool** — inputs, outputs, and exact failure modes:
+`docs/index.html` has a catalog, `parity/tools.json` is the generated contract,
+and `extended_skill` serves the seven `rsx-*` skills covering this transport's
+traps. Roblox ships its own `rbx-*` skills through the relayed `skill` tool for
+**engine** questions; `skills/README.md` has the routing table for which wire a
+question is actually on.
+
+## Traps
+
+These produce plausible wrong answers rather than errors, which is the failure
+mode this project exists to prevent. The rest live in the `rsx-*` skills.
+
+- **Never print bulk data.** A multi-megabyte `print` permanently wedges that
+  Studio's console output until it is restarted. Report measurements through
+  instance attributes instead.
+- **`screen_capture` requires a `studio_id`** — the schema refuses the call
+  without one. It is JPEG, so it smears 1px edges; `extended_capture` is
+  lossless PNG, names the `studio_id` it captured, and can save to a file
+  instead of returning megabytes.
+  entirely — a correctly sized, correctly formatted image of the wrong Studio.
+- **`return` loses array-ness.** A Luau array comes back as an object with
+  `"1"`, `"2"` keys, and `Vector2` as the single string `"3, 4"`. To return
+  data, serialise at the source (`HttpService:JSONEncode`) — that survives
+  intact. See `rsx-transport`.
+- **`studio_id` is not an identity.** The proxy mints it and it changes on every
+  restart; `GetDebugId` also changes on restart. Re-resolve each session, never
+  write one into a file, and pass it explicitly whenever more than one Studio is
+  attached.
+- **Editing a `.py` file needs an MCP server restart.** A config change
+  restarts the process; a code fix does not, so without a restart you are
+  measuring the old code.
 
 ## Examples
 
@@ -78,7 +192,7 @@ Each example exists on both sides with the same behavior:
 | Run Luau, print result | `python -m examples.run_luau` | `npx tsx examples/run_luau.ts` |
 | Shared connection + disabled tools | `python -m examples.singleton_usage` | `npx tsx examples/singleton_usage.ts` |
 | Play, walk, jump, leave | `python -m examples.walk_jump` | `npx tsx examples/walk_jump.ts` |
-| Full-file write helper | `python -m examples.write_like_multi_edit <target> [--create]` | `npx tsx examples/write_like_multi_edit.ts <target> [--create]` |
+| Full-file write helper | `python -m examples.write_script <target> [--create]` | `npx tsx examples/write_script.ts <target> [--create]` |
 | Wait for Studio over MCP | `python -m examples.wait_for_studio [timeout_seconds]` | `npx tsx examples/wait_for_studio.ts [timeoutSeconds]` |
 
 (Python commands run from `python/`; TypeScript commands run from `node/`.)
@@ -92,8 +206,8 @@ Each example exists on both sides with the same behavior:
 | Call a tool | `studio.call(name, args)` | `studio.call(name, args)` |
 | Run Luau | `studio.execute_luau(code)` | `studio.executeLuau(code)` |
 | Shared connection | `get_singleton()` / `close_singleton()` | `getSingleton()` / `closeSingleton()` |
-| Full-file write | `write_like_multi_edit(…, create_if_missing=…)` | `writeLikeMultiEdit(…, { createIfMissing: … })` |
-| Batch edits | `update_like_multi_edit(…, skip_missing=…)` | `updateLikeMultiEdit(…, { skipMissing: … })` |
+| Full-file write | `write_script(…, create_if_missing=…)` | `writeScript(…, { createIfMissing: … })` |
+| Batch edits | `update_script(…, skip_missing=…)` | `updateScript(…, { skipMissing: … })` |
 
 ## Stdio servers
 

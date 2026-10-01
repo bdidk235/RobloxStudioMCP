@@ -9,6 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { promises as fs } from "node:fs";
+import { readFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { CallToolResult, Tool } from "../src/index.js";
@@ -18,9 +19,10 @@ import {
   pickBracketLevel,
   stripLinePrefixes,
   STRING_PROPERTY_SIZE_LIMIT,
-  writeLikeMultiEdit,
+  writeScript,
 } from "../src/extended/writer.js";
-import { updateLikeMultiEdit } from "../src/extended/updater.js";
+import { updateScript } from "../src/extended/updater.js";
+import { INVALID_ARGUMENT, ToolError } from "../src/extended/errors.js";
 import * as extMod from "../src/extended/extensions.js";
 import {
   ConsoleWatch,
@@ -202,37 +204,37 @@ describe("long brackets", () => {
 describe("writer", () => {
   it("rejects non-game paths", async () => {
     const studio = new FakeStudio();
-    await expect(writeLikeMultiEdit(studio.asStudio(), "/tmp/x.lua", "hi")).rejects.toThrow();
+    await expect(writeScript(studio.asStudio(), "/tmp/x.lua", "hi")).rejects.toThrow();
   });
 
   it("rejects bad class", async () => {
     const studio = new FakeStudio({ "game.S.A": "hi" });
-    await expect(writeLikeMultiEdit(studio.asStudio(), "game.S.A", "hi2", { className: "Part" })).rejects.toThrow();
+    await expect(writeScript(studio.asStudio(), "game.S.A", "hi2", { className: "Part" })).rejects.toThrow();
   });
 
   it("unchanged performs no write", async () => {
     const studio = new FakeStudio({ "game.S.A": "print(1)" });
-    const status = await writeLikeMultiEdit(studio.asStudio(), "game.S.A", "print(1)");
+    const status = await writeScript(studio.asStudio(), "game.S.A", "print(1)");
     expect(status).toBe("unchanged");
     expect(studio.calls.some(([c]) => c === "multi_edit")).toBe(false);
   });
 
   it("writes via multi_edit", async () => {
     const studio = new FakeStudio({ "game.S.A": "old" });
-    const status = await writeLikeMultiEdit(studio.asStudio(), "game.S.A", "new");
+    const status = await writeScript(studio.asStudio(), "game.S.A", "new");
     expect(status).toBe("wrote");
     expect(studio.calls.some(([c]) => c === "multi_edit")).toBe(true);
   });
 
   it("writes control bytes by default", async () => {
     const studio = new FakeStudio({ "game.S.A": "old" });
-    await writeLikeMultiEdit(studio.asStudio(), "game.S.A", "a\nb");
+    await writeScript(studio.asStudio(), "game.S.A", "a\nb");
     expect(studio.files["game.S.A"]).toBe("a\nb");
   });
 
   it("creates when missing", async () => {
     const studio = new FakeStudio({});
-    const status = await writeLikeMultiEdit(studio.asStudio(), "game.S.New", "print('hi')", {
+    const status = await writeScript(studio.asStudio(), "game.S.New", "print('hi')", {
       createIfMissing: true,
     });
     expect(status).toBe("created");
@@ -243,7 +245,7 @@ describe("writer", () => {
 
   it("missing requires flag", async () => {
     const studio = new FakeStudio({});
-    await expect(writeLikeMultiEdit(studio.asStudio(), "game.S.New", "x")).rejects.toThrow();
+    await expect(writeScript(studio.asStudio(), "game.S.New", "x")).rejects.toThrow();
   });
 
   it("does not mask connection errors", async () => {
@@ -252,14 +254,14 @@ describe("writer", () => {
       throw new Error("connection reset by peer");
     };
     await expect(
-      writeLikeMultiEdit(studio.asStudio(), "game.S.New", "x", { createIfMissing: true }),
+      writeScript(studio.asStudio(), "game.S.New", "x", { createIfMissing: true }),
     ).rejects.toThrow();
     expect(studio.executed).toEqual([]);
   });
 
   it("returnString uses long brackets", async () => {
     const studio2 = new FakeStudio({});
-    const status = await writeLikeMultiEdit(studio2.asStudio(), "game.S.M", 'a"b\nc', {
+    const status = await writeScript(studio2.asStudio(), "game.S.M", 'a"b\nc', {
       createIfMissing: true,
       returnString: true,
     });
@@ -283,7 +285,7 @@ describe("writer", () => {
 describe("updater", () => {
   it("skips no-op and missing edits", async () => {
     const studio = new FakeStudio({ "game.S.A": "hello world" });
-    const result = await updateLikeMultiEdit(studio.asStudio(), "game.S.A", [
+    const result = await updateScript(studio.asStudio(), "game.S.A", [
       ["hello", "hi"],
       ["same", "same"],
       ["nope", "x"],
@@ -296,7 +298,7 @@ describe("updater", () => {
 
   it("skips ambiguous duplicates", async () => {
     const studio = new FakeStudio({ "game.S.A": "foo foo foo" });
-    const result = await updateLikeMultiEdit(studio.asStudio(), "game.S.A", [["foo", "bar"]]);
+    const result = await updateScript(studio.asStudio(), "game.S.A", [["foo", "bar"]]);
     expect(result.skippedAmbiguous).toEqual([0]);
     expect(result.updated).toEqual([]);
     // Nothing sent downstream when all edits skipped.
@@ -306,20 +308,20 @@ describe("updater", () => {
   it("strict mode raises on ambiguous", async () => {
     const studio = new FakeStudio({ "game.S.A": "foo foo" });
     await expect(
-      updateLikeMultiEdit(studio.asStudio(), "game.S.A", [["foo", "bar"]], { skipMissing: false }),
+      updateScript(studio.asStudio(), "game.S.A", [["foo", "bar"]], { skipMissing: false }),
     ).rejects.toThrow();
   });
 
   it("strict mode raises on no-op", async () => {
     const studio = new FakeStudio({ "game.S.A": "hi" });
     await expect(
-      updateLikeMultiEdit(studio.asStudio(), "game.S.A", [["hi", "hi"]], { skipNoOps: false }),
+      updateScript(studio.asStudio(), "game.S.A", [["hi", "hi"]], { skipNoOps: false }),
     ).rejects.toThrow();
   });
 
   it("replace_all replaces every occurrence like Edit replaceAll", async () => {
     const studio = new FakeStudio({ "game.S.A": "foo foo foo" });
-    const result = await updateLikeMultiEdit(studio.asStudio(), "game.S.A", [
+    const result = await updateScript(studio.asStudio(), "game.S.A", [
       { old_string: "foo", new_string: "bar", replace_all: true },
     ]);
     expect(result.updated).toEqual([0]);
@@ -329,7 +331,7 @@ describe("updater", () => {
 
   it("replaceAll camelCase alias works", async () => {
     const studio = new FakeStudio({ "game.S.A": "a,a,a" });
-    const result = await updateLikeMultiEdit(studio.asStudio(), "game.S.A", [
+    const result = await updateScript(studio.asStudio(), "game.S.A", [
       { oldString: "a", newString: "b", replaceAll: true },
     ]);
     expect(result.updated).toEqual([0]);
@@ -338,7 +340,7 @@ describe("updater", () => {
 
   it("sequential edits operate on previous results", async () => {
     const studio = new FakeStudio({ "game.S.A": "hello world" });
-    const result = await updateLikeMultiEdit(studio.asStudio(), "game.S.A", [
+    const result = await updateScript(studio.asStudio(), "game.S.A", [
       { old_string: "hello", new_string: "hi", replace_all: true },
       { old_string: "hi world", new_string: "hi there" },
     ]);
@@ -349,23 +351,78 @@ describe("updater", () => {
   it("strict errors read like Claude Code Edit errors", async () => {
     const missing = new FakeStudio({ "game.S.A": "hello" });
     await expect(
-      updateLikeMultiEdit(missing.asStudio(), "game.S.A", [["nope", "x"]], { skipMissing: false }),
+      updateScript(missing.asStudio(), "game.S.A", [["nope", "x"]], { skipMissing: false }),
     ).rejects.toThrow("not found in content");
     const ambiguous = new FakeStudio({ "game.S.A": "foo foo" });
     await expect(
-      updateLikeMultiEdit(ambiguous.asStudio(), "game.S.A", [["foo", "bar"]], { skipMissing: false }),
-    ).rejects.toThrow("multiple matches");
+      updateScript(ambiguous.asStudio(), "game.S.A", [["foo", "bar"]], { skipMissing: false }),
+    ).rejects.toThrow("exactly 1 is required");
+  });
+
+  it("a strict edit fault is INVALID_ARGUMENT and names the element", async () => {
+    // NOT_FOUND would tell the caller to re-list the DataModel for a script it
+    // had just read successfully. The fault is in the text it sent, not in the
+    // DataModel. See `editFault` in src/extended/updater.ts.
+    // "hello ab" so edits 0 and 1 match and only edit 2 misses. Otherwise the
+    // first fault is reported, which is correct but is not what this asserts.
+    const studio = new FakeStudio({ "game.S.A": "hello ab" });
+    try {
+      await updateScript(
+        studio.asStudio(),
+        "game.S.A",
+        [
+          ["hello", "HELLO"],
+          ["a", "b"],
+          ["nope", "x"],
+        ],
+        { skipMissing: false },
+      );
+      expect.unreachable("should have thrown");
+    } catch (exc) {
+      expect(exc).toBeInstanceOf(ToolError);
+      const err = exc as ToolError;
+      expect(err.code).toBe(INVALID_ARGUMENT);
+      expect(err.message).toContain("edits[2].old_string");
+    }
+  });
+
+  it("reports the first bad edit, so a re-send costs one turn, not two", async () => {
+    const studio = new FakeStudio({ "game.S.A": "hello" });
+    try {
+      await updateScript(
+        studio.asStudio(),
+        "game.S.A",
+        [["nope", "x"], ["also-nope", "y"]],
+        { skipMissing: false },
+      );
+      expect.unreachable("should have thrown");
+    } catch (exc) {
+      expect((exc as ToolError).message).toContain("edits[0].old_string");
+    }
+  });
+
+  it("a non-game-tree target is INVALID_ARGUMENT", async () => {
+    const studio = new FakeStudio({});
+    try {
+      await updateScript(studio.asStudio(), "/tmp/x.lua", [["a", "b"]]);
+      expect.unreachable("should have thrown");
+    } catch (exc) {
+      expect((exc as ToolError).code).toBe(INVALID_ARGUMENT);
+      expect((exc as ToolError).message).toContain("game.");
+    }
   });
 });
 
 describe("extended tool descriptions", () => {
-  it("recommend extended tools over raw multi_edit", async () => {
+  it("point at the raw multi_edit alternative and keep details in the schema", async () => {
     const { EXTENDED_TOOLS } = await import("../src/extendedServer.js");
     const byName = new Map(EXTENDED_TOOLS.map((t) => [t.name, t.description]));
-    expect(byName.get("extended_write_like_multi_edit")).toMatch(/^RECOMMENDED over raw multi_edit/);
-    expect(byName.get("extended_update_like_multi_edit")).toMatch(/^RECOMMENDED over raw multi_edit/);
-    expect(byName.get("extended_update_like_multi_edit")).toContain("replace_all");
-    const schema = EXTENDED_TOOLS.find((t) => t.name === "extended_update_like_multi_edit")?.inputSchema as Record<
+    // The choice between two tools has to be stated in the description, because
+    // that is the only place an agent is guaranteed to read before calling.
+    expect(byName.get("extended_write_script")).toMatch(/multi_edit/);
+    expect(byName.get("extended_update_script")).toMatch(/multi_edit/);
+    // replace_all belongs to the schema, not the prose, so it is described once.
+    const schema = EXTENDED_TOOLS.find((t) => t.name === "extended_update_script")?.inputSchema as Record<
       string,
       Record<string, Record<string, unknown>>
     >;
@@ -373,6 +430,207 @@ describe("extended tool descriptions", () => {
       (schema["properties"]?.["edits"] as Record<string, unknown>)?.["items"] as Record<string, unknown>
     )?.["properties"] as Record<string, unknown>;
     expect(itemProps).toHaveProperty("replace_all");
+  });
+
+  it("state the trap that would otherwise fail silently", async () => {
+    const { EXTENDED_TOOLS } = await import("../src/extendedServer.js");
+    const byName = new Map(EXTENDED_TOOLS.map((t) => [t.name, t.description]));
+    // A passing log_expression reports nothing at all, so this has to survive
+    // any shortening pass.
+    expect(byName.get("extended_breakpoints")).toMatch(/MUST fail/);
+    // Edit mode only, or the id returned is plausible and wrong.
+    expect(byName.get("extended_studio_identity")).toMatch(/Edit mode only/);
+    // Polling the wrong tool re-sends the whole buffer every iteration.
+    expect(byName.get("extended_watch_output")).toMatch(/get_console_output/);
+  });
+
+  it("document debug_id as not restart-durable", async () => {
+    const { EXTENDED_TOOLS } = await import("../src/extendedServer.js");
+    const byName = new Map(EXTENDED_TOOLS.map((t) => [t.name, t.description]));
+    // Measured, same place file: 0_186696 before a restart, 0_186502 after.
+    // Pinned so the correction is not quietly reverted.
+    expect(byName.get("extended_studio_identity")).toMatch(/NOT survive/);
+    expect(byName.get("extended_list_studios")).toMatch(/change on restart/);
+  });
+
+  it("stay inside the context budget", async () => {
+    const { EXTENDED_TOOLS } = await import("../src/extendedServer.js");
+    // The tool list is paid on every call, every session, so cap it. The caps
+    // are read from the GENERATED contract rather than written out here,
+    // because a second copy of the number is a second number to drift - which
+    // is exactly what the old hardcoded 2700 was. An earlier attempt imported
+    // parity/build_contract.js instead, which does not resolve from node/ and
+    // failed the typecheck; reading the JSON needs no module boundary at all.
+    const contract = JSON.parse(
+      readFileSync(new URL("../../parity/tools.json", import.meta.url), "utf8"),
+    ) as { per_tool_description_cap: number; total_description_cap: number };
+    for (const tool of EXTENDED_TOOLS) {
+      expect(
+        tool.description.length,
+        `${tool.name} description`,
+      ).toBeLessThanOrEqual(contract.per_tool_description_cap);
+    }
+    const total = EXTENDED_TOOLS.reduce((n, t) => n + t.description.length, 0);
+    expect(total).toBeLessThanOrEqual(contract.total_description_cap);
+  });
+
+  it("refuses screen_capture when the target is ambiguous (P0.1)", async () => {
+    // The guard is the point. Measured 2026-10-01: the schema REQUIRES
+    // studio_id, so over MCP an omitted id is refused before dispatch and the
+    // guard is defence-in-depth rather than the primary defence. It still earns
+    // its place on the paths that validate nothing - including this repo's own
+    // client.ts. Forwarding is the one option that cannot be defended. Mirrors
+    // `python/tests/test_relay_guards.py`.
+    const { handleExtendedMessage, RELAY_GUARDS } = await import(
+      "../src/extendedServer.js"
+    );
+    expect(Object.keys(RELAY_GUARDS)).toContain("screen_capture");
+
+    const studios = [
+      { id: "a", name: "One" },
+      { id: "b", name: "Two" },
+    ];
+    const fakeClient = {
+      protocolVersion: "x",
+      capabilities: {},
+      serverInfo: {},
+      async request(method: string) {
+        if (method === "tools/list") return { tools: [] };
+        throw new Error(`unexpected ${method}`);
+      },
+      async callTool() {
+        // A real CallToolResult, not a bare object: the guard calls `.json()` on
+        // it. A plain shape makes the guard's own parse throw, which it reports
+        // as "could not check" - so a broken fake silently tests the pass-through
+        // path and the refusal test passes for the wrong reason.
+        return CallToolResult.fromDict({
+          content: [{ type: "text", text: JSON.stringify(studios) }],
+        });
+      },
+      async close() {},
+    } as unknown as Parameters<typeof handleExtendedMessage>[0];
+
+    const sent: Record<string, unknown>[] = [];
+    await handleExtendedMessage(
+      fakeClient,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "screen_capture", arguments: {} },
+      },
+      (m) => sent.push(m),
+    );
+    const err = sent[0]!["error"] as {
+      data?: { code?: string; candidates?: Array<{ studio_id: string }> };
+    };
+    expect(err.data?.code).toBe("AMBIGUOUS_STUDIO");
+    // The candidates travel with the refusal so the caller can just pick one.
+    // They sit beside `code`, not under it: `toJsonRpcError` spreads err.data
+    // into the payload.
+    expect(err.data?.candidates?.map((c) => c.studio_id)).toEqual(["a", "b"]);
+  });
+
+  it("forwards screen_capture untouched when one Studio is attached", async () => {
+    const { handleExtendedMessage } = await import("../src/extendedServer.js");
+    const fakeClient = {
+      protocolVersion: "x",
+      capabilities: {},
+      serverInfo: {},
+      async request(method: string) {
+        if (method === "tools/call") return { content: [{ type: "text", text: "ok" }] };
+        if (method === "tools/list") return { tools: [] };
+        throw new Error(`unexpected ${method}`);
+      },
+      async callTool() {
+        return CallToolResult.fromDict({
+          content: [
+            { type: "text", text: JSON.stringify([{ id: "a", name: "One" }]) },
+          ],
+        });
+      },
+      async close() {},
+    } as unknown as Parameters<typeof handleExtendedMessage>[0];
+    const sent: Record<string, unknown>[] = [];
+    await handleExtendedMessage(
+      fakeClient,
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "screen_capture", arguments: {} },
+      },
+      (m) => sent.push(m),
+    );
+    expect(sent[0]!["result"]).toBeDefined();
+    expect(sent[0]!["error"]).toBeUndefined();
+  });
+
+  it("does not block the capture when the mesh cannot be read", async () => {
+    // Our own transport failure must not read as a policy refusal, and it must
+    // not be silent either - "we checked" and "we could not check" have to
+    // look different to the caller.
+    const { handleExtendedMessage } = await import("../src/extendedServer.js");
+    const fakeClient = {
+      protocolVersion: "x",
+      capabilities: {},
+      serverInfo: {},
+      async request(method: string) {
+        if (method === "tools/call") return { content: [{ type: "text", text: "ok" }] };
+        if (method === "tools/list") return { tools: [] };
+        throw new Error(`unexpected ${method}`);
+      },
+      async callTool() {
+        throw new Error("mesh unreachable");
+      },
+      async close() {},
+    } as unknown as Parameters<typeof handleExtendedMessage>[0];
+    const sent: Record<string, unknown>[] = [];
+    await handleExtendedMessage(
+      fakeClient,
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "screen_capture", arguments: {} },
+      },
+      (m) => sent.push(m),
+    );
+    const result = sent[0]!["result"] as { proxy_note?: string[] };
+    expect(sent[0]!["error"]).toBeUndefined();
+    expect(result.proxy_note?.[0]).toContain("passing through");
+  });
+
+  it("annotates every steered relayed tool, not just multi_edit", async () => {
+    const { handleExtendedMessage, STEERS } = await import("../src/extendedServer.js");
+    const relayed = Object.keys(STEERS);
+    expect(relayed.length).toBeGreaterThan(1);
+    const fakeClient = {
+      protocolVersion: "x",
+      capabilities: {},
+      serverInfo: {},
+      async request() {
+        return {
+          tools: relayed.map((name) => ({ name, description: "Raw.", inputSchema: {} })),
+        };
+      },
+      async close() {},
+    } as unknown as Parameters<typeof handleExtendedMessage>[0];
+    const sent: Record<string, unknown>[] = [];
+    await handleExtendedMessage(
+      fakeClient,
+      { jsonrpc: "2.0", id: 4, method: "tools/list", params: {} },
+      (m) => sent.push(m),
+    );
+    const tools = (sent[0]!["result"] as Record<string, unknown>)["tools"] as Array<
+      Record<string, unknown>
+    >;
+    for (const name of relayed) {
+      const row = tools.find((t) => t["name"] === name);
+      expect(String(row?.["description"]), name).toContain("prefer extended_");
+      // Appended, never replaced: the relayed description is Studio's.
+      expect(String(row?.["description"]), name).toContain("Raw.");
+    }
   });
 
   it("annotates proxied multi_edit to steer toward extended tools", async () => {
@@ -396,8 +654,8 @@ describe("extended tool descriptions", () => {
     );
     const tools = (sent[0]["result"] as Record<string, unknown>)["tools"] as Array<Record<string, unknown>>;
     const multi = tools.find((t) => t["name"] === "multi_edit");
-    expect(String(multi?.["description"])).toContain("prefer extended_write_like_multi_edit");
-    expect(tools.some((t) => t["name"] === "extended_write_like_multi_edit")).toBe(true);
+    expect(String(multi?.["description"])).toContain("prefer extended_write_script");
+    expect(tools.some((t) => t["name"] === "extended_write_script")).toBe(true);
   });
 });
 
@@ -520,6 +778,33 @@ describe("searchAndRead", () => {
     expect(out[0].truncated).toBe(false);
     expect(out[0].source).toBe(full);
     expect(out[0].line_count).toBe(100);
+  });
+
+  it("omitting query sends NO name filter", async () => {
+    // The optional parameter used to default to a *filter*: `keywords: "Script"`
+    // when query was null, so an audit of a path for its scripts returned only
+    // the ones named `*Script*` with no indication anything was excluded.
+    // Hostile fuzzing asked for everything under ServerScriptService and got a
+    // partial answer that looked complete - the silent-wrong-answer class this
+    // project exists to prevent. Mirrors the Python test of the same name.
+    const studio = new FakeStudio();
+    studio.treePayload = [
+      { className: "Script", fullPath: "game.S.Helper", name: "Helper" },
+      { className: "ModuleScript", fullPath: "game.S.Util", name: "Util" },
+    ];
+    await scriptSearchAndRead(studio.asStudio(), "game.S");
+    const call = studio.calls.filter((c) => c[0] === "search_game_tree").pop();
+    expect((call?.[1] as { keywords?: string })?.keywords).toBe("");
+  });
+
+  it("an explicit query is still forwarded", async () => {
+    const studio = new FakeStudio();
+    studio.treePayload = [
+      { className: "Script", fullPath: "game.S.Helper", name: "Helper" },
+    ];
+    await scriptSearchAndRead(studio.asStudio(), "game.S", { query: "Help" });
+    const call = studio.calls.filter((c) => c[0] === "search_game_tree").pop();
+    expect((call?.[1] as { keywords?: string })?.keywords).toBe("Help");
   });
 
   it("returns empty on bad JSON", async () => {
@@ -705,6 +990,81 @@ describe("insert validation", () => {
     } finally {
       await fs.unlink(tmp).catch(() => undefined);
     }
+  });
+});
+
+describe("insert model", () => {
+  it("model insert writes single scratch module and deserializes", async () => {
+    const studio = new FakeStudio();
+    studio.failExecuteWith = null;
+    const tmp = path.join(os.tmpdir(), `rbxmcp-${Date.now()}.rbxm`);
+    // ~200KB so the payload spans multiple slices (exercises the append path).
+    await fs.writeFile(tmp, "x".repeat(200 * 1024), "utf-8");
+    try {
+      const result = await extMod.insertAssetFromFile(studio.asStudio(), tmp, {
+        fileType: "model",
+        assetName: "TestModel",
+        parentPath: "game.Workspace",
+      });
+      expect(result.status).toBe("inserted");
+      expect(result.asset_name).toBe("TestModel");
+      expect(result.parent_path).toBe("game.Workspace");
+      const all = studio.executed.join("\n");
+      expect(all).toContain("RBXImportPayload");
+      expect(all).toContain("PluginGuiService");
+      expect(all).toContain("UpdateSourceAsync");
+      expect(all).toContain("Base64Decode");
+      expect(all).toContain("DeserializeInstancesAsync");
+      expect(all).not.toContain("LoadLocalAsset");
+      expect(all).not.toContain("Chunk_");
+    } finally {
+      await fs.unlink(tmp).catch(() => undefined);
+    }
+  });
+
+  it("model insert failure returns insert_failed", async () => {
+    const studio = new FakeStudio();
+    studio.failExecuteWith = "Load failed";
+    const tmp = path.join(os.tmpdir(), `rbxmcp-${Date.now()}-fail.rbxm`);
+    await fs.writeFile(tmp, "bad", "utf-8");
+    try {
+      const result = await extMod.insertAssetFromFile(studio.asStudio(), tmp, {
+        fileType: "model",
+        assetName: "BadModel",
+        parentPath: "game.Workspace",
+      });
+      expect(result.status).toBe("insert_failed");
+      expect(result.note).toContain("model load failed");
+    } finally {
+      await fs.unlink(tmp).catch(() => undefined);
+    }
+  });
+
+  it("unsupported file type returns insert_failed", async () => {
+    const studio = new FakeStudio();
+    const tmp = path.join(os.tmpdir(), `rbxmcp-${Date.now()}.txt`);
+    await fs.writeFile(tmp, "nope", "utf-8");
+    try {
+      const result = await extMod.insertAssetFromFile(studio.asStudio(), tmp, {
+        fileType: "txt",
+        assetName: "ShouldFail",
+        parentPath: "game.Workspace",
+      });
+      expect(result.status).toBe("unsupported_file_type");
+      expect(result.note).toContain("Supported: script, model, image");
+    } finally {
+      await fs.unlink(tmp).catch(() => undefined);
+    }
+  });
+});
+
+describe("insert tool schema", () => {
+  it("file_type enum orders script, model, image", async () => {
+    const { EXTENDED_TOOLS } = await import("../src/extendedServer.js");
+    const tool = EXTENDED_TOOLS.find((t: { name: string }) => t.name === "extended_insert_asset_from_file");
+    expect(tool).toBeDefined();
+    const schema = tool!.inputSchema as Record<string, any>;
+    expect(schema.properties.file_type.enum).toEqual(["script", "model", "image"]);
   });
 });
 

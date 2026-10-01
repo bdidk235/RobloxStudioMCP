@@ -7,14 +7,14 @@ MCP Servers). In CI this is handled by the ``python-studio`` job — see
 ``python -m examples.wait_for_studio``, then runs this suite.
 
 The probe script uses a fixed DataModel path so reruns are idempotent
-(``write_like_multi_edit`` just reports ``"unchanged"``).
+(``write_script`` just reports ``"unchanged"``).
 """
 
 import os
 import unittest
 
 from roblox_studio_mcp import RobloxStudio
-from roblox_studio_mcp.extended import write_like_multi_edit
+from roblox_studio_mcp.extended import write_script
 from roblox_studio_mcp.extended.writer import _strip_line_prefixes
 
 INTEGRATION = os.environ.get("ROBLOX_STUDIO_MCP_INTEGRATION") == "1"
@@ -39,7 +39,7 @@ class TestStudioIntegration(unittest.IsolatedAsyncioTestCase):
             result = await studio.execute_luau("return 6 * 7")
             self.assertEqual(result.text().strip(), "42")
 
-            status = await write_like_multi_edit(
+            status = await write_script(
                 studio, PROBE_PATH, PROBE_SOURCE, create_if_missing=True
             )
             self.assertIn(status, ("wrote", "created", "unchanged"))

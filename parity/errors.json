@@ -1,0 +1,389 @@
+{
+  "_comment": [
+    "Shared error contract, read by python/tests/test_error_parity.py and",
+    "node/tests/error-parity.test.ts.",
+    "",
+    "It exists for two measured defects:",
+    "",
+    "1. SHAPE. The two servers produced different `data` for an identical",
+    "   request. Python nested the tool-specific keys under `data.details`;",
+    "   Node spread them flat and, in rejectUnknownArguments, attached no data",
+    "   at all. A caller branching on `data.unknown` worked on Node and read",
+    "   `undefined` on Python - silently, and on exactly the branch written to",
+    "   handle the error. `unknown_arguments` pins the whole payload.",
+    "",
+    "2. VALUE RENDERING. Python's repr writes None/True/'x' where TypeScript",
+    "   writes null/true/\"x\". Same request, two different error strings, and an",
+    "   agent that string-matches has to handle both. Both sides now render",
+    "   through a shared `describe` and `handlers` pins the exact text.",
+    "",
+    "Neither defect was visible to either side's own tests, because each only",
+    "ever looked at its own output. Hence a shared fixture: a per-side",
+    "assertion would restate the same bug twice.",
+    "",
+    "`deliberately_not_argument_faults` records codes chosen AGAINST the grain,",
+    "so a later mechanical sweep to INVALID_ARGUMENT does not undo a decision",
+    "that was made on purpose."
+  ],
+  "unknown_arguments": [
+    {
+      "tool": "extended_capture",
+      "args": {
+        "format": "png"
+      },
+      "code": "INVALID_ARGUMENT",
+      "data": {
+        "wire_data_code": "INVALID_ARGUMENT",
+        "tool": "extended_capture",
+        "unknown": [
+          "format"
+        ],
+        "accepted": [
+          "save_path",
+          "studio_id"
+        ]
+      }
+    },
+    {
+      "tool": "extended_capture",
+      "args": {
+        "alpha": 1,
+        "beta": 2
+      },
+      "code": "INVALID_ARGUMENT",
+      "data": {
+        "wire_data_code": "INVALID_ARGUMENT",
+        "tool": "extended_capture",
+        "unknown": [
+          "alpha",
+          "beta"
+        ],
+        "accepted": [
+          "save_path",
+          "studio_id"
+        ]
+      }
+    },
+    {
+      "tool": "extended_watch_output",
+      "args": {
+        "patttern": "^Breakpoint "
+      },
+      "code": "INVALID_ARGUMENT",
+      "data": {
+        "wire_data_code": "INVALID_ARGUMENT",
+        "tool": "extended_watch_output",
+        "unknown": [
+          "patttern"
+        ],
+        "accepted": [
+          "max_lines",
+          "pattern",
+          "studio_id"
+        ]
+      }
+    },
+    {
+      "tool": "extended_manage_instance",
+      "args": {
+        "acton": "list"
+      },
+      "code": "INVALID_ARGUMENT",
+      "data": {
+        "wire_data_code": "INVALID_ARGUMENT",
+        "tool": "extended_manage_instance",
+        "unknown": [
+          "acton"
+        ],
+        "accepted": [
+          "action",
+          "place_path",
+          "studio_id"
+        ]
+      }
+    }
+  ],
+  "handlers": [
+    {
+      "name": "write: target_path wrong type",
+      "tool": "extended_write_script",
+      "args": {
+        "target_path": 42,
+        "content": "x"
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "target_path must be a non-empty string, got 42."
+    },
+    {
+      "name": "write: target_path empty",
+      "tool": "extended_write_script",
+      "args": {
+        "target_path": "",
+        "content": "x"
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "target_path must be a non-empty string, got \"\"."
+    },
+    {
+      "name": "write: content wrong type",
+      "tool": "extended_write_script",
+      "args": {
+        "target_path": "game.S.A",
+        "content": 42
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "content must be a string, got 42. Use \"\" to blank a script."
+    },
+    {
+      "name": "update: edits not a list",
+      "tool": "extended_update_script",
+      "args": {
+        "target_path": "game.S.A",
+        "edits": {}
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "edits must be a non-empty list, got {}. Send [{\"old_string\": ..., \"new_string\": ...}]."
+    },
+    {
+      "name": "update: edits element not an object",
+      "tool": "extended_update_script",
+      "args": {
+        "target_path": "game.S.A",
+        "edits": [
+          {
+            "old_string": "a",
+            "new_string": "b"
+          },
+          42
+        ]
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[1] must be an object {old_string, new_string}, got 42."
+    },
+    {
+      "name": "update: old_string wrong type",
+      "tool": "extended_update_script",
+      "args": {
+        "target_path": "game.S.A",
+        "edits": [
+          {
+            "old_string": 42,
+            "new_string": "b"
+          }
+        ]
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[0].old_string must be a non-empty string, got 42."
+    },
+    {
+      "name": "update: old_string empty",
+      "tool": "extended_update_script",
+      "args": {
+        "target_path": "game.S.A",
+        "edits": [
+          {
+            "old_string": "",
+            "new_string": "b"
+          }
+        ]
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[0].old_string must be a non-empty string, got \"\"."
+    },
+    {
+      "name": "update: new_string explicitly null",
+      "tool": "extended_update_script",
+      "args": {
+        "target_path": "game.S.A",
+        "edits": [
+          {
+            "old_string": "a",
+            "new_string": null
+          }
+        ]
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[0].new_string must be a string (it may be \"\"), got null.",
+      "why": "Node used `d[key] ?? d[camelAlias]`, which treats an explicit null as absent, so this said \"got undefined\" where Python said \"got null\". null is the value a caller most needs identified."
+    },
+    {
+      "name": "skill: skill_name wrong type",
+      "tool": "extended_skill",
+      "args": {
+        "skill_name": 42
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "skill_name must be a string when given, got 42. Omit it for the index of available skills."
+    },
+    {
+      "name": "manage: unknown action",
+      "tool": "extended_manage_instance",
+      "args": {
+        "action": "listt"
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "unknown action \"listt\". Accepted: launch, list, make_place, places, stop.",
+      "data": {
+        "tool": "extended_manage_instance",
+        "received": "listt",
+        "accepted": [
+          "launch",
+          "list",
+          "make_place",
+          "places",
+          "stop"
+        ]
+      }
+    },
+    {
+      "name": "manage: stop without studio_id",
+      "tool": "extended_manage_instance",
+      "args": {
+        "action": "stop"
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "studio_id is required for action='stop'. Call action='list' with this tool - its mesh rows carry one."
+    },
+    {
+      "name": "manage: launch without place_path",
+      "tool": "extended_manage_instance",
+      "args": {
+        "action": "launch"
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "place_path is required for action='launch'. Run action='places' or action='make_place' to choose one."
+    },
+    {
+      "name": "wait_for: condition wrong type",
+      "tool": "extended_wait_for",
+      "args": {
+        "condition": 42
+      },
+      "code": "INVALID_ARGUMENT",
+      "message": "condition must be a non-empty string, got 42."
+    }
+  ],
+  "deliberately_not_argument_faults": [
+    {
+      "site": "writer, chunked write exhausted its retries",
+      "message": "Chunked write failed: Lua long-bracket collision persists.",
+      "code": "UNKNOWN",
+      "why": "Our own encoder failing to escape the caller's content after five retries. The request was fine. UNKNOWN is the honest code for 'we do not know what went wrong'; INVALID_ARGUMENT would tell the caller to edit a request that did not need editing."
+    },
+    {
+      "site": "capture, payload head/tail mismatch",
+      "message": "payload head/tail mismatch; the read is not intact",
+      "code": "UNKNOWN",
+      "why": "An integrity failure between us and Studio, not a caller fault and not an engine refusal. There is no code in the vocabulary for 'our own transport lied', and inventing one here would overstate what we know."
+    }
+  ],
+  "sites": [
+    {
+      "site": "breakpoints: line 0",
+      "code": "INVALID_ARGUMENT",
+      "message": "line must be a 1-based positive integer, got 0."
+    },
+    {
+      "site": "grep: query empty",
+      "code": "INVALID_ARGUMENT",
+      "message": "query must be a non-empty string, got \"\"."
+    },
+    {
+      "site": "grep: max_results 0",
+      "code": "INVALID_ARGUMENT",
+      "message": "max_results must be between 1 and 100, got 0."
+    },
+    {
+      "site": "grep: max_results 'x'",
+      "code": "INVALID_ARGUMENT",
+      "message": "max_results must be an integer, got \"x\"."
+    },
+    {
+      "site": "grep: context_lines 11",
+      "code": "INVALID_ARGUMENT",
+      "message": "context_lines must be between 0 and 10, got 11."
+    },
+    {
+      "site": "grep: bad regex",
+      "code": "INVALID_ARGUMENT",
+      "message": "query is not a valid regex (regex=true): unterminated character set at position 1",
+      "code_only": true,
+      "why": "The tail is the regex engine's own wording - Python re and JS RegExp differ - passed through verbatim rather than paraphrasing an error we did not write. The code is ours and is pinned."
+    },
+    {
+      "site": "write: bad className",
+      "code": "INVALID_ARGUMENT",
+      "message": "className must be one of [\"LocalScript\",\"ModuleScript\",\"Script\"]; got \"Part\"."
+    },
+    {
+      "site": "write: non-game path",
+      "code": "INVALID_ARGUMENT",
+      "message": "target_path must start with \"game.\" (game-tree path); got \"/tmp/x.lua\". Use a DataModel dot-path like 'game.ServerScriptService.MyScript'."
+    },
+    {
+      "site": "update: non-game path",
+      "code": "INVALID_ARGUMENT",
+      "message": "target_path must be a game-tree path starting with \"game.\", got \"/tmp/x.lua\". File-system paths go to write_script."
+    },
+    {
+      "site": "update: no match",
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[0].old_string not found in content. Re-read the script and copy the text exactly - matching is exact, including indentation and line endings."
+    },
+    {
+      "site": "update: ambiguous",
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[0].old_string matched 2 times; exactly 1 is required. Add surrounding lines to narrow it to a unique block, or set replace_all=true on this edit to replace all occurrences."
+    },
+    {
+      "site": "update: noop",
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[0].old_string equals new_string. Send different text, or set skip_no_ops=true to drop it."
+    },
+    {
+      "site": "update: empty old_string",
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[0].old_string is empty. An empty old_string has no unique match; send the text to replace."
+    },
+    {
+      "site": "update: bad edit shape",
+      "code": "INVALID_ARGUMENT",
+      "message": "edits[0] must be an (old_string, new_string) tuple or dict, got 42."
+    },
+    {
+      "site": "insert: missing file",
+      "code": "INVALID_ARGUMENT",
+      "message": "file_path must name an existing local file, got \"C:\\\\nope.luau\". Read the path back before sending it."
+    },
+    {
+      "site": "capture: rgba length mismatch",
+      "code": "UNKNOWN",
+      "message": "RGBA length 10 does not match 4x4x4 = 64",
+      "why": "Left on UNKNOWN/SIZE_LIMIT on purpose. These check our own integrity against what Studio sent, not the caller's argument. INVALID_ARGUMENT would send the caller off to edit a request that was fine. See deliberately_not_argument_faults."
+    },
+    {
+      "site": "capture: short header",
+      "code": "UNKNOWN",
+      "message": "unexpected capture header: \"only\\ttwo\\tfields\"",
+      "why": "Left on UNKNOWN/SIZE_LIMIT on purpose. These check our own integrity against what Studio sent, not the caller's argument. INVALID_ARGUMENT would send the caller off to edit a request that was fine. See deliberately_not_argument_faults."
+    },
+    {
+      "site": "capture: studio bad allocation",
+      "code": "SIZE_LIMIT",
+      "message": "capture failed in Studio: bad allocation",
+      "why": "Left on UNKNOWN/SIZE_LIMIT on purpose. These check our own integrity against what Studio sent, not the caller's argument. INVALID_ARGUMENT would send the caller off to edit a request that was fine. See deliberately_not_argument_faults."
+    },
+    {
+      "site": "insert: bad parent",
+      "code": "INVALID_ARGUMENT",
+      "message": "parent_path must be a game-tree path starting with \"game.\"; got \"/tmp\"."
+    },
+    {
+      "site": "save_path: unwritable destination",
+      "code": "INVALID_ARGUMENT",
+      "message": "captured a 2x2 PNG (68 bytes) but could not write it to \"C:\\\\tmp\\\\no-such-dir\\\\shot.png\": ENOENT. The parent directory must exist and be writable. The capture itself succeeded; the encoded PNG is discarded when this call returns and is NOT retrievable afterwards, so re-capture rather than retry the write. Either pass a save_path whose parent directory exists and is writable, or omit save_path to get png_base64 in the result - the latter has no filesystem dependency but rides this transport's return channel, which truncates at exactly 100,015 characters with no error, so it is only safe while png_bytes stays under about 75,000.",
+      "code_only": true,
+      "why": "The pixels are fine and the request is what cannot be honoured: the path the caller supplied does not name a writable file. UNKNOWN was the status quo and is classify()'s catch-all, so branching on it catches every unrelated failure; a new WRITE_FAILED code would buy no decision the errno in data does not already make, for permanent public surface in two implementations. Deliberately NOT prefixed 'capture:' - the three capture: sites are integrity checks on what Studio sent, and INVALID_ARGUMENT there would send the caller to edit a request that was fine. The one case the code overstates is ENOSPC, where the path is fine and the disk is full; data.errno says so. code_only because the message embeds a temp-dir path and an OS errno, which differ per machine and per platform."
+    }
+  ]
+}

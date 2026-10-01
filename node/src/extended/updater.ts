@@ -19,7 +19,8 @@
  *   applied, skipped, and warned.
  */
 
-import { stripLinePrefixes, GAME_TREE_PREFIX, writeLikeMultiEdit } from "./writer.js";
+import { stripLinePrefixes, GAME_TREE_PREFIX, writeScript } from "./writer.js";
+import { INVALID_ARGUMENT, ToolError, describe } from "./errors.js";
 import type { RobloxStudio } from "../roblox.js";
 
 /**
@@ -46,7 +47,7 @@ export type EditInput =
       replaceAll?: boolean;
     };
 
-/** Summary of an `updateLikeMultiEdit` call. */
+/** Summary of an `updateScript` call. */
 export class UpdateResult {
   updated: number[] = [];
   skippedNoMatch: number[] = [];
@@ -82,6 +83,35 @@ export interface UpdateOptions {
 }
 
 /**
+ * The strict-mode failure for one edit in a batch.
+ *
+ * Built in one place because the same four faults were raised twice - once in
+ * the `replace_all` path and once in the batch path - and the two copies had
+ * already drifted. Naming the field and the element index here is what stops
+ * `edits[3].old_string` from decaying back into `Edit 3`.
+ *
+ * Every one of these is the caller's own edit, so every one is
+ * `INVALID_ARGUMENT`.
+ *
+ * Notably *not* `NOT_FOUND`, which is what the old "old_string not found in
+ * content" text classified to, by accident of the substring "not found". The
+ * Instance and the script were both found and read successfully; it was the
+ * caller's `old_string` that did not appear in the text. `NOT_FOUND` means "the
+ * thing you named is not in the DataModel", and an agent branching on it would
+ * go re-listing the DataModel for a script it had just read. The fix is to copy
+ * the exact text back, which is a different action entirely.
+ *
+ * Mirrors `_edit_fault` in
+ * `python/src/roblox_studio_mcp/extended/updater.py`.
+ */
+function editFault(index: number, field: string, problem: string, remedy: string): ToolError {
+  return new ToolError(
+    INVALID_ARGUMENT,
+    "edits[" + index + "]" + (field ? "." + field : "") + " " + problem + " " + remedy,
+  );
+}
+
+/**
  * Apply edits to a game-tree script with graceful skipping.
  *
  * Like Claude Code Edit, the current source is read first, edits apply in
@@ -96,7 +126,7 @@ export interface UpdateOptions {
  * with a warning instead of throwing; `skipNoOps` (default true) does the
  * same for no-op edits where `old_string` equals `new_string`.
  */
-export async function updateLikeMultiEdit(
+export async function updateScript(
   studio: RobloxStudio,
   targetPath: string,
   edits: readonly EditInput[],
@@ -104,9 +134,13 @@ export async function updateLikeMultiEdit(
 ): Promise<UpdateResult> {
   const { skipMissing = true, skipNoOps = true } = options;
   if (!targetPath.startsWith(GAME_TREE_PREFIX)) {
-    throw new Error(
-      `File-system paths are not supported for updateLikeMultiEdit; ` +
-        `use writeLikeMultiEdit instead. Got: ${JSON.stringify(targetPath)}`,
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "target_path must be a game-tree path starting with " +
+        describe(GAME_TREE_PREFIX) +
+        ", got " +
+        describe(targetPath) +
+        ". File-system paths go to write_script.",
     );
   }
 
@@ -114,13 +148,33 @@ export async function updateLikeMultiEdit(
   const result = await studio.scriptRead(targetPath);
   const currentSource = stripLinePrefixes(result.text());
 
-  const normalized: Array<{ oldStr: string; newStr: string; replaceAll: boolean }> = edits.map((e) => {
+  const normalized: Array<{ oldStr: string; newStr: string; replaceAll: boolean }> = edits.map((e, index) => {
     if (Array.isArray(e)) {
       return { oldStr: e[0], newStr: e[1], replaceAll: false };
     }
+    if (typeof e !== "object" || e === null) {
+      // Python raised here; this side cast whatever arrived to a Record and
+      // read `undefined` out of it, so a malformed edit reached Studio instead
+      // of being refused. Same request, one server rejected it and the other
+      // silently accepted it.
+      throw editFault(
+        index,
+        "",
+        "must be an (old_string, new_string) tuple or dict,",
+        "got " + describe(e) + ".",
+      );
+    }
     const d = e as Record<string, unknown>;
-    const oldStr = (d["old_string"] ?? d["oldString"]) as string;
-    const newStr = (d["new_string"] ?? d["newString"]) as string;
+    // Key presence, not truthiness: `??` would treat an explicit
+    // `new_string: null` as absent and fall through to the alias, so an
+    // explicit null reached Studio as `undefined`. Python's
+    // `dict.get(key, default)` only falls back on a missing key.
+    const oldStr = (Object.prototype.hasOwnProperty.call(d, "old_string")
+      ? d["old_string"]
+      : d["oldString"]) as string;
+    const newStr = (Object.prototype.hasOwnProperty.call(d, "new_string")
+      ? d["new_string"]
+      : d["newString"]) as string;
     const replaceAll = Boolean(d["replace_all"] ?? d["replaceAll"] ?? false);
     return { oldStr, newStr, replaceAll };
   });
@@ -147,7 +201,12 @@ export async function updateLikeMultiEdit(
         summary.warnings.push(`Edit ${i}: old_string matches new_string — skipped as no-op.`);
         continue;
       } else {
-        throw new Error(`Edit ${i}: old_string equals new_string (no-op, oldString and newString must be different).`);
+        throw editFault(
+          i,
+          "old_string",
+          "equals new_string.",
+          "Send different text, or set skip_no_ops=true to drop it.",
+        );
       }
     }
 
@@ -157,7 +216,12 @@ export async function updateLikeMultiEdit(
         summary.warnings.push(`Edit ${i}: old_string must not be empty — skipped.`);
         continue;
       } else {
-        throw new Error(`Edit ${i}: old_string must not be empty.`);
+        throw editFault(
+          i,
+          "old_string",
+          "is empty.",
+          "An empty old_string has no unique match; send the text to replace.",
+        );
       }
     }
 
@@ -169,7 +233,13 @@ export async function updateLikeMultiEdit(
         summary.warnings.push(`Edit ${i}: old_string not found in content — skipped.`);
         continue;
       } else {
-        throw new Error(`Edit ${i}: old_string not found in content.`);
+        throw editFault(
+          i,
+          "old_string",
+          "not found in content.",
+          "Re-read the script and copy the text exactly - matching is exact, " +
+            "including indentation and line endings.",
+        );
       }
     }
 
@@ -183,9 +253,12 @@ export async function updateLikeMultiEdit(
         );
         continue;
       } else {
-        throw new Error(
-          `Edit ${i}: Found multiple matches for old_string (${occurrences} occurrences, expected exactly 1). ` +
-            `Provide more surrounding lines to narrow it to a unique block, or set replace_all:true to replace all occurrences.`,
+        throw editFault(
+          i,
+          "old_string",
+          "matched " + occurrences + " times; exactly 1 is required.",
+          "Add surrounding lines to narrow it to a unique block, or set " +
+            "replace_all=true on this edit to replace all occurrences.",
         );
       }
     }
@@ -235,7 +308,12 @@ async function applySequentially(
         summary.warnings.push(`Edit ${i}: old_string matches new_string — skipped as no-op.`);
         continue;
       } else {
-        throw new Error(`Edit ${i}: old_string equals new_string (no-op, oldString and newString must be different).`);
+        throw editFault(
+          i,
+          "old_string",
+          "equals new_string.",
+          "Send different text, or set skip_no_ops=true to drop it.",
+        );
       }
     }
 
@@ -245,7 +323,12 @@ async function applySequentially(
         summary.warnings.push(`Edit ${i}: old_string must not be empty — skipped.`);
         continue;
       } else {
-        throw new Error(`Edit ${i}: old_string must not be empty.`);
+        throw editFault(
+          i,
+          "old_string",
+          "is empty.",
+          "An empty old_string has no unique match; send the text to replace.",
+        );
       }
     }
 
@@ -256,7 +339,13 @@ async function applySequentially(
         summary.warnings.push(`Edit ${i}: old_string not found in content — skipped.`);
         continue;
       } else {
-        throw new Error(`Edit ${i}: old_string not found in content.`);
+        throw editFault(
+          i,
+          "old_string",
+          "not found in content.",
+          "Re-read the script and copy the text exactly - matching is exact, " +
+            "including indentation and line endings.",
+        );
       }
     }
 
@@ -269,9 +358,12 @@ async function applySequentially(
         );
         continue;
       } else {
-        throw new Error(
-          `Edit ${i}: Found multiple matches for old_string (${occurrences} occurrences, expected exactly 1). ` +
-            `Provide more surrounding lines to narrow it to a unique block, or set replace_all:true to replace all occurrences.`,
+        throw editFault(
+          i,
+          "old_string",
+          "matched " + occurrences + " times; exactly 1 is required.",
+          "Add surrounding lines to narrow it to a unique block, or set " +
+            "replace_all=true on this edit to replace all occurrences.",
         );
       }
     }
@@ -289,6 +381,6 @@ async function applySequentially(
     return summary;
   }
 
-  await writeLikeMultiEdit(studio, targetPath, evolving);
+  await writeScript(studio, targetPath, evolving);
   return summary;
 }

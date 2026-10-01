@@ -103,7 +103,7 @@ async def _handle_message(client: MCPClient, message: Dict[str, Any]) -> None:
             return
         if has_id:
             # Honor client-side disabled_tools even though we proxy raw.
-            disabled = getattr(client, "disabled_tools", set()) or set()
+            disabled: set = getattr(client, "disabled_tools", set()) or set()
             if disabled and isinstance(result, dict) and isinstance(result.get("tools"), list):
                 result = {
                     **result,

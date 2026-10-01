@@ -17,13 +17,15 @@ from roblox_studio_mcp.extended.writer import (
     _lua_long_bracket,
     _pick_bracket_level,
     _strip_line_prefixes,
-    write_like_multi_edit,
+    write_script,
 )
-from roblox_studio_mcp.extended.updater import update_like_multi_edit
+from roblox_studio_mcp.extended.updater import update_script
 from roblox_studio_mcp.extended import extensions as ext_mod
+from roblox_studio_mcp.extended.errors import INVALID_ARGUMENT, ToolError
 from roblox_studio_mcp.extended.extensions import (
     _ConsoleWatch,
     get_watch_state,
+    insert_asset_from_file,
     run_tests,
     script_search_and_read,
 )
@@ -155,29 +157,31 @@ class TestLongBrackets(unittest.TestCase):
 class TestWriter(unittest.IsolatedAsyncioTestCase):
     async def test_rejects_non_game_path(self):
         studio = FakeStudio()
-        with self.assertRaises(ValueError):
-            await write_like_multi_edit(studio, "/tmp/x.lua", "hi")
+        with self.assertRaises(ToolError) as caught:
+            await write_script(studio, "/tmp/x.lua", "hi")
+        self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
 
     async def test_rejects_bad_class(self):
         studio = FakeStudio(files={"game.S.A": "hi"})
-        with self.assertRaises(ValueError):
-            await write_like_multi_edit(studio, "game.S.A", "hi2", className="Part")
+        with self.assertRaises(ToolError) as caught:
+            await write_script(studio, "game.S.A", "hi2", className="Part")
+        self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
 
     async def test_unchanged_no_write(self):
         studio = FakeStudio(files={"game.S.A": "print(1)"})
-        status = await write_like_multi_edit(studio, "game.S.A", "print(1)")
+        status = await write_script(studio, "game.S.A", "print(1)")
         self.assertEqual(status, "unchanged")
         self.assertFalse(any(c[0] == "multi_edit" for c in studio.calls))
 
     async def test_wrote_via_multi_edit(self):
         studio = FakeStudio(files={"game.S.A": "old"})
-        status = await write_like_multi_edit(studio, "game.S.A", "new")
+        status = await write_script(studio, "game.S.A", "new")
         self.assertEqual(status, "wrote")
         self.assertTrue(any(c[0] == "multi_edit" for c in studio.calls))
 
     async def test_created_when_missing(self):
         studio = FakeStudio(files={})
-        status = await write_like_multi_edit(
+        status = await write_script(
             studio, "game.S.New", "print('hi')", create_if_missing=True
         )
         self.assertEqual(status, "created")
@@ -188,7 +192,7 @@ class TestWriter(unittest.IsolatedAsyncioTestCase):
     async def test_missing_requires_flag(self):
         studio = FakeStudio(files={})
         with self.assertRaises(RuntimeError):
-            await write_like_multi_edit(studio, "game.S.New", "x")
+            await write_script(studio, "game.S.New", "x")
 
     async def test_connection_error_not_masked(self):
         studio = FakeStudio(files={})
@@ -198,7 +202,7 @@ class TestWriter(unittest.IsolatedAsyncioTestCase):
 
         studio.script_read = boom
         with self.assertRaises(RuntimeError):
-            await write_like_multi_edit(
+            await write_script(
                 studio, "game.S.New", "x", create_if_missing=True
             )
         self.assertEqual(studio.executed, [])
@@ -207,7 +211,7 @@ class TestWriter(unittest.IsolatedAsyncioTestCase):
         studio = FakeStudio(files={"game.S.M": "old"})
         # Force the create path via missing file.
         studio2 = FakeStudio(files={})
-        status = await write_like_multi_edit(
+        status = await write_script(
             studio2, "game.S.M", 'a"b\nc', create_if_missing=True, return_string=True
         )
         self.assertEqual(status, "created")
@@ -229,7 +233,7 @@ class TestWriter(unittest.IsolatedAsyncioTestCase):
 class TestUpdater(unittest.IsolatedAsyncioTestCase):
     async def test_skips_noop_and_missing(self):
         studio = FakeStudio(files={"game.S.A": "hello world"})
-        result = await update_like_multi_edit(
+        result = await update_script(
             studio,
             "game.S.A",
             edits=[("hello", "hi"), ("same", "same"), ("nope", "x")],
@@ -241,7 +245,7 @@ class TestUpdater(unittest.IsolatedAsyncioTestCase):
 
     async def test_skips_ambiguous_duplicates(self):
         studio = FakeStudio(files={"game.S.A": "foo foo foo"})
-        result = await update_like_multi_edit(studio, "game.S.A", [("foo", "bar")])
+        result = await update_script(studio, "game.S.A", [("foo", "bar")])
         self.assertEqual(result.skipped_ambiguous, [0])
         self.assertEqual(result.updated, [])
         # Nothing sent downstream when all edits skipped.
@@ -249,21 +253,23 @@ class TestUpdater(unittest.IsolatedAsyncioTestCase):
 
     async def test_strict_raises_on_ambiguous(self):
         studio = FakeStudio(files={"game.S.A": "foo foo"})
-        with self.assertRaises(ValueError):
-            await update_like_multi_edit(
+        with self.assertRaises(ToolError) as caught:
+            await update_script(
                 studio, "game.S.A", [("foo", "bar")], skip_missing=False
             )
+        self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
 
     async def test_strict_raises_on_noop(self):
         studio = FakeStudio(files={"game.S.A": "hi"})
-        with self.assertRaises(ValueError):
-            await update_like_multi_edit(
+        with self.assertRaises(ToolError) as caught:
+            await update_script(
                 studio, "game.S.A", [("hi", "hi")], skip_no_ops=False
             )
+        self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
 
     async def test_replace_all_replaces_every_occurrence(self):
         studio = FakeStudio(files={"game.S.A": "foo foo foo"})
-        result = await update_like_multi_edit(
+        result = await update_script(
             studio,
             "game.S.A",
             [{"old_string": "foo", "new_string": "bar", "replace_all": True}],
@@ -274,7 +280,7 @@ class TestUpdater(unittest.IsolatedAsyncioTestCase):
 
     async def test_replace_all_camel_case_alias(self):
         studio = FakeStudio(files={"game.S.A": "a,a,a"})
-        result = await update_like_multi_edit(
+        result = await update_script(
             studio,
             "game.S.A",
             [{"oldString": "a", "newString": "b", "replaceAll": True}],
@@ -284,7 +290,7 @@ class TestUpdater(unittest.IsolatedAsyncioTestCase):
 
     async def test_sequential_edits_operate_on_previous_results(self):
         studio = FakeStudio(files={"game.S.A": "hello world"})
-        result = await update_like_multi_edit(
+        result = await update_script(
             studio,
             "game.S.A",
             [
@@ -297,13 +303,13 @@ class TestUpdater(unittest.IsolatedAsyncioTestCase):
 
     async def test_strict_errors_read_like_edit_errors(self):
         studio = FakeStudio(files={"game.S.A": "hello"})
-        with self.assertRaisesRegex(ValueError, "not found in content"):
-            await update_like_multi_edit(
+        with self.assertRaisesRegex(ToolError, "not found in content"):
+            await update_script(
                 studio, "game.S.A", [("nope", "x")], skip_missing=False
             )
         studio = FakeStudio(files={"game.S.A": "foo foo"})
-        with self.assertRaisesRegex(ValueError, "multiple matches"):
-            await update_like_multi_edit(
+        with self.assertRaisesRegex(ToolError, "exactly 1 is required"):
+            await update_script(
                 studio, "game.S.A", [("foo", "bar")], skip_missing=False
             )
 
@@ -368,6 +374,45 @@ class TestSearchAndRead(unittest.IsolatedAsyncioTestCase):
         studio.script_read = fake_read
         out = await script_search_and_read(studio, "game.S", max_results=10)
         self.assertEqual([r["path"] for r in out], ["game.S.A", "game.S.M"])
+
+    async def test_omitting_query_sends_NO_name_filter(self):
+        """The optional parameter used to default to a *filter*.
+
+        `keywords="Script"` when query was None meant an audit of a path for its
+        scripts returned only the ones named `*Script*`, with no indication
+        anything was excluded. Hostile fuzzing asked for everything under
+        ServerScriptService and got a partial answer that looked complete -
+        the silent-wrong-answer class this project exists to prevent.
+        """
+        studio = FakeStudio()
+        studio._tree_payload = [
+            {"className": "Script", "fullPath": "game.S.Helper", "name": "Helper"},
+            {"className": "ModuleScript", "fullPath": "game.S.Util", "name": "Util"},
+        ]
+        studio.files = {"game.S.Helper": "h", "game.S.Util": "u"}
+
+        async def read(target_file=None, **k):
+            return _text_result("1->x")
+
+        studio.script_read = read
+        await script_search_and_read(studio, "game.S")
+        _, kwargs = studio.calls[-1]
+        self.assertEqual(kwargs["keywords"], "", "omitting query must not filter")
+
+    async def test_an_explicit_query_is_still_forwarded(self):
+        studio = FakeStudio()
+        studio._tree_payload = [
+            {"className": "Script", "fullPath": "game.S.Helper", "name": "Helper"},
+        ]
+        studio.files = {"game.S.Helper": "h"}
+
+        async def read(target_file=None, **k):
+            return _text_result("1->x")
+
+        studio.script_read = read
+        await script_search_and_read(studio, "game.S", query="Help")
+        _, kwargs = studio.calls[-1]
+        self.assertEqual(kwargs["keywords"], "Help")
 
     async def test_returns_empty_on_bad_json(self):
         studio = FakeStudio()
@@ -455,24 +500,56 @@ class TestExtendedToolDescriptions(unittest.TestCase):
         from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
 
         by_name = {t.name: t.description for t in _EXTENDED_TOOLS}
-        self.assertTrue(
-            by_name["extended_write_like_multi_edit"].startswith(
-                "RECOMMENDED over raw multi_edit"
-            )
-        )
-        self.assertTrue(
-            by_name["extended_update_like_multi_edit"].startswith(
-                "RECOMMENDED over raw multi_edit"
-            )
-        )
-        self.assertIn("replace_all", by_name["extended_update_like_multi_edit"])
+        # The choice between two tools has to be stated in the description,
+        # because that is the only place an agent is guaranteed to read first.
+        self.assertIn("multi_edit", by_name["extended_write_script"])
+        self.assertIn("multi_edit", by_name["extended_update_script"])
+        # replace_all is described in the schema, not the prose, so only once.
         schema = next(
             t.input_schema
             for t in _EXTENDED_TOOLS
-            if t.name == "extended_update_like_multi_edit"
+            if t.name == "extended_update_script"
         )
         item_props = schema["properties"]["edits"]["items"]["properties"]
         self.assertIn("replace_all", item_props)
+
+    def test_traps_that_fail_silently_are_stated(self):
+        from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
+
+        by_name = {t.name: t.description for t in _EXTENDED_TOOLS}
+        # A passing log_expression reports nothing at all, so this has to
+        # survive any shortening pass.
+        self.assertIn("MUST fail", by_name["extended_breakpoints"])
+        # Edit mode only, or the id returned is plausible and wrong.
+        self.assertIn("Edit mode only", by_name["extended_studio_identity"])
+        # Polling the wrong tool re-sends the whole buffer every iteration.
+        self.assertIn("get_console_output", by_name["extended_watch_output"])
+
+    def test_debug_id_is_documented_as_not_restart_durable(self):
+        # Measured, same place file: 0_186696 before a restart, 0_186502 after.
+        # An earlier docstring claimed it was expected to survive, which is why
+        # this is pinned: the correction must not get quietly reverted.
+        from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
+
+        by_name = {t.name: t.description for t in _EXTENDED_TOOLS}
+        self.assertIn("NOT survive", by_name["extended_studio_identity"])
+        self.assertIn("change on restart", by_name["extended_list_studios"])
+
+    def test_descriptions_stay_inside_the_context_budget(self):
+        from parity.build_contract import PER_TOOL_CAP, TOTAL_CAP
+
+        from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
+
+        # The tool list is paid on every call, every session, so cap it. The
+        # caps live in the contract builder rather than being written out here,
+        # because a second copy of the number is a second number to drift -
+        # which is exactly what the old hardcoded 2700 was.
+        for tool in _EXTENDED_TOOLS:
+            self.assertLessEqual(
+                len(tool.description), PER_TOOL_CAP, f"{tool.name} description"
+            )
+        total = sum(len(t.description) for t in _EXTENDED_TOOLS)
+        self.assertLessEqual(total, TOTAL_CAP)
 
     def test_search_tool_documents_truncation(self):
         from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
@@ -482,7 +559,9 @@ class TestExtendedToolDescriptions(unittest.TestCase):
             for t in _EXTENDED_TOOLS
             if t.name == "extended_script_search_and_read"
         )
-        self.assertIn("truncated", tool.description)
+        # Silent truncation is the failure here, so the escape hatch has to be
+        # in the prose, not only in the schema default.
+        self.assertIn("max_chars_per_source", tool.description)
         self.assertIn(
             "max_chars_per_source", tool.input_schema["properties"]
         )
@@ -497,6 +576,83 @@ class TestJsonParsing(unittest.TestCase):
 
     def test_fenced_without_lang(self):
         self.assertEqual(self._res('```\n[1,2]\n```').json(), [1, 2])
+
+
+class TestInsertModel(unittest.IsolatedAsyncioTestCase):
+    async def test_model_insert_succeeds(self):
+        studio = FakeStudio()
+        with tempfile.NamedTemporaryFile(suffix=".rbxm", delete=False) as tf:
+            tf.write(b"x" * (200 * 1024))  # span multiple slices (append path)
+            tf.flush()
+            path = tf.name
+        try:
+            result = await insert_asset_from_file(
+                studio,
+                file_path=path,
+                file_type="model",
+                asset_name="TestModel",
+                parent_path="game.Workspace",
+            )
+            self.assertEqual(result["status"], "inserted")
+            self.assertEqual(result["file_path"], path)
+            self.assertEqual(result["asset_name"], "TestModel")
+            self.assertEqual(result["parent_path"], "game.Workspace")
+            # Verify Lua executed: single scratch module + write/append path
+            all_code = "\n".join(studio.executed)
+            self.assertIn("RBXImportPayload", all_code)
+            self.assertIn("PluginGuiService", all_code)
+            self.assertIn("UpdateSourceAsync", all_code)
+            self.assertIn("Base64Decode", all_code)
+            self.assertIn("DeserializeInstancesAsync", all_code)
+            self.assertNotIn("LoadLocalAsset", all_code)
+            self.assertNotIn("Chunk_", all_code)
+        finally:
+            os.unlink(path)
+
+    async def test_model_insert_fails(self):
+        studio = FakeStudio()
+        studio.fail_execute_with = "Load failed"
+        with tempfile.NamedTemporaryFile(suffix=".rbxm", delete=False) as tf:
+            tf.write(b"bad")
+            tf.flush()
+            path = tf.name
+        try:
+            result = await insert_asset_from_file(
+                studio,
+                file_path=path,
+                file_type="model",
+                asset_name="BadModel",
+                parent_path="game.Workspace",
+            )
+            self.assertEqual(result["status"], "insert_failed")
+            self.assertEqual(result["file_path"], path)
+            self.assertIn("model load failed", result["note"])
+        finally:
+            os.unlink(path)
+
+    async def test_model_unsupported_type(self):
+        studio = FakeStudio()
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as tf:
+            tf.write(b"not a model")
+            tf.flush()
+            path = tf.name
+        try:
+            result = await insert_asset_from_file(
+                studio,
+                file_path=path,
+                file_type="txt",  # unsupported
+                asset_name="ShouldFail",
+                parent_path="game.Workspace",
+            )
+            self.assertEqual(result["status"], "unsupported_file_type")
+            self.assertIn("Supported: script, model, image", result["note"])
+        finally:
+            os.unlink(path)
+
+
+class TestExtractBalanced(unittest.TestCase):
+    def _res(self, text):
+        return CallToolResult.from_dict({"content": [{"type": "text", "text": text}]})
 
     def test_embedded_prefers_first_balanced(self):
         self.assertEqual(self._res('Here: {"a": {"b": 1}} tail {"c": 2}').json(), {"a": {"b": 1}})
@@ -599,8 +755,12 @@ class TestServerDisabledTools(unittest.IsolatedAsyncioTestCase):
 class TestInsertValidation(unittest.IsolatedAsyncioTestCase):
     async def test_missing_file_raises(self):
         studio = FakeStudio()
-        with self.assertRaises(FileNotFoundError):
+        # INVALID_ARGUMENT, not NOT_FOUND and not FileNotFoundError: the
+        # DataModel was never consulted, so "re-list the DataModel" is not the
+        # recovery. See the comment at the raise site.
+        with self.assertRaises(ToolError) as caught:
             await ext_mod.insert_asset_from_file(studio, "/nonexistent/xyz.lua")
+        self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
 
     async def test_bad_parent_raises(self):
         studio = FakeStudio()
@@ -608,8 +768,9 @@ class TestInsertValidation(unittest.IsolatedAsyncioTestCase):
             f.write("print(1)")
             path = f.name
         try:
-            with self.assertRaises(ValueError):
+            with self.assertRaises(ToolError) as caught:
                 await ext_mod.insert_asset_from_file(studio, path, parent_path="/tmp")
+            self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
         finally:
             os.unlink(path)
 
@@ -621,8 +782,9 @@ class TestExecuteFromFile(unittest.IsolatedAsyncioTestCase):
             f.write("   \n")
             path = f.name
         try:
-            with self.assertRaises(ValueError):
+            with self.assertRaises(ToolError) as caught:
                 await ext_mod.execute_luau_from_file(studio, path)
+            self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
         finally:
             os.unlink(path)
 
@@ -665,7 +827,7 @@ class TestInsertCrlf(unittest.IsolatedAsyncioTestCase):
             import roblox_studio_mcp.extended.writer as wmod
 
             with mock.patch.object(
-                wmod, "write_like_multi_edit", side_effect=fake_write
+                wmod, "write_script", side_effect=fake_write
             ):
                 await ext_mod.insert_asset_from_file(
                     studio, path, parent_path="game.Workspace"

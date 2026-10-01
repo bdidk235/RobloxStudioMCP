@@ -14,7 +14,7 @@ import json
 import os
 import sys
 from collections import deque
-from typing import Any, Deque, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence
 
 from ._version import __version__
 from .errors import JSONRPCError, MCPConnectionError, MCPProtocolError, MCPToolError
@@ -88,15 +88,21 @@ class MCPClient:
         disabled_tools: Optional[Iterable[str]] = None,
     ) -> None:
         self._shell = shell
+        # Declared, not inferred. These are mutually exclusive Optionals
+        # discriminated by `_shell`, and inference from the first assignment
+        # made each branch's other value a type error - five findings that all
+        # came from one missing declaration. No checker can narrow the pair
+        # through `if self._shell:`, so the invariant is stated at the use sites
+        # instead of being left implicit.
+        self._shell_cmd: Optional[str] = None
+        self._argv: Optional[List[str]] = None
         if shell:
             self._shell_cmd = " ".join([command] + list(args or []))
-            self._argv = None
         else:
             argv = [command] + list(args or [])
             if expand_env:
                 argv = [os.path.expandvars(a) for a in argv]
             self._argv = argv
-            self._shell_cmd = None
 
         full_env = os.environ.copy()
         if env:
@@ -110,6 +116,11 @@ class MCPClient:
         self._read_task: Optional[asyncio.Task] = None
         self._stderr_task: Optional[asyncio.Task] = None
         self._pending: Dict[int, asyncio.Future] = {}
+        # Per-request deadline state, so a progress notification can push the
+        # deadline out instead of the whole call dying on a flat timer.
+        self._deadlines: Dict[int, Dict[str, float]] = {}
+        #: Called with (request_id, progress_dict) for each progress notification.
+        self.on_progress: Optional[Callable[[int, Dict[str, Any]], None]] = None
         self._send_lock = asyncio.Lock()
         self._stdout_buf = bytearray()
         self._stderr_buf = bytearray()
@@ -131,6 +142,8 @@ class MCPClient:
 
         try:
             if self._shell:
+                if self._shell_cmd is None:
+                    raise MCPConnectionError("internal: shell mode with no shell command")
                 self._proc = await asyncio.create_subprocess_shell(
                     self._shell_cmd,
                     stdin=asyncio.subprocess.PIPE,
@@ -140,6 +153,8 @@ class MCPClient:
                     cwd=self._cwd,
                 )
             else:
+                if self._argv is None:
+                    raise MCPConnectionError("internal: exec mode with no argv")
                 self._proc = await asyncio.create_subprocess_exec(
                     *self._argv,
                     stdin=asyncio.subprocess.PIPE,
@@ -152,7 +167,7 @@ class MCPClient:
             target = self._argv[0] if self._argv else self._shell_cmd
             raise MCPConnectionError(
                 f"Could not launch MCP server: {target!r} not found. "
-                f"Full command: {self._shell_cmd if self._shell else ' '.join(self._argv)}"
+                f"Full command: {self._shell_cmd if self._shell else ' '.join(self._argv or [])}"
             ) from exc
 
         self._read_task = asyncio.create_task(self._read_loop())
@@ -276,22 +291,51 @@ class MCPClient:
     async def _request(self, method: str, params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         self._require_connected()
         request_id = self._new_id()
-        future = asyncio.get_running_loop().create_future()
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        # `deadline` is separate from `future` so a progress notification can
+        # push it out. A single asyncio.wait_for cannot express "extend when the
+        # server shows signs of life", which is the whole point here.
+        state: Dict[str, float] = {"deadline": loop.time() + self.timeout}
         self._pending[request_id] = future
+        self._deadlines[request_id] = state
 
         message: Dict[str, Any] = {"jsonrpc": "2.0", "id": request_id, "method": method}
         if params is not None:
             message["params"] = params
+        # Echo the id as the progress token so a server that supports progress
+        # can extend our deadline, and so we can attribute it back to this call.
+        message["params"] = dict(params or {})
+        message["params"].setdefault(
+            "_meta", {"progressToken": request_id}
+        )
 
         await self._send(message)
         try:
-            return await asyncio.wait_for(future, timeout=self.timeout)
+            while True:
+                remaining = state["deadline"] - loop.time()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError
+                try:
+                    return await asyncio.wait_for(
+                        asyncio.shield(future), timeout=remaining
+                    )
+                except asyncio.TimeoutError:
+                    if future.done():
+                        # The shield was cancelled, not the future: a real
+                        # result landed in the same tick the timer fired.
+                        return future.result()
+                    if loop.time() >= state["deadline"]:
+                        raise
+                    # A progress notification extended the deadline; keep going.
         except asyncio.TimeoutError:
             raise MCPConnectionError(
-                f"Timed out waiting for {method!r} after {self.timeout}s"
-            )
+                f"Timed out waiting for {method!r} after {self.timeout}s "
+                "(no progress notification arrived to extend it)"
+            ) from None
         finally:
             self._pending.pop(request_id, None)
+            self._deadlines.pop(request_id, None)
 
     async def _notify(self, method: str, params: Optional[Dict[str, Any]]) -> None:
         self._require_connected()
@@ -303,6 +347,12 @@ class MCPClient:
     async def _send(self, message: Dict[str, Any]) -> None:
         proc = self._require_connected()
         line = json.dumps(message, separators=(",", ":"), ensure_ascii=False)
+        # `Process.stdin` is Optional in typeshed because a process need not have
+        # one. Every spawn here passes PIPE, so this is an invariant rather than a
+        # real possibility - but stating it converts a latent AttributeError into a
+        # message that says what actually went wrong.
+        if proc.stdin is None:
+            raise MCPConnectionError("internal: subprocess has no stdin pipe")
         async with self._send_lock:
             proc.stdin.write((line + "\n").encode("utf-8"))
             await proc.stdin.drain()
@@ -378,7 +428,21 @@ class MCPClient:
                 future.set_result(message.get("result"))
             return
 
-        # A notification (no id) — ignore for now.
+        # A notification (no id).
+        if message.get("method") == "notifications/progress":
+            params = message.get("params") or {}
+            token = params.get("progressToken")
+            # Progress is proof of life: the server is working, so the deadline
+            # moves rather than the call being abandoned while it still might
+            # finish. Requests that opted in carry a token equal to their id.
+            state = self._deadlines.get(token) if isinstance(token, int) else None
+            if state is not None:
+                state["deadline"] = asyncio.get_running_loop().time() + self.timeout
+            if self.on_progress is not None and isinstance(token, int):
+                try:
+                    self.on_progress(token, params)
+                except Exception:  # noqa: BLE001 - a progress hook must not break the call
+                    pass
         return
 
     async def _drain_stderr(self) -> None:

@@ -53,10 +53,26 @@ RESOLVE_INTERVAL = 0.2
 # Matches the proxy's transient not-ready symptom (fresh proxy, uplink warming).
 _NOT_READY_HINT = "unable to reach"
 
+# Keys under which list_roblox_studios has been observed to carry its array.
+_STUDIO_LIST_KEYS = ("studios", "instances", "data", "result")
+
+# The proxy's symptom for a studio_id that names a Studio it can no longer
+# reach: the instance closed, or its place unloaded. Distinct from the
+# not-ready hint above, which means the whole uplink is still warming.
+_STALE_ID_HINTS = ("is not connected", "place is not open")
+
 
 def _is_not_ready_error(exc: BaseException) -> bool:
     """Whether ``exc`` is the proxy's transient uplink-warming symptom."""
     return isinstance(exc, MCPToolError) and _NOT_READY_HINT in str(exc).lower()
+
+
+def _is_stale_studio_id_error(exc: BaseException) -> bool:
+    """Whether ``exc`` says the targeted Studio instance is no longer reachable."""
+    if not isinstance(exc, MCPToolError):
+        return False
+    message = str(exc).lower()
+    return any(hint in message for hint in _STALE_ID_HINTS)
 
 
 class RobloxStudio:
@@ -116,8 +132,11 @@ class RobloxStudio:
         Parameters
         ----------
         studio_id:
-            The Studio instance to target. If omitted, it is resolved lazily on
-            the first tool call via ``list_roblox_studios`` (first instance wins).
+            The Studio instance to target. If omitted, it is resolved on each
+            tool call that needs it via ``list_roblox_studios``, and only
+            accepted when exactly one Studio is connected. With more than one
+            connected the call raises rather than guessing; pass ``studio_id``
+            explicitly, or per call, to choose.
         disabled_tools:
             Names of tools to hide from ``list_tools`` and refuse to call.
         singleton:
@@ -163,7 +182,12 @@ class RobloxStudio:
 
     @property
     def studio_id(self) -> Optional[str]:
-        """The resolved ``studio_id``, or ``None`` until first resolved."""
+        """The explicitly configured ``studio_id``, or ``None``.
+
+        An implicitly resolved id is never stored here, so this stays
+        ``None`` unless the caller pinned a Studio via ``connect()`` or
+        :meth:`set_studio_id`.
+        """
         return self._studio_id
 
     def set_studio_id(self, studio_id: Optional[str]) -> None:
@@ -218,17 +242,40 @@ class RobloxStudio:
         return tool
 
     async def list_studios(self) -> List[Dict[str, Any]]:
-        """Return the connected Studio instances as a list of dicts."""
+        """Return the connected Studio instances as a list of dicts.
+
+        An empty list means the proxy really reported no instances. A payload
+        shape this client does not recognise raises instead, because the two
+        are different faults: collapsing them reports schema drift as "no
+        Studio is connected", which sends the caller to check the MCP toggle
+        when the real problem is on this side of the wire.
+        """
         result = await self._client.call_tool("list_roblox_studios", {})
         data = result.json()
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
             for key in ("studios", "instances", "data", "result"):
-                value = data.get(key)
-                if isinstance(value, list):
-                    return value
-        return []
+                if key in data:
+                    value = data[key]
+                    if isinstance(value, list):
+                        return value
+                    raise MCPToolError(
+                        f"list_roblox_studios returned {key!r} as "
+                        f"{type(value).__name__}, expected a list. "
+                        f"Keys present: {sorted(map(str, data))!r}."
+                    )
+            raise MCPToolError(
+                "list_roblox_studios returned an unrecognised shape: a dict "
+                f"with keys {sorted(map(str, data))!r} and none of "
+                f"{list(_STUDIO_LIST_KEYS)!r}. This client needs updating; the "
+                f"response was {data!r}"
+            )
+        raise MCPToolError(
+            "list_roblox_studios returned an unrecognised shape: "
+            f"{type(data).__name__}, expected a list or a dict. "
+            f"The response was {data!r}"
+        )
 
     async def resolve_studio_id(
         self,
@@ -236,7 +283,19 @@ class RobloxStudio:
         timeout: float = RESOLVE_TIMEOUT,
         interval: float = RESOLVE_INTERVAL,
     ) -> str:
-        """Return the ``studio_id`` to use, resolving it lazily if needed.
+        """Return the ``studio_id`` to use.
+
+        An id configured by the caller (``connect(studio_id=...)`` or
+        :meth:`set_studio_id`) is returned as-is and is never re-validated.
+
+        Otherwise the id is resolved from ``list_roblox_studios`` on **every**
+        call. It is accepted only when exactly one Studio is connected: zero
+        raises, and more than one raises too, because list order is the proxy
+        mesh's and carries no intent — a silently chosen Studio is how probes
+        end up reading the wrong place. Pin the instance explicitly to
+        disambiguate. Resolving every time is deliberate: a cached id would
+        keep being used after a second Studio opened or the first restarted,
+        which is exactly the ambiguity this refuses.
 
         A fresh proxy needs a moment after its handshake before its Studio
         uplink is usable; until then ``list_roblox_studios`` fails with
@@ -263,14 +322,20 @@ class RobloxStudio:
                 "No Roblox Studio instances are connected. Open Studio and enable "
                 "the MCP plugin, then retry."
             )
-        first = studios[0]
+        if len(studios) > 1:
+            raise MCPToolError(
+                f"{len(studios)} Roblox Studio instances are connected, so no "
+                f"studio_id can be inferred: "
+                f"{[(s.get('name'), s.get('id')) for s in studios]!r}. "
+                f"Pass studio_id= to connect() (or per call) to pick one."
+            )
+        only = studios[0]
         for key in ("id", "studio_id", "studioId"):
-            if first.get(key):
-                self._studio_id = str(first[key])
-                return self._studio_id
+            if only.get(key):
+                return str(only[key])
         raise MCPToolError(
             "Could not determine studio_id from list_roblox_studios result: "
-            f"{first!r}"
+            f"{only!r}"
         )
 
     # ------------------------------------------------------------------ #
@@ -285,8 +350,15 @@ class RobloxStudio:
 
         ``studio_id`` is only added when the tool's input schema declares it and
         the caller did not already supply one.
+
+        A pinned ``studio_id`` that the proxy can no longer reach is reported
+        with what *is* currently connected, and is not silently swapped for a
+        different Studio: a pin is the caller's explicit choice, so replacing
+        it would reintroduce the guessing this layer exists to avoid. Unpin
+        with ``set_studio_id(None)`` to fall back to inference.
         """
         args = dict(arguments or {})
+        used_pinned = False
 
         if "studio_id" not in args:
             try:
@@ -294,9 +366,22 @@ class RobloxStudio:
             except MCPToolError:
                 tool = None
             if tool is None or tool.has_parameter("studio_id"):
+                used_pinned = self._studio_id is not None
                 args["studio_id"] = await self.resolve_studio_id()
 
-        return await self._client.call_tool(name, args)
+        try:
+            return await self._client.call_tool(name, args)
+        except MCPToolError as exc:
+            if not used_pinned or not _is_stale_studio_id_error(exc):
+                raise
+            raise MCPToolError(
+                f"The pinned studio_id {args['studio_id']!r} is no longer "
+                f"connected: {exc} "
+                f"Studio instance ids change every time Studio restarts, so a "
+                f"pin does not survive one. Re-pin with set_studio_id() using a "
+                f"current id from list_studios(), or set_studio_id(None) to fall "
+                f"back to inferring from whichever single Studio is open."
+            ) from exc
 
     # ------------------------------------------------------------------ #
     # Typed convenience methods

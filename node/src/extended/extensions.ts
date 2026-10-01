@@ -8,7 +8,8 @@
 import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { GAME_TREE_PREFIX, stripLinePrefixes } from "./writer.js";
+import { GAME_TREE_PREFIX, stripLinePrefixes, pickBracketLevel, luaLongBracket } from "./writer.js";
+import { INVALID_ARGUMENT, ToolError } from "./errors.js";
 import type { RobloxStudio } from "../roblox.js";
 import { CallToolResult } from "../types.js";
 
@@ -66,6 +67,17 @@ export interface ScriptSearchOptions {
  * Sources are truncated to `maxCharsPerSource` (default 2000) to keep
  * payloads small; `line_count` always reflects the full source. Unreadable
  * scripts are skipped. Returns `[]` when the tree payload cannot be parsed.
+ *
+ * **Omitting `query` means no name filter, and that is the fix.** This used to
+ * pass `keywords: "Script"` when `query` was null, so the *optional* parameter
+ * defaulted to a filter: an agent auditing a path for its scripts got back only
+ * the ones whose names happened to contain "Script", with no indication
+ * anything was excluded. Every legitimate script not matching that substring
+ * vanished from an audit with zero signal — found by hostile fuzzing, which
+ * asked for "everything under this path" and got a partial answer that looked
+ * complete. An empty `keywords` is what the underlying tool takes for "no
+ * filter", which is what the schema already promised by making the parameter
+ * optional.
  */
 export async function scriptSearchAndRead(
   studio: RobloxStudio,
@@ -77,7 +89,7 @@ export async function scriptSearchAndRead(
   const treeResult = await studio.searchGameTree({
     path: rootPath,
     datamodel_type: "Edit",
-    keywords: query === null ? "Script" : query,
+    keywords: query ?? "",
   });
   let treeData: unknown;
   try {
@@ -143,9 +155,12 @@ export type InsertAssetResult = Record<string, unknown>;
 /**
  * Insert a local file into the game tree.
  *
- * `fileType: "image"` uploads via store_image then insert_asset.
  * `fileType: "script"` reads the file and creates a
  * Script/LocalScript/ModuleScript at `parentPath.assetName`.
+ * `fileType: "model"` writes a local .rbxm/.rbxmx base64 payload into a
+ * single PluginGuiService scratch ModuleScript, then decodes + deserializes
+ * it into `parentPath` (no plugin rights needed).
+ * `fileType: "image"` uploads via store_image then insert_asset.
  */
 export async function insertAssetFromFile(
   studio: RobloxStudio,
@@ -161,18 +176,35 @@ export async function insertAssetFromFile(
     statOk = false;
   }
   if (!statOk) {
-    throw new Error(`Local file not found: ${filePath}`);
+    // INVALID_ARGUMENT, deliberately not NOT_FOUND. NOT_FOUND in this
+    // vocabulary means "the thing you named is not in the DataModel" - the
+    // recovery there is to re-list the DataModel, which is useless when the
+    // miss is on the host filesystem and the DataModel was never consulted. The
+    // recovery here is to send a path that exists, which is an argument fault
+    // like any other. Raising the code rather than hoping `classify` guesses
+    // right also stops a reworded message from silently moving the code.
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "file_path must name an existing local file, got " + JSON.stringify(filePath) +
+        ". Read the path back before sending it.",
+    );
   }
   if (parentPath && !parentPath.startsWith(GAME_TREE_PREFIX)) {
-    throw new Error(
-      `parentPath must be a game-tree path starting with ${JSON.stringify(GAME_TREE_PREFIX)}; got ${JSON.stringify(parentPath)}.`,
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "parent_path must be a game-tree path starting with " +
+        JSON.stringify(GAME_TREE_PREFIX) + "; got " + JSON.stringify(parentPath) + ".",
     );
   }
 
   const fileType = rawFileType.toLowerCase();
   const targetName = assetName ?? path.basename(filePath, path.extname(filePath));
   if (!targetName) {
-    throw new Error(`Could not derive asset name from filePath ${JSON.stringify(filePath)}.`);
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "Could not derive asset_name from file_path " + JSON.stringify(filePath) +
+        ". Pass asset_name explicitly.",
+    );
   }
 
   if (fileType === "image") {
@@ -236,8 +268,8 @@ export async function insertAssetFromFile(
     // Determine the target path in the game tree
     const targetPath = parentPath ? `${parentPath.replace(/\.+$/, "")}.${targetName}` : targetName;
 
-    const { writeLikeMultiEdit } = await import("./writer.js");
-    const status = await writeLikeMultiEdit(studio, targetPath, content, {
+    const { writeScript } = await import("./writer.js");
+    const status = await writeScript(studio, targetPath, content, {
       className,
       createIfMissing: true,
     });
@@ -251,10 +283,94 @@ export async function insertAssetFromFile(
     };
   }
 
+  if (fileType === "model") {
+    // Import a local .rbxm/.rbxmx file WITHOUT LoadLocalAsset (which needs
+    // RobloxScript/plugin security the Assistant's execute_luau lacks).
+    // Instead: base64 the bytes client-side, `write` slice 0 into a SINGLE
+    // scratch ModuleScript, append the remaining slices via
+    // ScriptEditorService:UpdateSourceAsync, then in-Studio read .Source ->
+    // EncodingService:Base64Decode -> buffer ->
+    // SerializationService:DeserializeInstancesAsync -> parent to parentPath.
+    // Proven against live Studio (651KB binary .rbxm + 6.7MB XML .rbxmx).
+    // Scratch lives in PluginGuiService: studio-only, never replicates or
+    // publishes with the place (unlike ServerStorage).
+    const MODEL_SLICE_CHARS = 180 * 1024;
+    const SCRATCH_NAME = "RBXImportPayload";
+    const SCRATCH_PATH = `game.PluginGuiService.${SCRATCH_NAME}`;
+    const { writeScript } = await import("./writer.js");
+    let b64: string;
+    try {
+      b64 = (await fs.readFile(filePath)).toString("base64");
+    } catch (e) {
+      return {
+        status: "insert_failed",
+        file_path: filePath,
+        note: `model load failed: could not read file: ${String(e).slice(0, 200)}`,
+      };
+    }
+    const slices: string[] = [];
+    for (let i = 0; i < b64.length; i += MODEL_SLICE_CHARS) {
+      slices.push(b64.slice(i, i + MODEL_SLICE_CHARS));
+    }
+    try {
+      await studio.executeLuau(
+        `local old = game.PluginGuiService:FindFirstChild(${JSON.stringify(SCRATCH_NAME)})\n` +
+          `if old then old:Destroy() end\n` +
+          `return "scratch clean"\n`,
+        "Edit",
+      );
+      await writeScript(studio, SCRATCH_PATH, slices[0], {
+        className: "ModuleScript",
+        createIfMissing: true,
+      });
+      for (let i = 1; i < slices.length; i++) {
+        const lit = luaLongBracket(slices[i], pickBracketLevel(slices[i]));
+        await studio.executeLuau(
+          `local target = ${SCRATCH_PATH}\n` +
+            `local slice = ${lit}\n` +
+            `game:GetService("ScriptEditorService"):UpdateSourceAsync(target, function(old) return old .. slice end)\n` +
+            `return "appended " .. #slice\n`,
+          "Edit",
+        );
+      }
+      const nameLit = luaLongBracket(targetName, pickBracketLevel(targetName));
+      const assemble =
+        `local target = ${SCRATCH_PATH}\n` +
+        `local data = target.Source\n` +
+        `local raw = game:GetService("EncodingService"):Base64Decode(buffer.fromstring(data))\n` +
+        `local instances = game:GetService("SerializationService"):DeserializeInstancesAsync(raw)\n` +
+        `assert(#instances > 0, "deserialized zero instances")\n` +
+        `if #instances == 1 then instances[1].Name = ${nameLit} end\n` +
+        `local parent = ${parentPath}\n` +
+        `local names = {}\n` +
+        `for _, inst in ipairs(instances) do\n` +
+        `  inst.Parent = parent\n` +
+        `  table.insert(names, inst.ClassName .. ":" .. inst.Name)\n` +
+        `end\n` +
+        `target:Destroy()\n` +
+        `return "imported " .. #instances .. " root(s): " .. table.concat(names, ", ")\n`;
+      const result = await studio.executeLuau(assemble, "Edit");
+      return {
+        status: "inserted",
+        file_path: filePath,
+        asset_name: targetName,
+        parent_path: parentPath,
+        result: result.text(),
+      };
+    } catch (e) {
+      return {
+        status: "insert_failed",
+        file_path: filePath,
+        note: `model load failed: ${String(e).slice(0, 300)}. ` +
+          `May require file path accessible to Studio.`,
+      };
+    }
+  }
+
   return {
     status: "unsupported_file_type",
     file_path: filePath,
-    note: `file_type '${fileType}' is not supported. Supported: image, script`,
+    note: `file_type '${fileType}' is not supported. Supported: script, model, image`,
   };
 }
 
@@ -363,7 +479,7 @@ export interface CreateModuleOptions {
  * When `requireTargetPath` + `requireStatement` are given, the statement is
  * appended to the target (once) if not already present.
  *
- * Returns status from writeLikeMultiEdit.
+ * Returns status from writeScript.
  */
 export async function createModuleWithDeps(
   studio: RobloxStudio,
@@ -372,9 +488,9 @@ export async function createModuleWithDeps(
   options: CreateModuleOptions = {},
 ): Promise<string> {
   const { className = "ModuleScript", requireTargetPath = null, requireStatement = null } = options;
-  const { writeLikeMultiEdit } = await import("./writer.js");
+  const { writeScript } = await import("./writer.js");
 
-  const status = await writeLikeMultiEdit(studio, modulePath, content, {
+  const status = await writeScript(studio, modulePath, content, {
     className,
     createIfMissing: true,
   });
@@ -384,7 +500,7 @@ export async function createModuleWithDeps(
     const targetSource = stripLinePrefixes(targetResult.text());
     if (!targetSource.includes(requireStatement)) {
       const newSource = `${targetSource.replace(/\n$/, "")}\n${requireStatement}\n`;
-      await writeLikeMultiEdit(studio, requireTargetPath, newSource);
+      await writeScript(studio, requireTargetPath, newSource);
     }
   }
   return status;
@@ -495,12 +611,99 @@ export async function executeLuauFromFile(
     statOk = false;
   }
   if (!statOk) {
-    throw new Error(`Luau file not found: ${resolved}`);
+    // INVALID_ARGUMENT rather than NOT_FOUND: see the same decision in
+    // `insertAssetFromFile`. The DataModel was never consulted here.
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "file_path must name an existing local file, got " + JSON.stringify(resolved) + ".",
+    );
   }
   // Normalize line endings like Python's universal newlines.
   const code = (await fs.readFile(resolved, encoding)).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   if (!code.trim()) {
-    throw new Error(`Luau file is empty: ${resolved}`);
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "file_path names an empty file: " + JSON.stringify(resolved) +
+        ". Write the Luau to it before executing.",
+    );
   }
-  return studio.executeLuau(code, datamodelType);
+  return annotateArrayEscape(await studio.executeLuau(code, datamodelType));
+}
+
+/**
+ * What Studio's serialiser does to an array, measured live 2026-09-30.
+ *
+ * | Luau returned | arrived as |
+ * |---|---|
+ * | `{10,20,30}` | `{"1":10,"2":20,"3":30}` |
+ * | `{rows={{n=1,v=10},…}}` | `{"rows":{"1":{…},"2":{…}}}` |
+ * | `{p=Vector2.new(3,4)}` | `{"p":"3, 4"}` |
+ * | `JSONEncode({10,20,30})` | `{"json":"[10,20,30]"}` — intact |
+ */
+const ARRAY_ESCAPE_NOTE =
+  "Array-shaped values do not survive this transport. Studio stringifies integer " +
+  'keys, so a Luau array {10,20,30} arrives as an object with keys "1","2","3" ' +
+  'rather than [10,20,30], and Vector2.new(3,4) arrives as the single string ' +
+  '"3, 4". Reported at: %s. This is a NOTE and nothing was rewritten: a table ' +
+  'with genuine string keys "1","2" produces the identical bytes, so repairing ' +
+  "it would corrupt real data. Serialise at the source - " +
+  "HttpService:JSONEncode - and read the string, which survives intact.";
+
+/**
+ * Where a Luau array most likely arrived as a string-keyed object.
+ *
+ * The signature is an object whose keys are exactly `"1".."n"`, n >= 2, and
+ * nothing else. **This cannot be repaired, only reported**, and that is the point
+ * of returning a note rather than fixing it:
+ *
+ * * `{[1]=x,[2]=y}` is a genuine Luau **array** and should have been a list
+ * * `{["1"]=x,["2"]=y}` is a genuine **string-keyed map**, already correct as-is
+ *
+ * Both serialise to identical bytes. Any heuristic that "fixes" the first
+ * silently corrupts the second, and any hard failure fires on the second. The
+ * only honest move is to say the shape is present and let the caller decide at
+ * the source, where the distinction still exists.
+ *
+ * Originating report: `REQUEST-luau-return-shapes.md` in this repo, where a
+ * 165-row driver returned `{}` with no error because of exactly this.
+ */
+export function arrayEscapePaths(value: unknown, path = ""): string[] {
+  const found: string[] = [];
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => found.push(...arrayEscapePaths(item, `${path}[${i}]`)));
+    return found;
+  }
+  if (value === null || typeof value !== "object") return found;
+  const entries = Object.entries(value as Record<string, unknown>);
+  const keys = entries.map(([k]) => k);
+  if (keys.length >= 2 && keys.every((k) => /^\d+$/.test(k))) {
+    const nums = keys.map(Number).sort((a, b) => a - b);
+    if (nums.every((n, i) => n === i + 1)) found.push(path || "(root)");
+  }
+  for (const [key, item] of entries) {
+    found.push(...arrayEscapePaths(item, path ? `${path}.${key}` : key));
+  }
+  return found;
+}
+
+/**
+ * Append the array-escape note when the result shows the shape. Never edits it.
+ *
+ * Additive on purpose: the payload the caller reads is untouched, because the two
+ * candidate shapes are indistinguishable and any rewrite is a coin flip.
+ */
+function annotateArrayEscape(result: CallToolResult): CallToolResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result.text());
+  } catch {
+    return result;
+  }
+  if (parsed === null || typeof parsed !== "object") return result;
+  const paths = arrayEscapePaths(parsed);
+  if (paths.length === 0) return result;
+  const shown =
+    paths.slice(0, 5).join(", ") + (paths.length > 5 ? ` (+${paths.length - 5} more)` : "");
+  result.content.push({ type: "text", text: ARRAY_ESCAPE_NOTE.replace("%s", shown) });
+  return result;
 }

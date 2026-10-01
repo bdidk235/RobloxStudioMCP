@@ -1,0 +1,21 @@
+{
+  "include": ["src/roblox_studio_mcp", "../parity"],
+  "exclude": ["**/__pycache__", "**/node_modules", "verify_*.py", "probe_*.py", "measure_*.py"],
+
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.12",
+  "reportMissingImports": "none",
+
+  "reportOptionalMemberAccess": "error",
+  "reportArgumentType": "error",
+  "reportOptionalIterable": "error",
+  "reportCallIssue": "error",
+  "reportAttributeAccessIssue": "error",
+  "reportIndexIssue": "error",
+  "reportGeneralTypeIssues": "error",
+
+  "reportTypedDictNotRequiredAccess": "none",
+  "reportMissingTypeStubs": "none",
+  "reportUnnecessaryIsInstance": "none",
+  "reportRedeclaration": "none"
+}

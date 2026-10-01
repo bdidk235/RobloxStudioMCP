@@ -14,14 +14,31 @@ class Tool:
     name: str
     description: str = ""
     input_schema: Dict[str, Any] = field(default_factory=dict)
+    #: Whether the tool only reads. Advertised as MCP ``annotations.readOnlyHint``,
+    #: which clients use to decide whether a call may run in parallel with others.
+    #: Defaults to ``False``: an unmarked tool is treated as mutating, which is the
+    #: safe direction to be wrong in.
+    read_only: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Tool":
+        annotations = data.get("annotations") or {}
         return cls(
             name=data.get("name", ""),
             description=data.get("description", ""),
             input_schema=data.get("inputSchema", {}) or {},
+            read_only=bool(annotations.get("readOnlyHint", False)),
         )
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "name": self.name,
+            "description": self.description,
+            "inputSchema": self.input_schema,
+        }
+        if self.read_only:
+            out["annotations"] = {"readOnlyHint": True}
+        return out
 
     @property
     def properties(self) -> Dict[str, Any]:

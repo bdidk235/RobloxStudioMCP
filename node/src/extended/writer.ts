@@ -5,7 +5,7 @@
  * MCP's `multi_edit` is great for targeted string replacements, but
  * sometimes you just want to replace a script's *entire* body — the
  * `open(path, "w")` equivalent for game scripts. This module provides
- * {@link writeLikeMultiEdit}:
+ * {@link writeScript}:
  *
  * - Read first: the current source is always fetched via `script_read`
  *   before writing (like Write requires Read before overwriting).
@@ -24,6 +24,7 @@
  */
 
 import type { RobloxStudio } from "../roblox.js";
+import { INVALID_ARGUMENT, ToolError, describe } from "./errors.js";
 
 export const GAME_TREE_PREFIX = "game.";
 
@@ -76,8 +77,10 @@ export function stripLinePrefixes(text: string): string {
 
 export function validateClassName(className: string): string {
   if (!VALID_SCRIPT_CLASSES.has(className)) {
-    throw new Error(
-      `className must be one of ${JSON.stringify([...VALID_SCRIPT_CLASSES].sort())}; got ${JSON.stringify(className)}.`,
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "className must be one of " + JSON.stringify([...VALID_SCRIPT_CLASSES].sort()) +
+        "; got " + describe(className) + ".",
     );
   }
   return className;
@@ -134,8 +137,10 @@ export function isMissingError(exc: unknown): boolean {
 export function splitTarget(targetPath: string): [container: string, name: string] {
   const parts = targetPath.split(".");
   if (parts.length < 2) {
-    throw new Error(
-      `targetPath must be a DataModel dot-path like 'game.ServerScriptService.MyScript'; got ${JSON.stringify(targetPath)}.`,
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "target_path must be a DataModel dot-path like " +
+        "'game.ServerScriptService.MyScript'; got " + describe(targetPath) + ".",
     );
   }
   return [parts.slice(0, -1).join("."), parts[parts.length - 1]];
@@ -226,6 +231,11 @@ export async function chunkedWrite(
       throw exc;
     }
   }
+  // Deliberately left a bare `Error`, and so deliberately left classifying as
+  // UNKNOWN: this is our own encoder failing to escape the caller's content,
+  // not a bad argument and not the engine refusing. UNKNOWN is the honest code
+  // for "we do not know what went wrong", and pinning it to INVALID_ARGUMENT
+  // would tell the caller to edit the request when the request was fine.
   throw new Error("Chunked write failed: Lua long-bracket collision persists.");
 }
 
@@ -238,7 +248,7 @@ export async function chunkedWrite(
  *
  * Returns a status: `"wrote"`, `"unchanged"`, or `"created"`.
  */
-export async function writeLikeMultiEdit(
+export async function writeScript(
   studio: RobloxStudio,
   targetPath: string,
   content: string,
@@ -254,9 +264,11 @@ export async function writeLikeMultiEdit(
   }
 
   if (!targetPath.startsWith(GAME_TREE_PREFIX)) {
-    throw new Error(
-      `targetPath must start with ${JSON.stringify(GAME_TREE_PREFIX)} (game-tree path); ` +
-        `got ${JSON.stringify(targetPath)}. Use a DataModel dot-path like 'game.ServerScriptService.MyScript'.`,
+    throw new ToolError(
+      INVALID_ARGUMENT,
+      "target_path must start with " + describe(GAME_TREE_PREFIX) +
+        " (game-tree path); got " + describe(targetPath) +
+        ". Use a DataModel dot-path like 'game.ServerScriptService.MyScript'.",
     );
   }
 

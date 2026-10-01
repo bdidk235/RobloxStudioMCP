@@ -18,6 +18,16 @@ export class Tool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /**
+   * Whether this tool only observes.
+   *
+   * Absent means "may mutate", so a new tool is safe by default rather than a way
+   * to accidentally grant parallel execution. Set from `READ_ONLY_TOOLS` in
+   * extendedServer.ts, mirroring the Python server - the parity test asserts the
+   * two agree, because a client that grants parallel execution from this hint is
+   * exactly why the hint has to match.
+   */
+  readOnly?: boolean;
 
   constructor(
     name: string,

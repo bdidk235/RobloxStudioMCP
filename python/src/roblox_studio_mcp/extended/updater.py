@@ -17,7 +17,7 @@ Mirrors Claude Code Edit semantics for game-tree scripts:
   previous edit (like multi-edit).  Batches return a summary of what was
   applied, skipped, and warned.
 
-This module provides :func:`update_like_multi_edit` which wraps the raw
+This module provides :func:`update_script` which wraps the raw
 ``multi_edit`` tool with exactly that behaviour.
 
 Usage
@@ -25,11 +25,11 @@ Usage
 ::
 
     import asyncio
-    from roblox_studio_mcp.extended import RobloxStudio, update_like_multi_edit
+    from roblox_studio_mcp.extended import RobloxStudio, update_script
 
     async def main():
         async with await RobloxStudio.connect() as studio:
-            result = await update_like_multi_edit(
+            result = await update_script(
                 studio,
                 "game.ServerScriptService.MyScript",
                 edits=[
@@ -47,9 +47,10 @@ Usage
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, TypedDict, Union
 
-from .writer import _strip_line_prefixes, _GAME_TREE_PREFIX, write_like_multi_edit
+from .writer import _strip_line_prefixes, _GAME_TREE_PREFIX, write_script
+from .errors import INVALID_ARGUMENT, ToolError, describe
 from ..roblox import RobloxStudio
 
 # A single edit: an (old_string, new_string) tuple, or a dict with
@@ -59,9 +60,54 @@ from ..roblox import RobloxStudio
 EditInput = Union[Tuple[str, str], Mapping[str, Any]]
 
 
+class MultiEditEntry(TypedDict):
+    """One element of the ``edits`` array sent to the raw ``multi_edit`` tool.
+
+    This is the wire format, not our own: the keys are ``old_string`` and
+    ``new_string`` because that is what ``multi_edit`` reads, and there is no
+    ``replace_all`` because the raw tool requires exactly one match per
+    ``old_string`` and so cannot express it. That constraint is why
+    :func:`update_script` has a separate sequential path for any edit that sets
+    the flag.
+
+    Typed because it is the argument to an outbound tool call: a misspelled key
+    here would be serialised straight into the request, where nothing on this
+    side would complain.
+    """
+
+    old_string: str
+    new_string: str
+
+
+def _edit_fault(index: int, field: str, problem: str, remedy: str) -> ToolError:
+    """The strict-mode failure for one edit in a batch.
+
+    Built in one place because the same four faults were raised twice - once in
+    the ``replace_all`` path and once in the batch path - and the two copies had
+    already drifted. Naming the field and the element index here is what stops
+    ``edits[3].old_string`` from decaying back into ``Edit 3``.
+
+    Every one of these is the caller's own edit, so every one is
+    ``INVALID_ARGUMENT``.
+
+    Notably *not* ``NOT_FOUND``, which is what the old "old_string not found in
+    content" text classified to, by accident of the substring "not found". The
+    Instance and the script were both found and read successfully; it was the
+    caller's ``old_string`` that did not appear in the text. ``NOT_FOUND`` means
+    "the thing you named is not in the DataModel", and an agent branching on it
+    would go re-listing the DataModel for a script it had just read. The fix is
+    to copy the exact text back, which is a different action entirely.
+    """
+    return ToolError(
+        INVALID_ARGUMENT,
+        ("edits[%d].%s %s %s" if field else "edits[%d] %s %s")
+        % ((index, field, problem, remedy) if field else (index, problem, remedy)),
+    )
+
+
 @dataclass
 class UpdateResult:
-    """Summary of an ``update_like_multi_edit`` call."""
+    """Summary of an ``update_script`` call."""
     updated: List[int] = field(default_factory=list)
     skipped_no_match: List[int] = field(default_factory=list)
     skipped_no_op: List[int] = field(default_factory=list)
@@ -81,8 +127,13 @@ class UpdateResult:
         return "; ".join(parts) if parts else "No changes."
 
 
-def _normalize_edit(edit: EditInput) -> Tuple[str, str, bool]:
-    """Normalize one edit to an (old_string, new_string, replace_all) triple."""
+def _normalize_edit(edit: EditInput, index: int) -> Tuple[str, str, bool]:
+    """Normalize one edit to an (old_string, new_string, replace_all) triple.
+
+    ``index`` is threaded in so the error names which element of the batch is
+    wrong. ``update_script`` is also a public library entry point, so these
+    faults are reachable without going through the server's own validation.
+    """
     if isinstance(edit, (tuple, list)):
         old_str, new_str = edit
         return old_str, new_str, False
@@ -91,11 +142,20 @@ def _normalize_edit(edit: EditInput) -> Tuple[str, str, bool]:
         new_str = edit.get("new_string", edit.get("newString"))
         replace_all = bool(edit.get("replace_all", edit.get("replaceAll", False)))
         if not isinstance(old_str, str):
-            raise ValueError("Each edit must have a string old_string.")
+            raise _edit_fault(
+                index, "old_string", "must be a string,",
+                f"got {describe(old_str)}.",
+            )
         if not isinstance(new_str, str):
-            raise ValueError("Each edit must have a string new_string.")
+            raise _edit_fault(
+                index, "new_string", "must be a string,",
+                f"got {describe(new_str)}. Use \"\" to delete the matched text.",
+            )
         return old_str, new_str, replace_all
-    raise ValueError("Each edit must be an (old_string, new_string) tuple or dict.")
+    raise _edit_fault(
+        index, "", "must be an (old_string, new_string) tuple or dict,",
+        f"got {describe(edit)}.",
+    )
 
 
 async def _apply_sequentially(
@@ -124,9 +184,9 @@ async def _apply_sequentially(
                     f"Edit {i}: old_string matches new_string — skipped as no-op."
                 )
                 continue
-            raise ValueError(
-                f"Edit {i}: old_string equals new_string "
-                f"(no-op, oldString and newString must be different)."
+            raise _edit_fault(
+                i, "old_string", "equals new_string.",
+                "Send different text, or set skip_no_ops=true to drop it.",
             )
 
         if not old_str:
@@ -136,7 +196,10 @@ async def _apply_sequentially(
                     f"Edit {i}: old_string must not be empty — skipped."
                 )
                 continue
-            raise ValueError(f"Edit {i}: old_string must not be empty.")
+            raise _edit_fault(
+                i, "old_string", "is empty.",
+                "An empty old_string has no unique match; send the text to replace.",
+            )
 
         occurrences = evolving.count(old_str)
         if occurrences == 0:
@@ -146,7 +209,11 @@ async def _apply_sequentially(
                     f"Edit {i}: old_string not found in content — skipped."
                 )
                 continue
-            raise ValueError(f"Edit {i}: old_string not found in content.")
+            raise _edit_fault(
+                i, "old_string", "not found in content.",
+                "Re-read the script and copy the text exactly - matching is "
+                "exact, including indentation and line endings.",
+            )
 
         if occurrences > 1 and not replace_all:
             summary.skipped_ambiguous.append(i)
@@ -158,11 +225,11 @@ async def _apply_sequentially(
                     f"block, or set replace_all=True to replace all occurrences."
                 )
                 continue
-            raise ValueError(
-                f"Edit {i}: Found multiple matches for old_string "
-                f"({occurrences} occurrences, expected exactly 1). "
-                f"Provide more surrounding lines to narrow it to a unique "
-                f"block, or set replace_all=True to replace all occurrences."
+            raise _edit_fault(
+                i, "old_string",
+                f"matched {occurrences} times; exactly 1 is required.",
+                "Add surrounding lines to narrow it to a unique block, or set "
+                "replace_all=true on this edit to replace all occurrences.",
             )
 
         evolving = evolving.replace(old_str, new_str) if replace_all else evolving.replace(old_str, new_str, 1)
@@ -175,11 +242,11 @@ async def _apply_sequentially(
     if evolving == current_source:
         return summary
 
-    await write_like_multi_edit(studio, target_path, evolving)
+    await write_script(studio, target_path, evolving)
     return summary
 
 
-async def update_like_multi_edit(
+async def update_script(
     studio: RobloxStudio,
     target_path: str,
     edits: Sequence[EditInput],
@@ -216,16 +283,18 @@ async def update_like_multi_edit(
         Summary of what was applied and what was skipped.
     """
     if not target_path.startswith(_GAME_TREE_PREFIX):
-        raise ValueError(
-            f"File-system paths are not supported for update_like_multi_edit; "
-            f"use write_like_multi_edit instead. Got: {target_path!r}"
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"target_path must be a game-tree path starting with "
+            f"{describe(_GAME_TREE_PREFIX)}, got {describe(target_path)}. "
+            f"File-system paths go to write_script.",
         )
 
     # Read current source first (like Edit requires Read before Edit).
     result = await studio.script_read(target_path)
     current_source = _strip_line_prefixes(result.text())
 
-    normalized = [_normalize_edit(e) for e in edits]
+    normalized = [_normalize_edit(e, i) for i, e in enumerate(edits)]
 
     # When any edit opts into replace-all, apply the batch sequentially in
     # memory and write the final body once.  The raw multi_edit requires
@@ -237,7 +306,7 @@ async def update_like_multi_edit(
         )
 
     # Classify each edit against the current source.
-    valid_edits: List[Dict[str, Any]] = []
+    valid_edits: List[MultiEditEntry] = []
     summary = UpdateResult()
 
     for i, (old_str, new_str, _replace_all) in enumerate(normalized):
@@ -250,9 +319,9 @@ async def update_like_multi_edit(
                 )
                 continue
             else:
-                raise ValueError(
-                    f"Edit {i}: old_string equals new_string "
-                    f"(no-op, oldString and newString must be different)."
+                raise _edit_fault(
+                    i, "old_string", "equals new_string.",
+                    "Send different text, or set skip_no_ops=true to drop it.",
                 )
 
         if not old_str:
@@ -263,7 +332,11 @@ async def update_like_multi_edit(
                 )
                 continue
             else:
-                raise ValueError(f"Edit {i}: old_string must not be empty.")
+                raise _edit_fault(
+                    i, "old_string", "is empty.",
+                    "An empty old_string has no unique match; "
+                    "send the text to replace.",
+                )
 
         occurrences = current_source.count(old_str)
         # Check if old_string exists at all.
@@ -275,7 +348,11 @@ async def update_like_multi_edit(
                 )
                 continue
             else:
-                raise ValueError(f"Edit {i}: old_string not found in content.")
+                raise _edit_fault(
+                    i, "old_string", "not found in content.",
+                    "Re-read the script and copy the text exactly - matching is "
+                    "exact, including indentation and line endings.",
+                )
 
         # multi_edit requires exactly one match; duplicates would fail downstream.
         if occurrences > 1:
@@ -289,11 +366,11 @@ async def update_like_multi_edit(
                 )
                 continue
             else:
-                raise ValueError(
-                    f"Edit {i}: Found multiple matches for old_string "
-                    f"({occurrences} occurrences, expected exactly 1). "
-                    f"Provide more surrounding lines to narrow it to a unique "
-                    f"block, or set replace_all=True to replace all occurrences."
+                raise _edit_fault(
+                    i, "old_string",
+                    f"matched {occurrences} times; exactly 1 is required.",
+                    "Add surrounding lines to narrow it to a unique block, or "
+                    "set replace_all=true on this edit to replace all occurrences.",
                 )
 
         valid_edits.append({"old_string": old_str, "new_string": new_str})

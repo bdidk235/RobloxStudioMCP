@@ -14,7 +14,7 @@ only Node.js built-ins (`node:child_process`, `node:readline`). Requires Node 18
 - Ships a `RobloxStudio` convenience client that resolves `studio_id` once and
   injects it into every tool call that needs it.
 - Ships transparent (`server`) and extended (`extendedServer`) stdio proxies,
-  plus `extended/` helpers (`writeLikeMultiEdit`, `updateLikeMultiEdit`, …).
+  plus `extended/` helpers (`writeScript`, `updateScript`, …).
 
 ## Install
 
@@ -123,6 +123,97 @@ call through a new connection just works; tune with
 `resolveStudioId({ timeoutMs, intervalMs })`. Any other error — including a
 genuinely empty Studio list — still throws immediately.
 
+### Choosing a Studio
+
+`resolveStudioId()` returns an id configured by the caller unchanged. When you
+have not pinned one, it re-lists on every call and accepts the result **only if
+exactly one Studio is connected**. Two or more throws, listing each candidate's
+name and id:
+
+```ts
+await studio.resolveStudioId();
+// MCPToolError: 2 Roblox Studio instances are connected, so no studio_id can be
+// inferred: [["Place1","sid-a"],["rbx-re","sid-b"]]. Pass studioId to connect()
+// (or per call) to pick one.
+```
+
+This is deliberate. List order comes from the proxy mesh and means nothing, so
+taking the first entry silently routes work to the wrong Studio — the failure
+is invisible in the response, since the reply is well-formed and belongs to
+some other place. Resolving per call also means a second Studio opening, or the
+first one restarting, is noticed on the next call instead of being masked by a
+cached id. `studio.studioId` stays `null` unless you pin one, so an implicit
+resolution never becomes sticky.
+
+### When a pin goes stale
+
+Studio instance ids change on every Studio restart, so a pinned id does not
+survive one. When a pinned id is no longer reachable, the error says so plainly
+and names the pin, rather than passing the proxy's raw message through:
+
+```ts
+studio.setStudioId("some-old-id");
+await studio.getStudioState();
+// MCPToolError: The pinned studio_id "some-old-id" is no longer connected: ...
+// Studio instance ids change every time Studio restarts, so a pin does not
+// survive one. Re-pin with setStudioId() using a current id from
+// listStudios(), or setStudioId(null) to fall back to inferring.
+```
+
+The pin is deliberately not swapped for whatever Studio happens to be open. A
+pin is your explicit choice, and quietly retargeting it is the same failure as
+first-wins, so recovery is yours to make: re-pin, or unpin and let inference
+apply (which only works while a single Studio is open).
+
+### Stable identity across restarts
+
+`studioId` is minted by the proxy process and changes on every Studio restart, so
+it is a transport token, not an identity. There is no in-band path to it:
+`game.UniqueId` is unreadable from this context (`lacking capability
+RobloxScript`) and `ReflectionService` does not list it either.
+
+`game:GetDebugId()` *is* readable and is the substitute:
+
+```ts
+import { listStudioInstances, readInBandIdentity } from "roblox-studio-mcp/extended";
+
+const result = await listStudioInstances();
+// { instances: [ { reported_name: "Place1", studio_id: "4382339c-…",
+//                  debug_id: "0_185967", place_id: 0, … }, … ] }
+```
+
+The two are paired in a registry under this machine's state directory
+(`%LOCALAPPDATA%\roblox-studio-mcp\studios.json` on Windows). It is **host-side
+only** — nothing is written into the DataModel, so an entry can never reach the
+place file, a published place, or a team create. Override with
+`ROBLOX_STUDIO_MCP_REGISTRY`.
+
+```ts
+resolveInstance({ debugId: "0_185967" });
+// { status: "ok", match: { last_studio_id: "…", id_changed: true, … } }
+
+resolveInstance();          // ambiguous -> every candidate, no guess
+// { status: "ambiguous", candidates: [ … ] }
+```
+
+`id_changed` is `true` once an instance has been seen under more than one
+`studioId`, which is how a restart shows up under a stable key.
+
+**Read it in Edit mode.** `GetDebugId` identifies the DataModel root, not the
+process, and a play session reports a different value for the same Studio
+(`0_185967` in Edit vs `0_1623123` in Server), so a Server-side read is not
+comparable. Whether the value survives a Studio restart is **unverified** — it
+is derived from the place instance, so it is expected to be stable, but that has
+not been measured.
+
+### Unrecognised `list_roblox_studios` payloads
+
+`listStudios()` returns an empty array only when the proxy genuinely reports no
+instances. A payload shape this client does not recognise throws instead, and
+shows you the shape it got. Collapsing the two cases would report schema drift
+as "no Studio is connected" and send you to check the MCP toggle when the fault
+is on this side of the wire.
+
 ## Stdio servers
 
 ```powershell
@@ -136,10 +227,10 @@ node ./dist/extendedServer.js
 ## Extended helpers
 
 ```ts
-import { RobloxStudio, writeLikeMultiEdit } from "roblox-studio-mcp/extended";
+import { RobloxStudio, writeScript } from "roblox-studio-mcp/extended";
 
 const studio = await RobloxStudio.connect();
-const status = await writeLikeMultiEdit(
+const status = await writeScript(
   studio,
   "game.ServerScriptService.MyScript",
   "print('hello')",
@@ -158,7 +249,7 @@ npx tsx examples/list_tools.ts
 npx tsx examples/run_luau.ts
 npx tsx examples/singleton_usage.ts
 npx tsx examples/walk_jump.ts
-npx tsx examples/write_like_multi_edit.ts game.ServerScriptService.MyScript --create
+npx tsx examples/write_script.ts game.ServerScriptService.MyScript --create
 npx tsx examples/wait_for_studio.ts 600
 ```
 

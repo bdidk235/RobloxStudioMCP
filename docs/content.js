@@ -74,6 +74,24 @@ window.DOC = {
             "connection, singleton included, just works.",
         },
         {
+          type: "p",
+          html: "An <em>implicit</em> id is accepted only when exactly one Studio is connected. With two or more, " +
+            "<code>resolve_studio_id()</code> raises and names every candidate instead of taking the first entry. " +
+            "List order comes from the proxy mesh and carries no intent, so choosing by position silently routes " +
+            "work to the wrong Studio — and the reply is well-formed, so the mistake is invisible. Resolution is " +
+            "also re-run per call rather than cached, so a second Studio opening or the first restarting is noticed " +
+            "immediately.",
+        },
+        {
+          type: "p",
+          html: "Because <code>studio_id</code> is minted by the proxy and changes on every restart, it is a " +
+            "transport token rather than an identity. <code>game.UniqueId</code> is unreadable here (it needs the " +
+            "<code>RobloxScript</code> capability), but <code>game:GetDebugId()</code> is not — so " +
+            "<code>extended_studio_identity</code> and <code>extended_list_studios</code> pair the two and keep a " +
+            "registry in this machine's state directory. That registry is host-side only: nothing is written into " +
+            "the DataModel, so an entry cannot reach the place file, a published place, or a team create.",
+        },
+        {
           type: "callout",
           kind: "warn",
           html: "Found with a raw-bytes pacing probe: burst (call instantly) failed 100% of the time, " +
@@ -104,7 +122,7 @@ window.DOC = {
         {
           type: "p",
           html: "Studio rejects direct <code>Script.Source</code> assignment over ~200K. " +
-            "<code>write_like_multi_edit</code> / <code>writeLikeMultiEdit</code> therefore split large bodies " +
+            "<code>write_script</code> / <code>writeScript</code> therefore split large bodies " +
             "into 200K slices embedded as raw Lua long-bracket strings, then loop " +
             "<code>ScriptEditorService:UpdateSourceAsync(target, function(old) return old .. slice end)</code> " +
             "inside Studio. Proven live: a <strong>12.2 MB module rewritten byte-exact</strong> (12,220,210 chars).",

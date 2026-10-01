@@ -15,10 +15,11 @@ Usage (direct Python):
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, TypedDict
 
-from .writer import _GAME_TREE_PREFIX, _strip_line_prefixes
+from .writer import _GAME_TREE_PREFIX, _strip_line_prefixes, _pick_bracket_level, _lua_long_bracket
 from .updater import UpdateResult
+from .errors import INVALID_ARGUMENT, ToolError, describe
 from ..roblox import RobloxStudio
 from ..types import CallToolResult
 
@@ -70,6 +71,18 @@ async def script_search_and_read(
     ``line_count`` always reflects the full source. Pass 0 or None for full
     sources. Unreadable scripts are skipped. Returns [] when the tree payload
     cannot be parsed (e.g. unexpected server format).
+
+    **Omitting ``query`` means no name filter, and that is the fix.** This used
+    to pass ``keywords="Script"`` when ``query`` was None, so the *optional*
+    parameter defaulted to a filter: an agent auditing ``ServerScriptService``
+    for its scripts got back only the ones whose names happened to contain
+    "Script", with no indication anything was excluded. Every legitimate script
+    not matching that substring vanished from an audit with zero signal - found
+    by hostile fuzzing, which asked for "everything under this path" and got a
+    partial answer that looked complete.
+
+    An empty ``keywords`` is what the underlying tool takes for "no filter",
+    which is what the schema already promised by making the parameter optional.
     """
     import json as _json
 
@@ -77,7 +90,7 @@ async def script_search_and_read(
     tree_result = await studio.search_game_tree(
         path=root_path,
         datamodel_type="Edit",
-        keywords="Script" if query is None else query,
+        keywords=query or "",
     )
     try:
         tree_data = _json.loads(tree_result.text())
@@ -127,7 +140,8 @@ async def insert_asset_from_file(
     """Insert a local file into the game tree.
 
     Args:
-        file_type: One of "image" (png/jpg/jpeg) or "script" (luau/lua).
+        file_type: One of "script" (luau/lua), "model" (rbxm/rbxmx), or
+            "image" (png/jpg/jpeg).  Order of priority: script, model, image.
         asset_name: Name to give the inserted instance (defaults to file basename).
         parent_path: Container path in the DataModel (e.g. game.ReplicatedStorage).
         className: Roblox class for script files (Script, LocalScript, ModuleScript).
@@ -139,17 +153,37 @@ async def insert_asset_from_file(
     import re
 
     if not os.path.isfile(file_path):
-        raise FileNotFoundError(f"Local file not found: {file_path}")
+        # INVALID_ARGUMENT, deliberately not NOT_FOUND and deliberately not a
+        # FileNotFoundError. This used to classify as NOT_FOUND purely because
+        # the message contained "not found", but NOT_FOUND in this vocabulary
+        # means "the thing you named is not in the DataModel" - the recovery
+        # there is to re-list the DataModel, which is useless when the miss is
+        # on the host filesystem and the DataModel was never consulted. The
+        # recovery here is to send a path that exists, which is an argument
+        # fault like any other. Raising the code rather than hoping `classify`
+        # guesses right also stops a reworded message from silently moving the
+        # code.
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"file_path must name an existing local file, got {describe(file_path)}. "
+
+            f"Read the path back before sending it.",
+        )
     if parent_path and not parent_path.startswith(_GAME_TREE_PREFIX):
-        raise ValueError(
-            f"parent_path must be a game-tree path starting with {_GAME_TREE_PREFIX!r}; "
-            f"got {parent_path!r}."
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"parent_path must be a game-tree path starting with "
+            f"{describe(_GAME_TREE_PREFIX)}; got {describe(parent_path)}.",
         )
 
     file_type = file_type.lower()
     target_name = asset_name or os.path.splitext(os.path.basename(file_path))[0]
     if not target_name:
-        raise ValueError(f"Could not derive asset name from file_path {file_path!r}.")
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"Could not derive asset_name from file_path {describe(file_path)}. "
+            f"Pass asset_name explicitly.",
+        )
 
     if file_type == "image":
         # Step 1: Upload via store_image
@@ -209,8 +243,8 @@ async def insert_asset_from_file(
         # Determine the target path in the game tree
         target_path = f"{parent_path.rstrip('.')}.{target_name}" if parent_path else target_name
 
-        from .writer import write_like_multi_edit
-        status = await write_like_multi_edit(
+        from .writer import write_script
+        status = await write_script(
             studio,
             target_path,
             content,
@@ -226,11 +260,117 @@ async def insert_asset_from_file(
             "className": className,
         }
 
+    if file_type == "model":
+        # Import WITHOUT LoadLocalAsset (needs RobloxScript/plugin security
+        # the Assistant's execute_luau lacks).  Instead: base64 the bytes,
+        # `write` slice 0 into a SINGLE scratch ModuleScript, append the rest
+        # via ScriptEditorService:UpdateSourceAsync, then in-Studio read
+        # .Source -> EncodingService:Base64Decode -> buffer ->
+        # SerializationService:DeserializeInstancesAsync -> parent_path.
+        # Proven against live Studio (651KB binary .rbxm + 6.7MB XML .rbxmx).
+        import base64
+
+        from .writer import write_script
+
+        # Scratch lives in PluginGuiService: studio-only, never replicates or
+        # publishes with the place (unlike ServerStorage).
+        _MODEL_SLICE_CHARS = 180 * 1024
+        _SCRATCH_NAME = "RBXImportPayload"
+        _SCRATCH_PATH = f"game.PluginGuiService.{_SCRATCH_NAME}"
+        try:
+            with open(file_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+        except OSError as e:
+            return {
+                "status": "insert_failed",
+                "file_path": file_path,
+                "note": f"model load failed: could not read file: {str(e)[:200]}",
+            }
+        slices = [b64[i:i + _MODEL_SLICE_CHARS] for i in range(0, len(b64), _MODEL_SLICE_CHARS)]
+
+        try:
+            await studio.execute_luau(
+                f"local old = game.PluginGuiService:FindFirstChild({_SCRATCH_NAME!r})\n"
+                "if old then old:Destroy() end\n"
+                "return \"scratch clean\"\n",
+                datamodel_type="Edit",
+            )
+            await write_script(
+                studio, _SCRATCH_PATH, slices[0],
+                className="ModuleScript", create_if_missing=True,
+            )
+            for i in range(1, len(slices)):
+                lit = _lua_long_bracket(slices[i], _pick_bracket_level(slices[i]))
+                await studio.execute_luau(
+                    f"local target = {_SCRATCH_PATH}\n"
+                    f"local slice = {lit}\n"
+                    "game:GetService(\"ScriptEditorService\"):UpdateSourceAsync"
+                    "(target, function(old) return old .. slice end)\n"
+                    "return \"appended \" .. #slice\n",
+                    datamodel_type="Edit",
+                )
+            name_lit = _lua_long_bracket(target_name, _pick_bracket_level(target_name))
+            assemble = (
+                f"local target = {_SCRATCH_PATH}\n"
+                "local data = target.Source\n"
+                "local raw = game:GetService(\"EncodingService\"):Base64Decode(buffer.fromstring(data))\n"
+                "local instances = game:GetService(\"SerializationService\"):DeserializeInstancesAsync(raw)\n"
+                "assert(#instances > 0, \"deserialized zero instances\")\n"
+                f"if #instances == 1 then instances[1].Name = {name_lit} end\n"
+                f"local parent = {parent_path}\n"
+                "local names = {}\n"
+                "for _, inst in ipairs(instances) do\n"
+                "  inst.Parent = parent\n"
+                "  table.insert(names, inst.ClassName .. \":\" .. inst.Name)\n"
+                "end\n"
+                "target:Destroy()\n"
+                "return \"imported \" .. #instances .. \" root(s): \" .. table.concat(names, \", \")\n"
+            )
+            result = await studio.execute_luau(assemble, datamodel_type="Edit")
+            return {
+                "status": "inserted",
+                "file_path": file_path,
+                "asset_name": target_name,
+                "parent_path": parent_path,
+                "result": result.text(),
+            }
+        except Exception as e:
+            return {
+                "status": "insert_failed",
+                "file_path": file_path,
+                "note": f"model load failed: {str(e)[:300]}. "
+                        "May require file path accessible to Studio.",
+            }
+
     return {
         "status": "unsupported_file_type",
         "file_path": file_path,
-        "note": f"file_type '{file_type}' is not supported. Supported: image, script",
+        "note": f"file_type '{file_type}' is not supported. Supported: script, model, image",
     }
+
+
+class WatchResult(TypedDict):
+    """What :meth:`_ConsoleWatch.poll` actually returns.
+
+    This exists because of a shipped bug. ``extended_watch_output`` read
+    ``result["text"]`` while this dict is keyed ``new_lines`` / ``total_lines`` /
+    ``last_line``; ``.get("text", "")`` supplied the default, the tool returned
+    ``{"returned": 0}`` on **every** call, and it reported ``isError: false``.
+
+    The honest limit, measured: with the return type as bare
+    ``Dict[str, Any]`` no type checker can see it, and with a ``TypedDict``
+    **neither mypy nor pyright flags the ``.get()`` form** - a defaulted
+    ``.get`` on a missing key is legal by design in both. What a TypedDict *does*
+    catch is the subscript form, and what it does for this codebase is make the
+    three real keys visible in one place. See
+    ``python/typecheck_acid_test.py`` for the measurement, and
+    ``TODO.md`` for the conclusion that the annotation is the fix and the checker
+    is a backstop.
+    """
+
+    new_lines: List[str]
+    total_lines: int
+    last_line: Optional[str]
 
 
 class _ConsoleWatch:
@@ -263,7 +403,7 @@ class _ConsoleWatch:
                 return current[i + 1 :]
         return list(current)
 
-    async def poll(self, studio: RobloxStudio) -> Dict[str, Any]:
+    async def poll(self, studio: RobloxStudio) -> WatchResult:
         result = await studio.call("get_console_output", {})
         lines = result.text().splitlines()
 
@@ -293,7 +433,7 @@ def get_watch_state(key: str = "default") -> _ConsoleWatch:
 async def watch_output(
     studio: RobloxStudio,
     watch_state: Optional[_ConsoleWatch] = None,
-) -> Dict[str, Any]:
+) -> WatchResult:
     """Poll console output and return only new lines since last call.
 
     When ``watch_state`` is omitted a process-wide default is reused so
@@ -388,8 +528,9 @@ async def execute_luau_from_file(
         encoding: File encoding (default UTF-8).
 
     Raises:
-        FileNotFoundError: If ``file_path`` does not exist.
-        ValueError: If the file is empty.
+        ToolError: ``INVALID_ARGUMENT`` if ``file_path`` does not exist, or
+            names an empty file. Both are the caller's argument rather than a
+            DataModel miss, so neither is ``NOT_FOUND``.
 
     Returns:
         The execution result from Studio.
@@ -398,10 +539,118 @@ async def execute_luau_from_file(
 
     resolved = os.path.abspath(os.path.expanduser(file_path))
     if not os.path.isfile(resolved):
-        raise FileNotFoundError(f"Luau file not found: {resolved}")
+        # INVALID_ARGUMENT rather than NOT_FOUND: see the same decision in
+        # `insert_asset_from_file`. The DataModel was never consulted here.
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"file_path must name an existing local file, got {describe(resolved)}.",
+
+        )
     with open(resolved, "r", encoding=encoding, newline=None) as f:
         # Universal newlines, matching the TypeScript client.
         code = f.read().replace("\r\n", "\n").replace("\r", "\n")
     if not code.strip():
-        raise ValueError(f"Luau file is empty: {resolved}")
-    return await studio.execute_luau(code, datamodel_type=datamodel_type)
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"file_path names an empty file: {describe(resolved)}. "
+
+            f"Write the Luau to it before executing.",
+        )
+    return _annotate_array_escape(
+          await studio.execute_luau(code, datamodel_type=datamodel_type)
+      )
+
+
+#: What Studio's serialiser does to an array, measured live. See
+#: :func:`_array_escape_paths`.
+ARRAY_ESCAPE_NOTE = (
+      "Array-shaped values do not survive this transport. Studio stringifies "
+      "integer keys, so a Luau array {10,20,30} arrives as an object with keys "
+      "\"1\",\"2\",\"3\" rather than [10,20,30], and Vector2.new(3,4) arrives as "
+      "the single string \"3, 4\". Reported at: %s. This is a NOTE and nothing "
+      "was rewritten: a table with genuine string keys \"1\",\"2\" produces the "
+      "identical bytes, so repairing it would corrupt real data. Serialise at the "
+      "source - HttpService:JSONEncode - and read the string, which survives "
+      "intact."
+  )
+
+
+def _array_escape_paths(value: Any, path: str = "") -> List[str]:
+      """Where a Luau array most likely arrived as a string-keyed object.
+
+      Measured live against a real Studio, 2026-09-30:
+
+      ==========================  =========================================
+      Luau returned                arrived as
+      ==========================  =========================================
+      ``{10,20,30}``               ``{"1":10,"2":20,"3":30}``
+      ``{rows={{n=1,v=10},...}}``  ``{"rows":{"1":{...},"2":{...}}}``
+      ``{p=Vector2.new(3,4)}``     ``{"p":"3, 4"}``
+      ``JSONEncode({10,20,30})``   ``{"json":"[10,20,30]"}``  - intact
+      ==========================  =========================================
+
+      The signature is a dict whose keys are exactly ``"1".."n"`` with ``n >= 2``
+      and nothing else. **This cannot be repaired, only reported** - and that is
+      the point of returning a note rather than fixing it:
+
+      * ``{[1]=x,[2]=y}`` is a genuine Luau **array** and should have been a list
+      * ``{["1"]=x,["2"]=y}`` is a genuine **string-keyed map** and is already
+        correct as ``{"1":x,"2":y}``
+
+      Both serialise to the same bytes. Any heuristic that "fixes" the first
+      silently corrupts the second, and any hard failure fires on the second. So
+      the only honest move is to say the shape is present and let the caller
+      decide at the source, where the distinction still exists.
+
+      The originating report is ``REQUEST-luau-return-shapes.md`` in this repo,
+      where a 165-row driver returned ``{}`` with no error because of exactly
+      this - invisible without a control, and one step from a false finding
+      about the engine.
+      """
+      found: List[str] = []
+      if isinstance(value, dict):
+          # `str(k)` before the digit test, not after. A dict built in-process
+          # can have real `int` keys - `{1: x, 2: y}` - and `k.isdigit()` on an
+          # int is an AttributeError that escaped this function and would have
+          # failed the whole tool call. Over JSON the keys are always strings, so
+          # only an in-process caller reaches it; that is still a caller.
+          keys = [str(k) for k in value]
+          if len(keys) >= 2 and all(k.isdigit() for k in keys):
+              numbers = sorted(int(k) for k in keys)
+              if numbers == list(range(1, len(numbers) + 1)):
+                  found.append(path or "(root)")
+          for key, item in value.items():
+              found.extend(_array_escape_paths(item, "%s.%s" % (path, key) if path else str(key)))
+      elif isinstance(value, list):
+          for index, item in enumerate(value):
+              found.extend(_array_escape_paths(item, "%s[%d]" % (path, index)))
+      return found
+
+
+def _annotate_array_escape(result: CallToolResult) -> CallToolResult:
+      """Append the array-escape note when the result shows the shape. Never edits it.
+
+      Additive on purpose. The payload the caller reads is untouched, because the
+      two candidate shapes are indistinguishable and any rewrite is a coin flip.
+
+      The whole body is guarded, not just the parse. A diagnostic that can fail
+      the call it is annotating is worse than no diagnostic, and an earlier draft
+      guarded only ``json()`` - which is exactly how the integer-key crash below
+      got as far as escaping.
+      """
+      try:
+          parsed = result.json()
+          if not isinstance(parsed, (dict, list)):
+              return result
+          paths = _array_escape_paths(parsed)
+      except Exception:  # noqa: BLE001 - see above
+          return result
+      if not paths:
+          return result
+      shown = ", ".join(paths[:5])
+      if len(paths) > 5:
+          shown += " (+%d more)" % (len(paths) - 5)
+      result.content.append(
+          {"type": "text", "text": ARRAY_ESCAPE_NOTE % shown}
+      )
+      return result

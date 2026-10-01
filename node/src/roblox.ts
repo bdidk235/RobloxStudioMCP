@@ -58,8 +58,26 @@ export const RESOLVE_INTERVAL_MS = 200;
 // Matches the proxy's transient not-ready symptom (fresh proxy, uplink warming).
 const NOT_READY_HINT = "unable to reach";
 
+/**
+ * Keys under which `list_roblox_studios` has been observed to carry its array.
+ */
+const STUDIO_LIST_KEYS = ["studios", "instances", "data", "result"] as const;
+
+/**
+ * The proxy's symptom for a `studio_id` naming a Studio it can no longer
+ * reach: the instance closed, or its place unloaded. Distinct from the
+ * not-ready hint above, which means the whole uplink is still warming.
+ */
+const STALE_ID_HINTS = ["is not connected", "place is not open"] as const;
+
 function isNotReadyError(exc: unknown): boolean {
   return exc instanceof MCPToolError && String(exc.message).toLowerCase().includes(NOT_READY_HINT);
+}
+
+function isStaleStudioIdError(exc: unknown): boolean {
+  if (!(exc instanceof MCPToolError)) return false;
+  const message = String(exc.message).toLowerCase();
+  return STALE_ID_HINTS.some((hint) => message.includes(hint));
 }
 
 function delay(ms: number): Promise<void> {
@@ -130,7 +148,10 @@ export class RobloxStudio {
    * Launch the Studio MCP proxy and connect to it.
    *
    * @param studioId The Studio instance to target. If omitted, it is resolved
-   * lazily on the first tool call via `list_roblox_studios` (first wins).
+   * on each tool call that needs it via `list_roblox_studios`, and only
+   * accepted when exactly one Studio is connected. With more than one
+   * connected the call throws rather than guessing; pass `studioId`
+   * explicitly, or per call, to choose.
    */
   static async connect(options: RobloxStudioConnectOptions = {}): Promise<RobloxStudio> {
     const {
@@ -151,7 +172,12 @@ export class RobloxStudio {
     return new RobloxStudio(client, studioId ?? null);
   }
 
-  /** The resolved `studio_id`, or `null` until first resolved. */
+  /**
+   * The explicitly configured `studio_id`, or `null`.
+   *
+   * An implicitly resolved id is never stored here, so this stays `null`
+   * unless the caller pinned a Studio via `connect()` or `setStudioId()`.
+   */
   get studioId(): string | null {
     return this.studioIdValue;
   }
@@ -211,7 +237,15 @@ export class RobloxStudio {
     return tool;
   }
 
-  /** Return the connected Studio instances as a list of dicts. */
+  /**
+   * Return the connected Studio instances as a list of dicts.
+   *
+   * An empty array means the proxy really reported no instances. A payload
+   * shape this client does not recognise throws instead, because the two are
+   * different faults: collapsing them reports schema drift as "no Studio is
+   * connected", which sends the caller to check the MCP toggle when the real
+   * problem is on this side of the wire.
+   */
   async listStudios(): Promise<Record<string, unknown>[]> {
     const result = await this.client.callTool("list_roblox_studios", {});
     const data = result.json() as unknown;
@@ -219,18 +253,47 @@ export class RobloxStudio {
       return data as Record<string, unknown>[];
     }
     if (data !== null && typeof data === "object") {
-      for (const key of ["studios", "instances", "data", "result"]) {
-        const value = (data as Record<string, unknown>)[key];
-        if (Array.isArray(value)) {
-          return value as Record<string, unknown>[];
+      const record = data as Record<string, unknown>;
+      for (const key of STUDIO_LIST_KEYS) {
+        if (key in record) {
+          const value = record[key];
+          if (Array.isArray(value)) {
+            return value as Record<string, unknown>[];
+          }
+          throw new MCPToolError(
+            `list_roblox_studios returned ${JSON.stringify(key)} as ${typeof value}, ` +
+              `expected an array. Keys present: ${JSON.stringify(Object.keys(record).sort())}.`,
+          );
         }
       }
+      throw new MCPToolError(
+        "list_roblox_studios returned an unrecognised shape: a dict with keys " +
+          `${JSON.stringify(Object.keys(record).sort())} and none of ` +
+          `${JSON.stringify(STUDIO_LIST_KEYS)}. This client needs updating; the ` +
+          `response was ${JSON.stringify(data)}`,
+      );
     }
-    return [];
+    throw new MCPToolError(
+      "list_roblox_studios returned an unrecognised shape: " +
+        `${data === null ? "null" : typeof data}, expected an array or a dict. ` +
+        `The response was ${JSON.stringify(data)}`,
+    );
   }
 
   /**
-   * Return the `studio_id` to use, resolving it lazily if needed.
+   * Return the `studio_id` to use.
+   *
+   * An id configured by the caller (`connect({ studioId })` or
+   * `setStudioId()`) is returned as-is and is never re-validated.
+   *
+   * Otherwise the id is resolved from `list_roblox_studios` on **every** call.
+   * It is accepted only when exactly one Studio is connected: zero throws,
+   * and more than one throws too, because list order is the proxy mesh's and
+   * carries no intent — a silently chosen Studio is how probes end up reading
+   * the wrong place. Pin the instance explicitly to disambiguate. Resolving
+   * every time is deliberate: a cached id would keep being used after a second
+   * Studio opened or the first restarted, which is exactly the ambiguity this
+   * refuses.
    *
    * A fresh proxy needs a moment after its handshake before its Studio uplink
    * is usable; until then `list_roblox_studios` fails with "Unable to reach
@@ -260,14 +323,20 @@ export class RobloxStudio {
     if (studios.length === 0) {
       throw new MCPToolError("No Roblox Studio instances are connected. Open Studio and enable the MCP plugin, then retry.");
     }
-    const first = studios[0];
+    if (studios.length > 1) {
+      const candidates = studios.map((s) => [s["name"], s["id"]]);
+      throw new MCPToolError(
+        `${studios.length} Roblox Studio instances are connected, so no studio_id can be inferred: ` +
+          `${JSON.stringify(candidates)}. Pass studioId to connect() (or per call) to pick one.`,
+      );
+    }
+    const only = studios[0]!;
     for (const key of ["id", "studio_id", "studioId"]) {
-      if (first[key]) {
-        this.studioIdValue = String(first[key]);
-        return this.studioIdValue;
+      if (only[key]) {
+        return String(only[key]);
       }
     }
-    throw new MCPToolError(`Could not determine studio_id from list_roblox_studios result: ${JSON.stringify(first)}`);
+    throw new MCPToolError(`Could not determine studio_id from list_roblox_studios result: ${JSON.stringify(only)}`);
   }
 
   /**
@@ -275,9 +344,16 @@ export class RobloxStudio {
    *
    * `studio_id` is only added when the tool's input schema declares it and
    * the caller did not already supply one.
+   *
+   * A pinned `studio_id` that the proxy can no longer reach is reported with
+   * what *is* currently connected, and is not silently swapped for a different
+   * Studio: a pin is the caller's explicit choice, so replacing it would
+   * reintroduce the guessing this layer exists to avoid. Unpin with
+   * `setStudioId(null)` to fall back to inference.
    */
   async call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
     const merged: Record<string, unknown> = { ...args };
+    let usedPinned = false;
     if (!("studio_id" in merged)) {
       let tool: Tool | null = null;
       try {
@@ -286,10 +362,24 @@ export class RobloxStudio {
         tool = null;
       }
       if (tool === null || tool.hasParameter("studio_id")) {
+        usedPinned = this.studioIdValue !== null;
         merged["studio_id"] = await this.resolveStudioId();
       }
     }
-    return this.client.callTool(name, merged);
+    try {
+      return await this.client.callTool(name, merged);
+    } catch (exc) {
+      if (!usedPinned || !isStaleStudioIdError(exc)) {
+        throw exc;
+      }
+      throw new MCPToolError(
+        `The pinned studio_id ${JSON.stringify(merged["studio_id"])} is no longer connected: ` +
+          `${(exc as Error).message} Studio instance ids change every time Studio restarts, ` +
+          `so a pin does not survive one. Re-pin with setStudioId() using a current id from ` +
+          `listStudios(), or setStudioId(null) to fall back to inferring from whichever single ` +
+          `Studio is open.`,
+      );
+    }
   }
 
   /** Run Luau code inside Studio and return the result. */

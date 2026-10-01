@@ -4,7 +4,7 @@ Mirrors Claude Code Write semantics for game-tree scripts.  The Studio MCP's
 ``multi_edit`` is great for targeted string replacements, but sometimes you
 just want to replace a script's *entire* body — the ``open(path, "w")``
 equivalent for game scripts.  This module provides
-:func:`write_like_multi_edit`:
+:func:`write_script`:
 
 * Read first: the current source is always fetched via ``script_read``
   before writing (like Write requires Read before overwriting).
@@ -24,9 +24,20 @@ equivalent for game scripts.  This module provides
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Literal, Optional
 
+from .errors import INVALID_ARGUMENT, ToolError, describe
 from ..roblox import RobloxStudio
+
+#: The three things a write can do, and the complete set of them.
+#:
+#: A ``Literal`` rather than ``str`` because callers branch on this — the
+#: integration test asserts membership, and ``extensions.insert_asset_from_file``
+#: puts it straight in a ``status`` field. With ``str`` a fourth status could be
+#: added without any check noticing, and every such caller would silently treat
+#: it as a failure. The set is closed: `write_script` has five return statements
+#: and they produce exactly these three values.
+WriteStatus = Literal["wrote", "unchanged", "created"]
 
 
 _GAME_TREE_PREFIX = "game."
@@ -66,8 +77,10 @@ def _strip_line_prefixes(text: str) -> str:
 
 def _validate_class_name(className: str) -> str:
     if className not in _VALID_SCRIPT_CLASSES:
-        raise ValueError(
-            f"className must be one of {sorted(_VALID_SCRIPT_CLASSES)}; got {className!r}."
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"className must be one of {describe(sorted(_VALID_SCRIPT_CLASSES))}; "
+            f"got {describe(className)}.",
         )
     return className
 
@@ -109,9 +122,10 @@ def _is_missing_error(exc: BaseException) -> bool:
 def _split_target(target_path: str) -> tuple[str, str]:
     parts = target_path.split(".")
     if len(parts) < 2:
-        raise ValueError(
+        raise ToolError(
+            INVALID_ARGUMENT,
             f"target_path must be a DataModel dot-path like "
-            f"'game.ServerScriptService.MyScript'; got {target_path!r}."
+            f"'game.ServerScriptService.MyScript'; got {describe(target_path)}.",
         )
     return ".".join(parts[:-1]), parts[-1]
 
@@ -197,10 +211,16 @@ async def _chunked_write(
                 level += 1
                 continue
             raise
+    # Deliberately left a bare RuntimeError, and so deliberately left
+    # classifying as UNKNOWN: this is our own encoder failing to escape the
+    # caller's content, not a bad argument and not the engine refusing.
+    # UNKNOWN is the honest code for "we do not know what went wrong", and
+    # pinning it to INVALID_ARGUMENT would tell the caller to edit the request
+    # when the request was fine.
     raise RuntimeError("Chunked write failed: Lua long-bracket collision persists.")
 
 
-async def write_like_multi_edit(
+async def write_script(
     studio: RobloxStudio,
     target_path: str,
     content: str,
@@ -208,7 +228,7 @@ async def write_like_multi_edit(
     className: Optional[str] = None,
     create_if_missing: bool = False,
     return_string: bool = False,
-) -> str:
+) -> WriteStatus:
     """Atomically replace a script's contents with Claude Code ``Write`` semantics.
 
     Reads the current source first; returns ``"unchanged"`` without writing
@@ -243,10 +263,11 @@ async def write_like_multi_edit(
         content = f"return {_lua_long_bracket(content, level)}"
 
     if not target_path.startswith(_GAME_TREE_PREFIX):
-        raise ValueError(
-            f"target_path must start with {_GAME_TREE_PREFIX!r} (game-tree path); "
-            f"got {target_path!r}. Use a DataModel dot-path like "
-            f"'game.ServerScriptService.MyScript'."
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"target_path must start with {describe(_GAME_TREE_PREFIX)} (game-tree path); "
+            f"got {describe(target_path)}. Use a DataModel dot-path like "
+            f"'game.ServerScriptService.MyScript'.",
         )
 
     className = _validate_class_name(className or "Script")

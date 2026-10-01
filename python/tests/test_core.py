@@ -163,10 +163,33 @@ class FlakyListClient:
                 raise MCPToolError(f"Tool {name!r} reported an error: {NOT_READY_TEXT}")
             if self.mode == "empty":
                 text = '{"studios": []}'
+            elif self.mode == "multi":
+                text = (
+                    '{"studios": [{"id": "sid-a", "name": "Place1"},'
+                    ' {"id": "sid-b", "name": "rbx-re"}]}'
+                )
+            elif self.mode == "weird-keys":
+                text = '{"data": {"a": 1}}'
+            elif self.mode == "not-a-list":
+                text = '{"studios": {"a": 1}}'
+            elif self.mode == "scalar":
+                text = '"nope"'
             else:
                 text = '{"studios": [{"id": "sid-9", "name": "P"}]}'
             return CallToolResult.from_dict({"content": [{"type": "text", "text": text}]})
         return CallToolResult.from_dict({"content": [{"type": "text", "text": "ok"}]})
+
+
+class StaleToolClient(FlakyListClient):
+    """Lists fine, but reports every other tool as targeting a dead Studio."""
+
+    async def call_tool(self, name, arguments):
+        if name != "list_roblox_studios":
+            raise MCPToolError(
+                "The requested `studio_id` is not connected - that Roblox "
+                "Studio instance may have been closed or its place unloaded."
+            )
+        return await super().call_tool(name, arguments)
 
 
 class TestResolveReadiness(unittest.IsolatedAsyncioTestCase):
@@ -199,6 +222,92 @@ class TestResolveReadiness(unittest.IsolatedAsyncioTestCase):
             await studio.resolve_studio_id(timeout=5.0, interval=0.01)
         self.assertEqual(client.attempts, 1)
 
+    async def test_empty_list_raises_immediately(self):
+        client = FlakyListClient(failures=0, mode="empty")
+        studio = RobloxStudio(client)
+        with self.assertRaises(MCPToolError):
+            await studio.resolve_studio_id(timeout=5.0, interval=0.01)
+        self.assertEqual(client.attempts, 1)
+
+    async def test_multiple_studios_raise_rather_than_guess(self):
+        """An implicit id is only accepted when exactly one Studio is open."""
+        client = FlakyListClient(failures=0, mode="multi")
+        studio = RobloxStudio(client)
+        with self.assertRaises(MCPToolError) as ctx:
+            await studio.resolve_studio_id(timeout=5.0, interval=0.01)
+        message = str(ctx.exception)
+        self.assertIn("2 Roblox Studio instances", message)
+        # the error must name the candidates so a caller can choose
+        self.assertIn("sid-a", message)
+        self.assertIn("sid-b", message)
+        self.assertEqual(studio.studio_id, None)
+
+    async def test_multiple_studios_rechecked_on_every_call(self):
+        """No caching: a second Studio opening later must be noticed."""
+        client = FlakyListClient(failures=0, mode="multi")
+        studio = RobloxStudio(client)
+        for _ in range(3):
+            with self.assertRaises(MCPToolError):
+                await studio.resolve_studio_id(timeout=5.0, interval=0.01)
+        self.assertEqual(client.attempts, 3)
+
+    async def test_single_studio_is_accepted_and_not_cached(self):
+        client = FlakyListClient(failures=0)
+        studio = RobloxStudio(client)
+        self.assertEqual(await studio.resolve_studio_id(timeout=5.0), "sid-9")
+        # resolved every call, so a second Studio is caught next time
+        self.assertEqual(await studio.resolve_studio_id(timeout=5.0), "sid-9")
+        self.assertEqual(client.attempts, 2)
+        self.assertIsNone(studio.studio_id)
+
+    async def test_explicit_id_is_returned_without_listing(self):
+        client = FlakyListClient(failures=0, mode="multi")
+        studio = RobloxStudio(client, "sid-explicit")
+        self.assertEqual(await studio.resolve_studio_id(timeout=5.0), "sid-explicit")
+        self.assertEqual(client.attempts, 0)
+
+    async def test_unrecognised_payload_shape_raises_not_empty(self):
+        """Schema drift must not masquerade as "no Studio connected"."""
+        for mode in ("weird-keys", "not-a-list", "scalar"):
+            with self.subTest(mode=mode):
+                client = FlakyListClient(failures=0, mode=mode)
+                studio = RobloxStudio(client)
+                with self.assertRaises(MCPToolError) as ctx:
+                    await studio.list_studios()
+                message = str(ctx.exception)
+                # it must name the shape problem, and must not claim
+                # Studio is disconnected (which sends the caller to the
+                # MCP toggle instead of at the real fault)
+                self.assertIn("list_roblox_studios returned", message)
+                self.assertNotIn("No Roblox Studio instances", message)
+
+    async def test_genuinely_empty_list_is_still_empty(self):
+        client = FlakyListClient(failures=0, mode="empty")
+        studio = RobloxStudio(client)
+        self.assertEqual(await studio.list_studios(), [])
+
+    async def test_stale_pinned_id_explains_itself(self):
+        client = StaleToolClient(failures=0)
+        studio = RobloxStudio(client, "sid-dead")
+        with self.assertRaises(MCPToolError) as ctx:
+            await studio.call("get_studio_state", {})
+        message = str(ctx.exception)
+        self.assertIn("pinned studio_id", message)
+        self.assertIn("sid-dead", message)
+        self.assertIn("set_studio_id(None)", message)
+        # the pin is not silently swapped
+        self.assertEqual(studio.studio_id, "sid-dead")
+
+    async def test_stale_id_on_implicit_path_is_not_rewritten(self):
+        """An implicit failure passes through unchanged; inference re-lists next call."""
+        client = StaleToolClient(failures=0)
+        studio = RobloxStudio(client)
+        with self.assertRaises(MCPToolError) as ctx:
+            await studio.call("execute_luau", {"code": "return 1"})
+        message = str(ctx.exception)
+        self.assertNotIn("pinned studio_id", message)
+        self.assertIn("is not connected", message)
+
     async def test_singleton_first_use_rides_through(self):
         roblox_mod._singleton = None
         client = FlakyListClient(failures=2)
@@ -209,7 +318,8 @@ class TestResolveReadiness(unittest.IsolatedAsyncioTestCase):
             first = await get_singleton()
             result = await first.execute_luau("return 1 + 1")
         self.assertEqual(result.text(), "ok")
-        self.assertEqual(studio.studio_id, "sid-9")
+        # an implicit resolution is never stored, so it cannot go stale
+        self.assertIsNone(studio.studio_id)
         self.assertEqual(client.attempts, 3)
         await close_singleton()
         self.assertIsNone(roblox_mod._singleton)

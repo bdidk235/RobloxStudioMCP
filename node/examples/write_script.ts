@@ -1,14 +1,14 @@
 /**
  * Write-like wrapper around `multi_edit` for game-tree scripts.
  *
- * See `writeLikeMultiEdit` in `src/extended/writer.ts` for the full
+ * See `writeScript` in `src/extended/writer.ts` for the full
  * documentation. Run as a script:
  *
- *     npx tsx examples/write_like_multi_edit.ts game.ServerScriptService.MyScript [studio_id] [--create]
+ *     npx tsx examples/write_script.ts game.ServerScriptService.MyScript [studio_id] [--create]
  */
 
 import { RobloxStudio } from "../src/index.js";
-import { writeLikeMultiEdit } from "../src/extended/index.js";
+import { writeScript } from "../src/extended/index.js";
 
 async function main(): Promise<void> {
   const rawArgs = process.argv.slice(2);
@@ -17,7 +17,7 @@ async function main(): Promise<void> {
 
   if (positional.length < 1) {
     console.error(
-      "Usage: npx tsx examples/write_like_multi_edit.ts <game.ScriptContainer.Name> [studio_id] [--create]",
+      "Usage: npx tsx examples/write_script.ts <game.ScriptContainer.Name> [studio_id] [--create]",
     );
     process.exit(1);
   }
@@ -27,10 +27,10 @@ async function main(): Promise<void> {
 
   const studio = await RobloxStudio.connect({ studioId });
   try {
-    const status = await writeLikeMultiEdit(
+    const status = await writeScript(
       studio,
       target,
-      "print('Hello from write_like_multi_edit!')",
+      "print('Hello from write_script!')",
       { createIfMissing: create },
     );
     if (status === "created") {

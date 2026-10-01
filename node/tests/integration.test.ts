@@ -8,12 +8,12 @@
  * `examples/wait_for_studio.ts`, then runs this suite.
  *
  * The probe script uses a fixed DataModel path so reruns are idempotent
- * (`writeLikeMultiEdit` just reports `"unchanged"`).
+ * (`writeScript` just reports `"unchanged"`).
  */
 
 import { describe, expect, it } from "vitest";
 import { RobloxStudio } from "../src/index.js";
-import { stripLinePrefixes, writeLikeMultiEdit } from "../src/extended/index.js";
+import { stripLinePrefixes, writeScript } from "../src/extended/index.js";
 
 const suite =
   process.env["ROBLOX_STUDIO_MCP_INTEGRATION"] === "1" ? describe : describe.skip;
@@ -37,7 +37,7 @@ suite("studio integration", () => {
         const result = await studio.executeLuau("return 6 * 7");
         expect(result.text().trim()).toBe("42");
 
-        const status = await writeLikeMultiEdit(studio, PROBE_PATH, PROBE_SOURCE, {
+        const status = await writeScript(studio, PROBE_PATH, PROBE_SOURCE, {
           createIfMissing: true,
         });
         expect(["wrote", "created", "unchanged"]).toContain(status);

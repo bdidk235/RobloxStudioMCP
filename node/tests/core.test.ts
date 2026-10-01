@@ -114,7 +114,20 @@ class FlakyClient {
 
   constructor(
     private failures: number = Number.POSITIVE_INFINITY,
-    private mode: "not-ready" | "boom" | "empty" = "not-ready",
+    // Widened to every mode the tests below actually pass. It declared only
+    // three while the suite exercises seven, so `tsc --noEmit` stayed quiet
+    // (it does not include test files) and `tsconfig.check.json` reported eight
+    // errors. An incomplete union here is the same class of hole as a wrong key
+    // in a TypedDict: the type stops describing reality, and the compiler stops
+    // being able to help.
+    private mode:
+      | "not-ready"
+      | "boom"
+      | "empty"
+      | "multi"
+      | "weird-keys"
+      | "not-an-array"
+      | "scalar" = "not-ready",
   ) {}
 
   async listTools(): Promise<Tool[]> {
@@ -143,6 +156,25 @@ class FlakyClient {
       }
       if (this.mode === "empty") {
         return CallToolResult.fromDict({ content: [{ type: "text", text: '{"studios": []}' }] });
+      }
+      if (this.mode === "multi") {
+        return CallToolResult.fromDict({
+          content: [
+            {
+              type: "text",
+              text: '{"studios": [{"id": "sid-a", "name": "Place1"}, {"id": "sid-b", "name": "rbx-re"}]}',
+            },
+          ],
+        });
+      }
+      if (this.mode === "weird-keys") {
+        return CallToolResult.fromDict({ content: [{ type: "text", text: '{"data": {"a": 1}}' }] });
+      }
+      if (this.mode === "not-an-array") {
+        return CallToolResult.fromDict({ content: [{ type: "text", text: '{"studios": {"a": 1}}' }] });
+      }
+      if (this.mode === "scalar") {
+        return CallToolResult.fromDict({ content: [{ type: "text", text: '"nope"' }] });
       }
       return CallToolResult.fromDict({
         content: [{ type: "text", text: '{"studios": [{"id": "sid-9", "name": "P"}]}' }],
@@ -226,8 +258,107 @@ describe("resolveReadiness", () => {
     const studio = new RobloxStudio(client, null, { isSingleton: true });
     const result = await studio.executeLuau("return 1 + 1");
     expect(result.text()).toBe("ok");
-    expect(studio.studioId).toBe("sid-9");
     expect(client.attempts).toBe(3);
+  });
+
+  it("multiple studios throw rather than guess", async () => {
+    // An implicit id is only accepted when exactly one Studio is connected.
+    const client = new FlakyClient(0, "multi");
+    const studio = new RobloxStudio(client);
+    // the error must name the candidates so a caller can choose
+    const error = await studio.resolveStudioId({ timeoutMs: 5000 }).catch((e: Error) => e);
+    expect(error).toBeInstanceOf(MCPToolError);
+    expect((error as Error).message).toMatch(/2 Roblox Studio instances/);
+    expect((error as Error).message).toMatch(/sid-a/);
+    expect((error as Error).message).toMatch(/sid-b/);
+    expect(studio.studioId).toBeNull();
+  });
+
+  it("multiple studios are rechecked on every call", async () => {
+    // No caching: a second Studio opening later must be noticed.
+    const client = new FlakyClient(0, "multi");
+    const studio = new RobloxStudio(client);
+    for (let i = 0; i < 3; i++) {
+      await expect(studio.resolveStudioId({ timeoutMs: 5000 })).rejects.toBeInstanceOf(MCPToolError);
+    }
+    expect(client.attempts).toBe(3);
+  });
+
+  it("a single studio is accepted and not cached", async () => {
+    const client = new FlakyClient(0);
+    const studio = new RobloxStudio(client);
+    expect(await studio.resolveStudioId({ timeoutMs: 5000 })).toBe("sid-9");
+    // resolved every call, so a second Studio is caught next time
+    expect(await studio.resolveStudioId({ timeoutMs: 5000 })).toBe("sid-9");
+    expect(client.attempts).toBe(2);
+    expect(studio.studioId).toBeNull();
+  });
+
+  it("an explicit id is returned without listing", async () => {
+    const client = new FlakyClient(0, "multi");
+    const studio = new RobloxStudio(client, "sid-explicit");
+    expect(await studio.resolveStudioId({ timeoutMs: 5000 })).toBe("sid-explicit");
+    expect(client.attempts).toBe(0);
+  });
+});
+
+describe("listStudios payload shapes", () => {
+  it("an unrecognised shape throws instead of reporting empty", async () => {
+    // Schema drift must not masquerade as "no Studio connected".
+    // `as const` so the loop variable keeps the literal union rather than
+    // widening to `string`, which the constructor will not accept.
+    for (const mode of ["weird-keys", "not-an-array", "scalar"] as const) {
+      const client = new FlakyClient(0, mode);
+      const studio = new RobloxStudio(client);
+      const error = await studio.listStudios().catch((e: Error) => e);
+      expect(error).toBeInstanceOf(MCPToolError);
+      // it must name the shape problem, and must not claim Studio is
+      // disconnected (which sends the caller to the MCP toggle instead of
+      // at the real fault)
+      expect((error as Error).message).toMatch(/list_roblox_studios returned/);
+      expect((error as Error).message).not.toMatch(/No Roblox Studio instances/);
+    }
+  });
+
+  it("a genuinely empty list is still empty", async () => {
+    const client = new FlakyClient(0, "empty");
+    const studio = new RobloxStudio(client);
+    expect(await studio.listStudios()).toEqual([]);
+  });
+});
+
+/** Lists fine, but reports every other tool as targeting a dead Studio. */
+class StaleToolClient extends FlakyClient {
+  override async callTool(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
+    if (name !== "list_roblox_studios") {
+      throw new MCPToolError(
+        "The requested `studio_id` is not connected - that Roblox Studio instance " +
+          "may have been closed or its place unloaded.",
+      );
+    }
+    return super.callTool(name, args);
+  }
+}
+
+describe("stale pinned studio_id", () => {
+  it("explains itself rather than surfacing raw", async () => {
+    const client = new StaleToolClient(0);
+    const studio = new RobloxStudio(client, "sid-dead");
+    const error = await studio.call("get_studio_state", {}).catch((e: Error) => e);
+    expect(error).toBeInstanceOf(MCPToolError);
+    expect((error as Error).message).toMatch(/pinned studio_id/);
+    expect((error as Error).message).toMatch(/sid-dead/);
+    expect((error as Error).message).toMatch(/setStudioId\(null\)/);
+    // the pin is not silently swapped
+    expect(studio.studioId).toBe("sid-dead");
+  });
+
+  it("is not rewritten on the implicit path", async () => {
+    const client = new StaleToolClient(0);
+    const studio = new RobloxStudio(client);
+    const error = await studio.call("execute_luau", { code: "return 1" }).catch((e: Error) => e);
+    expect((error as Error).message).not.toMatch(/pinned studio_id/);
+    expect((error as Error).message).toMatch(/is not connected/);
   });
 });
 
