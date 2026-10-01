@@ -2348,14 +2348,28 @@ workflow never got past.
 | 12:11 | validator re-run: **HTTP 401, `RESULT=REJECTED`** |
 
 Same secret, same validator, 200 then 401 inside ~40 minutes, with the last
-known-good use immediately before the first bad one. The account had already
-been flagged once, so **signing a Studio in from a runner IP is the most likely
-cause** — but that is a plausible story, not a measured one, and is recorded as
-such.
+known-good use immediately before the first bad one.
+
+**Confirmed by the account owner 2026-10-01: the cookie was blocked on
+Roblox's side.** So the revocation is account-level anti-abuse, not a transient
+network fault, a malformed request, or anything in this workflow — the three
+alternatives a 401 alone could not exclude. It is also the second time this
+account has been flagged, and the block arrived immediately after a Studio was
+signed in from a runner IP.
+
+**Which raises the question this record should ask before anyone retries: was
+the CI run itself the cause?** The sequence is suggestive rather than proven:
+the cookie authenticated at 11:32, attempt 4 used it to sign a Studio in at
+~12:05, and it was dead by 12:10. If signing in from a datacenter IP is what
+trips the flag, then a fresh cookie from *this same account* is likely to be
+blocked again, and the retry should not be expected to work. That is a question
+for whoever owns the account, not something measurable from here.
 
 To continue: re-paste a fresh cookie and run `validate-cookie.yml` **first**. It
 costs about a minute and is the only thing standing between a re-run and another
-dead hour.
+dead hour. But see the note above — a second cookie from a blocked account may
+be blocked on arrival, and the honest reading is that this path needs a
+different account rather than a fresher token.
 
 #### What would be tried next, in order
 
