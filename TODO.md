@@ -2679,25 +2679,128 @@ So the search is now scoped to `~/Library` with `Caches` pruned, looks for both
 **UNKNOWN** rather than absent. The probe asserts that a failed search is never
 followed by a "none found" line.
 
-#### What would be tried next, in order
+### SETTLED 2026-10-01, by measurement: the macOS bundle is not a modifiable target, and the DMG is not even the app
+
+The offline/patch route was the last idea for live-Studio CI, so it got the one
+check every such idea needs and nobody had run: **is the macOS Studio bundle
+structurally modifiable at all?** Read-only, no launch, no sign-in, no place.
+Workflow: `studio-bundle-probe.yml`, runs 36881983269 and 36882438461.
+
+#### 12. The public download is an INSTALLER, not the app
+
+| measured | value |
+|---|---|
+| bundle in `RobloxStudio.dmg` | `RobloxStudioInstaller.app` |
+| `CFBundleIdentifier` | `com.roblox.RobloxStudioInstaller` |
+| bundle size / file count | **24 MB, 44 files** |
+| largest single file | the 22 MB `RobloxStudioInstaller` binary |
+| architecture | universal, x86_64 + arm64 |
+| `LSMinimumSystemVersion` | 10.13 |
+
+**The engine is not in the DMG.** The real `RobloxStudio.app` only exists after
+the installer runs — which is exactly why the attach workflow's `open "$STUDIO_APP"`
+produced a *different* bundle name than the one it opened. So the artifact an
+offline/patch scheme would have to modify is not obtainable from the public
+download; obtaining it means running the thing that needs the network.
+
+`strings` found **no download URL** in the stub, so even the fetch location is
+not recoverable from the binary — it is presumably in Roblox's API response
+rather than hardcoded.
+
+#### 13. And the bundle that *is* in the DMG is sealed against modification
+
+| property | measured | consequence |
+|---|---|---|
+| `CodeDirectory flags` | **`0x10000(runtime)`** | hardened runtime is ON |
+| authority | `Developer ID Application: Roblox Corporation (2CFABCH843)` | third-party, notarised, not ad-hoc |
+| `codesign --verify --deep --strict` | `valid on disk`, `satisfies its Designated Requirement` | sealed; any byte change breaks it |
+| entitlements | **none of** `disable-library-validation`, `allow-unsigned-executable-memory`, `get-task-allow`, `app-sandbox` | **no foreign dylib can be loaded** |
+| `LC_RPATH` | `@loader_path/./__RobloxStudioInstaller__shared_libs_symlink_tree`, `@executable_path` | points into a tree created at install time |
+| `WebKit`/`WebView` linked or bundled | **none** | no web runtime to hook |
+| `WebView2` / `CreateCoreWebView2` in the binary | **0 matches** | studio-offline's hook point does not exist here |
+| symlinks in the DMG bundle | **none** | the rpath'd symlink tree is made by the installer |
+
+This is the answer to the porting question, and it is measured rather than
+argued. Every macOS injection route is closed by the entitlements row:
+
+- `DYLD_INSERT_LIBRARIES` — the hardened runtime plus SIP strips it for
+  `/Applications`, and re-signing to defeat that needs a Developer ID we do not
+  have, and arm64 will not run ad-hoc-signed code.
+- binary patching — `__TEXT` is inside the sealed signature; a patched bundle
+  does not launch.
+- a TLS-intercepting proxy — needs certificate pinning defeated, and nothing
+  here attempts it.
+- and the technique studio-offline actually uses has **no macOS hook point at
+  all**: the exact string it intercepts on Windows occurs zero times in this
+  binary. That is the concrete reason, not an inference from documentation.
+
+Note this is the **installer**, not `RobloxStudio.app`. It is strong evidence
+about how Roblox signs and seals their macOS bundles — the same signing pipeline
+almost certainly covers the app — but it is not a direct measurement of the app,
+and the difference is stated rather than glossed. The attach runs show the
+installed app's `CFBundleIdentifier` is `com.roblox.RobloxStudio`; its
+entitlements were not measured.
+
+#### 14. A probe defect found by reading its own output
+
+`find "$contents/MacOS" -maxdepth 1 -type f -print -quit` returned
+`libmimalloc.3.dylib`, because that sorts before `RobloxStudioInstaller`. So the
+architecture and linkage sections described a bundled **library** — and the
+`LC_RPATH` section reported `(none)` for the same reason. The first run's
+"`WebView2` matches: 0" was therefore measured on the wrong file, and I reported
+it before noticing; the second run re-measured it on the real executable and got
+the same 0, so the conclusion held and the earlier number was luck rather than
+evidence. Now uses `CFBundleExecutable`, with the `find` fallback kept and
+reported when that field is unusable.
+
+Still outstanding, and cheap: `missing: 2` counts `@rpath/libmimalloc.3.dylib`
+twice, because `otool -L` on a universal binary prints one slice per
+architecture. The dependency is unresolvable *in the mounted DMG* — correctly,
+since the rpath'd `__RobloxStudioInstaller__shared_libs_symlink_tree` does not
+exist until the installer creates it — but the count should be 1.
+
+#### Where this leaves live-Studio CI
+
+Retired, and the reason is now structural rather than a matter of effort:
+
+1. **Windows** — the runner has no interactive desktop; three install routes
+   measured, all fail. Not fixable from this repo.
+2. **macOS** — the app is not obtainable without running an installer that
+   needs the network, and the bundle is hardened-runtime sealed with no
+   library-validation entitlement, so no offline or patched variant is reachable.
+3. **The credential** — Studio's sign-in is interactive OAuth2, and every
+   failure mode above lands on the same wall: a hosted runner cannot complete a
+   browser authorisation from a datacentre IP, on an account Roblox has already
+   flagged twice.
+
+None of the three is a bug to fix. They are the shape of the problem, and the
+remaining cost of continuing is measurement of things already measured.
+
+**What is not lost:** the project's own integration suite runs against a local
+signed-in Studio, and all four CI jobs are green on both platforms. CI was only
+ever buying cross-platform confidence for a check that a developer machine
+performs in a minute. `ci.yml` is unit-tests-only and stays that way.
+
+#### The next-moves list from the attach runs, now closed
+
+Kept because it is the record of what was actually attempted, in order. Every
+item is resolved; items 1-3 by measurement, item 4 by the ruling above.
 
 1. ~~Fresh cookie, validated, then re-run.~~ **Done** — run 36871784425.
 2. ~~Read the diagnose output.~~ **Done** — run 36874406284. `Authenticated : NO`,
    `HTTPStorages` is the store Studio reads, and it discards a planted cookie.
 3. ~~Find the store Studio actually reads.~~ **Done**, and the answer was not a
    cookie jar: `oauth2RefreshToken` is the credential Studio signs in with.
-4. **Decide whether OAuth2 is viable here, before spending another run.** A
-   refresh token comes from Roblox's OAuth authorisation flow, which is
-   interactive. So the options are: a self-hosted macOS runner where a browser
-   sign-in can happen once and be captured; an account whose Studio session is
-   already established and whose profile is committed or seeded; or accepting
-   that live-Studio CI is not reachable from a GitHub-hosted runner and dropping
-   the leg. **This is a decision, not another experiment** — the measurement now
-   rules out the thing the last several runs were trying.
-5. **`Assistant-ExternalMCPEnabled` on macOS is still unmeasured.** The flag
-   survives in all three locations, so the question is only whether Studio reads
-   one. It cannot be answered until the sign-in works, because the MCP server
-   needs an authenticated Studio — which makes it strictly downstream of 4.
+4. ~~Decide whether OAuth2 is viable here.~~ **Decided: no.** A refresh token
+   comes from Roblox's OAuth authorisation flow, which is interactive, and the
+   bundle probe closed the offline/macOS-port alternative in the same pass. The
+   leg is dropped rather than retried.
+5. `Assistant-ExternalMCPEnabled` on macOS is **still unmeasured and now
+   permanently so** — the flag survives in all three locations, but the sign-in
+   it depends on cannot be obtained on a hosted runner, so the question is
+   unanswerable here rather than unanswered. It would need a self-hosted macOS
+   runner with a real user session, which is the one environment that would also
+   solve item 4. Recorded so the gap is visible rather than forgotten.
 
 #### Also fixed as a side effect: CI on `macos-latest` is now green
 
