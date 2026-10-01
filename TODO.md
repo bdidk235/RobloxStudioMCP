@@ -3399,3 +3399,56 @@ docstring, both fixed as paired edits:
   raw-splice + bounded-poll reality. (And the pass caught its own near-miss:
   an edit deleted a `def` line instead of adding a test; restored
   immediately, verified by re-reading before running.)
+
+## Retired 2026-10-01: the live-Studio CI tooling, and how to bring it back
+
+The investigation is over and its tooling is removed, so the repo no longer
+carries a cookie-dependent workflow with no way to make it pass. Deleted:
+
+| removed | last commit holding it |
+|---|---|
+| `.github/workflows/macos-mcp-attach.yml` | `453f646` |
+| `.github/workflows/studio-smoke.yml` | `d0883c8` |
+| `.github/workflows/validate-cookie.yml` | `453f646` |
+| `ci/fixture-baseplate.rbxl` | `f25bba6` |
+
+Restoring any of them is one command, byte-exact:
+
+```
+git show 453f646:.github/workflows/macos-mcp-attach.yml
+git show 453f646:.github/workflows/validate-cookie.yml
+git show d0883c8:.github/workflows/studio-smoke.yml
+git show f25bba6:ci/fixture-baseplate.rbxl
+```
+
+**The `ROBLOSECURITY` environment was deleted**, which took its secret with it.
+It is a live credential with no consumer otherwise, and the cookie it held was
+already known to be short-lived. Recreating it needs a fresh cookie, and the
+validator that checked one is the second command above.
+
+Kept deliberately:
+
+- **`ci.yml`** - unit tests only, four jobs green on Windows and macOS. It never
+  needed a Studio.
+- **`studio-bundle-probe.yml`** - the read-only bundle probe. No secret, about 20
+  seconds, and it is the tool that would re-check the two structural findings
+  (hardened runtime, no `disable-library-validation`) if Roblox ever re-signs a
+  bundle. Findings 12 and 13 are worthless without something that reproduces
+  them.
+- **`TODO.md`** - every measurement, including the retractions.
+
+Nothing in `README.md` or `AGENTS.md` referenced any of the deleted files, so no
+doc needed rewriting. `REVIEW-2026-10-01.md` names `ci/fixture-baseplate.rbxl`
+once, in a list of what that review did **not** audit - a statement about a dated
+pass over the repo, so it is left as written rather than edited to match today's
+tree.
+
+### The one thing that would revive any of this
+
+A **self-hosted macOS runner with a real user session.** Not a better cookie, not
+a better workflow. All three walls are properties of a hosted runner rather than
+of this code: no interactive desktop on the Windows image, a sealed
+hardened-runtime bundle with no obtainable app behind it on macOS, and an OAuth2
+sign-in needing a browser authorisation a datacentre IP cannot complete. One
+machine with a desktop and a signed-in account removes all three at once, and the
+first command in the table above then runs unchanged.
