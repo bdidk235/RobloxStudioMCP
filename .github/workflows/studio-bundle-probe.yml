@@ -159,7 +159,21 @@ jobs:
             exit 0
           fi
           contents="$app/Contents"
-          bin="$(find "$contents/MacOS" -maxdepth 1 -type f -print -quit 2>/dev/null)"
+          # The main executable, named by Info.plist - NOT the first file `find`
+          # returns. That mistake was made and then caught: `find -print -quit`
+          # handed back libmimalloc.3.dylib because it sorts first, so the
+          # architecture and linkage sections described a bundled library rather
+          # than the program. CFBundleExecutable is the field that means it.
+          exec_name="$(plutil -extract CFBundleExecutable raw -o - \
+            "$contents/Info.plist" 2>/dev/null)"
+          bin=""
+          if [ -n "$exec_name" ] && [ -f "$contents/MacOS/$exec_name" ]; then
+            bin="$contents/MacOS/$exec_name"
+          else
+            bin="$(find "$contents/MacOS" -maxdepth 1 -type f -print -quit 2>/dev/null)"
+            echo "NOTE: CFBundleExecutable unusable ('${exec_name:-unset}'), fell back to $bin" \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
           {
             echo "### Identity"
             echo '```'
