@@ -214,8 +214,13 @@ jobs:
             echo
             echo "### Mach-O linkage — is anything unresolved?"
             echo '```'
-            echo "-- LC_RPATH entries --"
-            rpaths="$(otool -l "$bin" 2>/dev/null | grep -A2 LC_RPATH | grep 'path ' | sed 's/^ *//')"
+            echo "-- LC_RPATH entries (deduplicated) --"
+            # `otool` prints one load-command set per architecture, so a
+            # universal binary reports every rpath twice. `sort -u` because a
+            # doubled list reads as two distinct search paths, which is not what
+            # the binary actually says.
+            rpaths="$(otool -l "$bin" 2>/dev/null | grep -A2 LC_RPATH \
+              | grep 'path ' | sed 's/^ *//' | sort -u)"
             if [ -n "$rpaths" ]; then printf '%s\n' "$rpaths"; else echo '(none)'; fi
             echo
             echo "-- non-system dependencies, existence checked --"
@@ -243,7 +248,12 @@ jobs:
                 printf 'MISSING %s   -> looked in %s\n' "$dep" "$real"
                 miss=$((miss+1))
               fi
-            done < <(otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}')
+            # `sort -u` on the dependency list for the same reason: otool prints
+            # one slice per architecture, so a universal binary lists every
+            # dependency twice and the count doubles. The earlier run reported
+            # "missing: 2" for a single unresolvable dylib, which reads as two
+            # separate problems when it is one.
+            done < <(otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}' | sort -u)
             echo "missing: $miss"
             echo '```'
             echo
