@@ -89,7 +89,11 @@ jobs:
             200)
               # The id is the evidence that the cookie resolved to an account.
               # The username is not printed: public repo, burner account.
-              id="$(grep -o '"id":[0-9]*' "$body" | head -n1 | grep -o '[0-9]*')"
+              # `|| true` because `shell: bash` already runs with errexit, and a
+              # 200 whose body has no "id" would otherwise abort the step here —
+              # reporting neither OK nor REJECTED, which is the one outcome this
+              # workflow exists to avoid.
+              id="$(grep -o '"id":[0-9]*' "$body" | head -n1 | grep -o '[0-9]*' || true)"
               RESULT=OK
               echo "RESULT=OK"
               echo "resolved user id: ${id:-<none parsed>}"

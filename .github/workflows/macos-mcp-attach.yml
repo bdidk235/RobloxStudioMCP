@@ -159,9 +159,16 @@ jobs:
           # the two as the same is what left the account logged out through
           # several runs while this step stayed green.
 
+          # `|| true` is load-bearing. This pipeline's last stage is a grep, and a
+          # response with no "id" — which is exactly what a 401 or an error page
+          # looks like — makes it return 1. Under the errexit that `shell: bash`
+          # already sets, that fails the assignment and aborts the step, so the
+          # step would report no outcome at all and the next gate would skip on an
+          # empty string instead of reading `user-id-unresolved`. The whole point
+          # of this step is to degrade gracefully when the cookie is bad.
           user_id="$(curl -sS --fail -H "Cookie: .ROBLOSECURITY=$COOKIE" \
             https://users.roblox.com/v1/users/authenticated \
-            | grep -o '"id":[0-9]*' | head -n1 | grep -o '[0-9]*')"
+            | grep -o '"id":[0-9]*' | head -n1 | grep -o '[0-9]*' || true)"
           [ -n "$user_id" ] || { report outcome user-id-unresolved; exit 0; }
           report user_id "$user_id"
           echo "USER_ID=$user_id" >> "$GITHUB_ENV"
@@ -293,7 +300,7 @@ jobs:
           PY
           if [ $? -ne 0 ]; then
             report outcome cookie-write-failed
-            report cookie_detail "$(grep -v '^SEEDED:' /tmp/cookie-seed.log | tr '\n' ' ' | head -c 400)"
+            report cookie_detail "$(grep -v '^SEEDED:' /tmp/cookie-seed.log 2>/dev/null | tr '\n' ' ' | head -c 400 || true)"
             exit 0
           fi
           # A digest of what we seeded, so the diagnose step can tell "Studio
@@ -301,7 +308,7 @@ jobs:
           # A digest, not the value: this is a comparison key, not a credential.
           SEED_DIGEST="$(printf '%s' "$COOKIE" | shasum -a 256 | cut -c1-12)"
           echo "SEED_DIGEST=$SEED_DIGEST" >> "$GITHUB_ENV"
-          grep -E '^(WROTE|FAILED)' /tmp/cookie-seed.log
+          grep -E '^(WROTE|FAILED)' /tmp/cookie-seed.log || true
           report cookie_stores "$(sed -n 's/^SEEDED://p' /tmp/cookie-seed.log \
             | tr '|' ' ' | head -c 300)"
           report seed_digest "$SEED_DIGEST"
@@ -398,7 +405,13 @@ jobs:
             echo
             echo "--- $1 ---"
             local hits
-            hits="$(grep -iE "$2" "$log" 2>/dev/null | head -"$3")"
+            # `|| true` is load-bearing, not decoration. `shell: bash` runs with
+            # `-e` already set, and a command substitution in an assignment is
+            # fatal under errexit when the command fails — so an unguarded grep
+            # that matches nothing kills this step. Which is the one thing this
+            # step must never do, since a section with no matches is precisely
+            # the finding it exists to report.
+            hits="$(grep -iE "$2" "$log" 2>/dev/null | head -"$3" || true)"
             if [ -z "$hits" ]; then echo "(no match — this absence IS the signal)";
             else printf '%s\n' "$hits"; fi
           }
@@ -419,7 +432,7 @@ jobs:
           echo "--- cookie / credential paths named in the log itself (cap 15) ---"
           show_paths() {
             local hits
-            hits="$(grep -ioE '[~/A-Za-z0-9._-]*(cookie|credential|auth)[A-Za-z0-9._/-]*' "$log" 2>/dev/null | sort -u | head -15)"
+            hits="$(grep -ioE '[~/A-Za-z0-9._-]*(cookie|credential|auth)[A-Za-z0-9._/-]*' "$log" 2>/dev/null | sort -u | head -15 || true)"
             if [ -z "$hits" ]; then echo "(no match)"; else printf '%s\n' "$hits"; fi
           }
           show_paths
