@@ -193,8 +193,27 @@ jobs:
           fi
           report place_bytes "$(wc -c < "$place" | tr -d ' ')"
 
-          open -a "$STUDIO_APP" --args \
-            --task EditFile --localPlaceFile "$place"
+          # The **binary**, not `open --args` on the bundle.
+          #
+          # The dmg's app is RobloxStudioInstaller.app. Opened with no arguments
+          # it installs and, as a side effect, launches Studio - which is why
+          # every earlier attempt saw alive=1. Passing the place arguments to it
+          # instead hands them to the *installer*, Studio never starts, and the
+          # step fails at alive=0. Measured, not inferred.
+          #
+          # Invoking the binary directly also avoids the documented macOS
+          # behaviour where `open --args` is ignored for an app that is already
+          # running, and it leaves stdout on a file we can read if it dies.
+          bin="$STUDIO_APP/Contents/MacOS/RobloxStudio"
+          if [ ! -x "$bin" ]; then
+            report outcome "binary-missing"
+            report looked_in "$STUDIO_APP/Contents/MacOS"
+            exit 1
+          fi
+          report binary "Contents/MacOS/RobloxStudio"
+
+          nohup "$bin" --task EditFile --localPlaceFile "$place" \
+            > /tmp/studio-stdout.txt 2>&1 &
 
           alive=0
           for _ in $(seq 1 45); do
@@ -202,7 +221,13 @@ jobs:
             sleep 2
           done
           report alive "$alive"
-          [ "$alive" = "1" ] || { report outcome process-never-started; exit 1; }
+          if [ "$alive" != "1" ]; then
+            report outcome process-never-started
+            # Why it died, if it said so. Capped: this is a process's stdout, not
+            # a log dump.
+            report stdout_tail "$(head -c 400 /tmp/studio-stdout.txt 2>/dev/null | tr '\n' ' ')"
+            exit 1
+          fi
 
           # Give it time to open the place and bring the MCP server up. The
           # attach, if it is going to happen, happens on Studio's own schedule.
