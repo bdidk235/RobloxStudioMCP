@@ -1,0 +1,229 @@
+# What is actually inside the macOS Studio download?
+#
+# Read-only structural inspection. No launch, no sign-in, no place, no auth.
+# This exists to answer one question with evidence rather than inference:
+#
+#   is the macOS Studio bundle structurally modifiable at all?
+#
+# That is the precondition for every offline / patch / inject idea. If the DMG
+# ships only an installer stub, if the bundle is sealed with a hardened-runtime
+# signature, or if `disable-library-validation` is absent, then the technique
+# studio-offline uses on Windows has no macOS equivalent here and no amount of
+# reverse engineering changes that. Measured beats argued.
+#
+# studio-offline works on Windows by replacing WebView2Loader.dll, which is a
+# Windows-only component. The macOS questions this answers are therefore:
+#   1. does the DMG contain the real engine, or only a stub that downloads it?
+#   2. if the real app, is it a signed bundle with the hardened runtime on?
+#   3. does it allow a foreign library to be loaded (disable-library-validation)?
+#   4. is the Mach-O linkage intact - every @rpath actually resolving?
+#   5. is there a WebKit / WebView analogue, or is the auth web layer native?
+#
+# Everything is capped. `strings` over a multi-hundred-MB binary is the one
+# place that can produce bulk output, so it is filtered to a fixed pattern and a
+# fixed count.
+
+name: Studio bundle probe (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the DMG (no launch)
+        id: dl
+        shell: bash
+        run: |
+          set -uo pipefail
+          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+          dmg=/tmp/studio.dmg
+          code="$(curl -sS -L --retry 3 -o "$dmg" -w '%{http_code}' \
+            https://setup.rbxcdn.com/mac/RobloxStudio.dmg)"
+          report http_code "$code"
+          [ "$code" = "200" ] || { report outcome download-failed; exit 0; }
+          report dmg_mb "$(awk "BEGIN{printf \"%.1f\", $(wc -c < "$dmg")/1048576}")"
+          # The DMG is mounted for reading and never opened. `open` on this image
+          # is what launches the installer, which is exactly what this workflow
+          # must not do.
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint /tmp/mnt \
+            || { report outcome mount-failed; exit 0; }
+          echo "MNT=/tmp/mnt" >> "$GITHUB_ENV"
+          report outcome downloaded
+
+      - name: What is in the image
+        if: steps.dl.outputs.outcome == 'downloaded'
+        shell: bash
+        run: |
+          set -uo pipefail
+          {
+            echo "### Bundles in the DMG"
+            echo '```'
+            find /tmp/mnt -maxdepth 2 -name '*.app' -type d
+            echo '```'
+            echo
+            echo "### Top-level layout (depth 3, capped)"
+            echo '```'
+            find /tmp/mnt -maxdepth 3 | head -40
+            echo '```'
+            app="$(find /tmp/mnt -maxdepth 2 -name '*.app' -type d -print -quit)"
+            if [ -z "$app" ]; then
+              echo
+              echo "**No .app in the image at all.**"
+              exit 0
+            fi
+            echo "APP=$app" >> "$GITHUB_ENV"
+            echo
+            echo "### Size of what shipped"
+            echo '```'
+            du -sh "$app" 2>/dev/null
+            find "$app" -type f | wc -l | sed 's/^/files: /'
+            echo '```'
+            echo
+            echo "### The decisive question: stub or engine?"
+            echo '```'
+            # A stub is a few MB and has no engine payload. If the whole bundle is
+            # small, the real Studio is downloaded at run time and cannot be
+            # inspected from the DMG at all - which is itself the answer.
+            biggest="$(find "$app" -type f -size +20M -print -quit 2>/dev/null || true)"
+            if [ -z "$biggest" ]; then
+              echo "no file over 20 MB -> this is a stub, not the engine"
+            else
+              echo "engine-scale payload present:"
+              ls -lh "$biggest"
+            fi
+            echo '```'
+            echo
+            echo "### Where does the stub say it downloads the real app from?"
+            echo '```'
+            # If the payload is fetched, the URL is in the stub binary. Finding it
+            # is the only way to get the real .app without running the installer.
+            bin="$(find "$app/Contents/MacOS" -type f -maxdepth 1 -print -quit 2>/dev/null || true)"
+            if [ -n "$bin" ]; then
+              strings -a "$bin" 2>/dev/null \
+                | grep -Eo 'https://[A-Za-z0-9._/-]*(\.zip|\.app\.zip|ClientSettings|setup)[A-Za-z0-9._/-]*' \
+                | sort -u | head -12
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Bundle identity, linkage and signature
+        if: steps.dl.outputs.outcome == 'downloaded'
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Guarded in the script, not only in the step's `if:`. `set -u` turns a
+          # missing variable into an aborted step, and an aborted step reports no
+          # outcome, so a later gate would skip silently. The `if:` is a
+          # convenience; this is the thing that has to hold.
+          app="${APP:-}"
+          if [ -z "$app" ] || [ ! -d "$app" ]; then
+            echo "no app bundle recorded by the previous step; nothing to inspect" \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          contents="$app/Contents"
+          bin="$(find "$contents/MacOS" -maxdepth 1 -type f -print -quit 2>/dev/null || true)"
+          {
+            echo "### Identity"
+            echo '```'
+            for k in CFBundleIdentifier CFBundleExecutable CFBundleShortVersionString \
+                     CFBundleVersion LSMinimumSystemVersion; do
+              v="$(plutil -extract "$k" raw -o - "$contents/Info.plist" 2>/dev/null || echo '-')"
+              printf '%-28s %s\n' "$k" "$v"
+            done
+            echo '```'
+            if [ -z "$bin" ]; then
+              echo; echo "**No executable in Contents/MacOS.**"; exit 0
+            fi
+            echo
+            echo "### Architecture"
+            echo '```'
+            file "$bin"
+            lipo -archs "$bin" 2>/dev/null || echo '(universal)'
+            echo '```'
+            echo
+            echo "### Signature — the hardened runtime is the whole question"
+            echo '```'
+            codesign -d --verbose=4 "$app" 2>&1 | head -20
+            echo
+            echo "verify --deep --strict:"
+            codesign --verify --deep --strict --verbose=2 "$app" 2>&1 | head -5
+            echo '```'
+            echo
+            echo "### Entitlements — `disable-library-validation` decides whether a"
+            echo "### foreign dylib can ever be loaded into this process"
+            echo '```'
+            codesign -d --entitlements - --xml "$app" 2>&1 \
+              | tr -d '\0' | grep -Eo '(allow-unsigned-executable-memory|disable-library-validation|get-task-allow|cs-debugger|app-sandbox)[^<]*' \
+              | sort -u | head -12
+            echo "(empty above = none of those entitlements are present)"
+            echo '```'
+            echo
+            echo "### Mach-O linkage — is anything @rpath unresolved?"
+            echo '```'
+            echo "-- LC_RPATH entries --"
+            otool -l "$bin" 2>/dev/null | grep -A2 LC_RPATH | grep 'path ' | sed 's/^ *//'
+            echo
+            echo "-- non-system dependencies, existence checked --"
+            # `loader` is the directory of the executable, which is what
+            # @loader_path actually means. Hardcoding Contents/MacOS would be
+            # right for today's layout and silently wrong the day the binary
+            # moves, which is the same "assume a path nobody checked" mistake
+            # this whole investigation is about.
+            loader="$(cd "$(dirname "$bin")" && pwd)"
+            miss=0
+            while read -r dep; do
+              case "$dep" in
+                /usr/lib/*|/System/*) continue ;;
+              esac
+              case "$dep" in
+                @loader_path/*) real="$loader/${dep#@loader_path/}" ;;
+                @executable_path/*) real="$loader/${dep#@executable_path/}" ;;
+                @rpath/*) real="(rpath-unresolved) ${dep#@rpath/}" ;;
+                /*) real="$dep" ;;
+                *) real="(bare) $dep" ;;
+              esac
+              if [ -e "$real" ]; then
+                printf 'ok      %s\n' "$dep"
+              else
+                printf 'MISSING %s   -> looked in %s\n' "$dep" "$real"
+                miss=$((miss+1))
+              fi
+            done < <(otool -L "$bin" 2>/dev/null | tail -n +2 | awk '{print $1}')
+            echo "missing: $miss"
+            echo '```'
+            echo
+            echo "### Is there a WebKit / WebView analogue to hook?"
+            echo '```'
+            echo "-- linked frameworks matching webview/webkit --"
+            otool -L "$bin" 2>/dev/null | grep -iE 'webview|webkit|electron' || echo '(none)'
+            echo "-- WebKit frameworks inside the bundle --"
+            find "$contents" -maxdepth 3 -iname '*WebKit*' -o -maxdepth 3 -iname '*WebView*' 2>/dev/null | head -8 || true
+            echo "(empty = no bundled web runtime)"
+            echo "-- does the binary reference Windows' hook point at all? --"
+            strings -a "$bin" 2>/dev/null | grep -ciE 'WebView2|CreateCoreWebView2' \
+              | sed 's/^/matches: /'
+            echo "  0 means the exact string studio-offline hooks on does not exist here,"
+            echo "  which is the concrete reason its technique has no macOS equivalent."
+            echo '```'
+            echo
+            echo "### Symlinks — do they resolve?"
+            echo '```'
+            n=0
+            while read -r l; do
+              [ "$n" -ge 10 ] && break
+              tgt="$(readlink "$l" 2>/dev/null || echo '?')"
+              if [ -e "$l" ]; then st="ok     "; else st="BROKEN "; fi
+              printf '%s %s -> %s\n' "$st" "${l#$app/}" "$tgt"
+              n=$((n+1))
+            done < <(find "$app" -type l 2>/dev/null | head -12)
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
