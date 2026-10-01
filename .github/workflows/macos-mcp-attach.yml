@@ -20,6 +20,14 @@
 #     and reports name: null, so the attach can be tested without needing edit
 #     access to a published place - which is a whole separate permission problem
 #     the old workflow tripped over and never got past.
+#
+# CORRECTION, measured. That bullet above was wrong, and it cost a run. A Studio
+# with no document does appear on the mesh as name: null, which is a true
+# statement about the mesh listing and a false one about the MCP server - and the
+# MCP server is the thing being tested. Attempt 4 launched with no place, the
+# process came up, and the attach timed out with nothing else broken. A place is
+# now opened from a committed fixture via --localPlaceFile, which also keeps the
+# test clear of place permissions.
 #   * The cookie round-trip is asserted correctly. The 2026-09-14 macOS job
 #     died on its own verification calling .get("name") on what
 #     binarycookies.load() returns, which are pydantic objects. It is .name. The
@@ -156,7 +164,7 @@ jobs:
           done
           report outcome flag-seeded
 
-      - name: Launch Studio with no place
+      - name: Launch Studio with a place
         id: launch
         shell: bash
         run: |
@@ -164,9 +172,30 @@ jobs:
           report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
           pkill -x RobloxStudio 2>/dev/null || true
           sleep 2
-          # No place: a Studio with no document still attaches, reporting
-          # name: null. This keeps the test clear of place permissions.
-          open "$STUDIO_APP"
+
+          # A PLACE IS REQUIRED, and getting this wrong is what the previous
+          # attempt did. It launched Studio with no document, the process came up,
+          # and the MCP server never appeared - so the attach timed out with
+          # nothing wrong except the launch. A Studio with no document does show
+          # on the mesh as name: null, which is what made it look like attach
+          # should not need one; that was a true statement about the mesh listing
+          # and a false one about the MCP server, and the distinction is the
+          # whole bug.
+          #
+          # ci/fixture-baseplate.rbxl is committed to this repo precisely so this
+          # is deterministic: no published place, so no edit-permission problem
+          # for a burner account, and nothing that depends on what the runner
+          # happens to have in its AutoSaves directory.
+          place="$GITHUB_WORKSPACE/ci/fixture-baseplate.rbxl"
+          if [ ! -f "$place" ]; then
+            report outcome "fixture-missing"
+            exit 1
+          fi
+          report place_bytes "$(wc -c < "$place" | tr -d ' ')"
+
+          open -a "$STUDIO_APP" --args \
+            --task EditFile --localPlaceFile "$place"
+
           alive=0
           for _ in $(seq 1 45); do
             if pgrep -x RobloxStudio >/dev/null 2>&1; then alive=1; break; fi
@@ -175,10 +204,13 @@ jobs:
           report alive "$alive"
           [ "$alive" = "1" ] || { report outcome process-never-started; exit 1; }
 
-          # Give it time to write its log and settle. The attach, if it is going
-          # to happen, happens on Studio's own schedule.
-          sleep 20
+          # Give it time to open the place and bring the MCP server up. The
+          # attach, if it is going to happen, happens on Studio's own schedule.
+          sleep 30
           report log_files "$(ls -1 "$HOME/Library/Logs/Roblox" 2>/dev/null | wc -l | tr -d ' ')"
+          # The place opened or it did not. This is the observable that the
+          # no-place run could not produce.
+          report mesh_name_in_log "$(grep -c 'fixture-baseplate' "$HOME"/Library/Logs/Roblox/*.log 2>/dev/null | head -1 | cut -d: -f2)"
           report outcome launched
 
       - name: Wait for the MCP mesh
