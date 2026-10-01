@@ -113,19 +113,58 @@ jobs:
         id: win
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          $ErrorActionPreference = 'Continue'
           function Report($k, $v) {
             "$k=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             Write-Host "$k : $v"
+          }
+
+          # Resolver preflight, before anything else. Attempt 1 failed with "No
+          # such host is known" from Invoke-WebRequest, while the same URL
+          # returned 200 from a workstation - a runner DNS blip, not a bad URL.
+          # Those two are indistinguishable from the step's exit code, so they
+          # are separated here rather than guessed at on the next attempt.
+          foreach ($h in @('setup.rbxcdn.com', 'setup.roblox.com', 'clientsettingscdn.roblox.com')) {
+            $key = "dns_$($h -replace '[.]', '_')"
+            try {
+              $null = [System.Net.Dns]::GetHostAddresses($h)
+              Report $key 'ok'
+            } catch {
+              Report $key "FAIL: $($_.Exception.Message)"
+            }
           }
 
           # The bootstrapper, not the zip. The zip lays down the two binaries
           # without the install state, which is what made the previous attempt
           # report a successful install and then find nothing running.
           $bootstrapper = Join-Path $env:RUNNER_TEMP 'RobloxStudioLauncherBeta.exe'
-          Invoke-WebRequest -Uri 'https://setup.robloxcdn.com/RobloxStudioLauncherBeta.exe' `
-                             -OutFile $bootstrapper
-          Report bootstrapper_mb ([math]::Round((Get-Item $bootstrapper).Length / 1MB, 1))
+          $urls = @(
+            'https://setup.rbxcdn.com/RobloxStudioLauncherBeta.exe',
+            'https://setup.roblox.com/RobloxStudioLauncherBeta.exe'
+          )
+          $fetched = $false
+          foreach ($u in $urls) {
+            # curl.exe rather than Invoke-WebRequest: it *reports* the status code
+            # instead of throwing, and it retries, so a blip is not a verdict.
+            $code = & curl.exe -sS -L --retry 3 --retry-delay 2 --max-time 180 -o $bootstrapper -w '%{http_code}' $u 2>&1
+            Report "http_$(($u -split '/')[2] -replace '[.]', '_')" "$code"
+            if ("$code" -eq '200' -and (Test-Path $bootstrapper)) {
+              $len = (Get-Item $bootstrapper).Length
+              # A 200 that is not an installer is still a failure, and an HTML
+              # error page is the usual way that happens.
+              if ($len -gt 100000) {
+                Report bootstrapper_url $u
+                Report bootstrapper_mb ([math]::Round($len / 1MB, 1))
+                $fetched = $true
+                break
+              }
+              Report size_rejected $len
+            }
+          }
+          if (-not $fetched) {
+            Report outcome 'download-failed'
+            exit 1
+          }
 
           Start-Process -FilePath $bootstrapper | Out-Null
 
@@ -145,6 +184,10 @@ jobs:
             Report versions_entries (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue).Count)
             Report log_files (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue).Count)
             Report mcp_proxy_exists (Test-Path "$env:LOCALAPPDATA\Roblox\mcp.bat")
+            # Whatever the installer did leave behind, so the next attempt reads
+            # evidence instead of guessing.
+            Report roblox_dir ((@(Get-ChildItem "$env:LOCALAPPDATA\Roblox" -ErrorAction SilentlyContinue |
+                                 Select-Object -ExpandProperty Name) -join ','))
             Report outcome 'process-never-started'
             exit 1
           }
