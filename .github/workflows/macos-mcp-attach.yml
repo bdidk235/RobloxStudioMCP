@@ -32,32 +32,45 @@
 #
 # WHY MACOS STOPPED, and what this run changes.
 #
-#   The burner account is NOT signed in. That was observed directly, and it is
-#   the whole cause of the mesh never appearing — the MCP server needs a
-#   signed-in Studio.
+#   The burner account is NOT signed in. That is the whole cause of the mesh
+#   never appearing, and Studio says so itself:
 #
-#   What made it hard to see: `curl -H "Cookie: .ROBLOSECURITY=..." ` against
-#   users.roblox.com returns 200, and that step stayed green through every run.
-#   Those are two different readers. The API reads a header this workflow sends;
-#   Studio has to find the cookie in its own on-disk store. Treating a green
-#   `cookie valid` as a signed-in Studio is the mistake this run exists to undo.
+#       [FLog::StudioTimingLog] Authenticated : NO
+#       [FLog::LoginController] LoginController::login with category 'Local'
 #
-#   Note what is NOT available as evidence: Studio prints no "logged out" line.
-#   The Diagnose step therefore treats *absence* as the finding and says so
-#   explicitly, because a grep that silently matches nothing is indistinguishable
-#   from a pass.
+#   Studio came up, attempted an automatic local sign-in, and had no usable
+#   credential. Everything upstream of that can be green.
 #
-#   Two causes were considered and this run cannot separate them from outside:
-#     (a) the cookie was written to a store Studio never opens. The 2026-09-14
-#         path, ~/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies, was
-#         inherited rather than observed, and a name Studio does not use is
-#         indistinguishable from no cookie at all.
-#     (b) Studio cleared the cookie as invalid on a later launch.
-#   So the cookie store is now DISCOVERED — the bundle identifier is read out of
-#   the app that is actually running, and every candidate store is seeded, then
-#   each is read back *after* Studio has run to see which one Studio kept. That
-#   distinguishes (a) from (b): a file still holding our value means Studio never
-#   touched it, which is (a).
+#   RETRACTED, and the retraction is the finding: an earlier version of this file
+#   asserted that "Studio prints no logged-out line, so absence is the only
+#   evidence". **That was wrong.** The line above is a positive signal and it was
+#   in the log the whole time. The claim came from reading greps that had not
+#   been given a pattern that matched, and promoting that into a property of
+#   Studio. The grep is now `Authenticated\s*:`, with its own section ahead of
+#   the broader login lines that used to bury it.
+#
+#   What kept the sign-in hidden for several runs: the `cookie valid` step calls
+#   users.roblox.com with the cookie in a header and got 200 every time. That is
+#   a different reader from Studio finding the cookie on disk, and a green step
+#   was being read as a signed-in Studio.
+#
+#   WHAT THE DISCOVERY ACTUALLY YIELDED (run 36871784425), which settles the
+#   store question by measurement rather than by another guess:
+#
+#     * `open` on the DMG's app does not open that app. It installs and launches
+#       a DIFFERENT bundle, so the real binary is
+#       /Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio and its
+#       CFBundleIdentifier is `com.Roblox.RobloxStudio`.
+#     * Both ~/Library/Cookies and ~/Library/HTTPStorages were seeded under that
+#       exact id, all four writes verified, and Studio still came up
+#       `Authenticated : NO`. So neither store is what it reads.
+#     * All three Assistant-ExternalMCPEnabled paths survived the run, so the flag
+#       is written where it survives. Whether Studio *reads* one is still
+#       unmeasured, and is not claimed here.
+#
+#   So rather than guess a fourth path, the diagnose step now enumerates every
+#   roblox- or cookie-named entry under ~/Library AND greps the whole home
+#   directory for the literal `.ROBLOSECURITY`, so the store names itself.
 #
 # Two things this gets right that the 2026-09-14 workflow did not:
 #
@@ -376,8 +389,26 @@ jobs:
             else printf '%s\n' "$hits"; fi
           }
           show "MCP / Assistant / ExternalMCP (cap 30)" 'mcp|assistant|externalmcp' 30
+          # `Authenticated` is the pattern that matters, and it was missing when
+          # this step was first written. The earlier pattern matched the login
+          # *page* and LoginController lines and buried the one line that answers
+          # the question, which is why a run concluded that Studio printed no
+          # logged-out line at all. It does:
+          #   [FLog::StudioTimingLog] Authenticated : NO
+          show "the decisive line: Authenticated (cap 5)" 'Authenticated\s*:' 5
           show "sign-in (cap 15)" 'login|logged in|authenticat|session' 15
           show "the place, and the mesh port (cap 15)" 'fixture-baseplate|13469|listening|websocket' 15
+
+          # What does Studio think it is looking at for credentials? It may name
+          # the file, and a name in the log beats a path guessed by us.
+          echo
+          echo "--- cookie / credential paths named in the log itself (cap 15) ---"
+          show_paths() {
+            local hits
+            hits="$(grep -ioE '[~/A-Za-z0-9._-]*(cookie|credential|auth)[A-Za-z0-9._/-]*' "$log" 2>/dev/null | sort -u | head -15)"
+            if [ -z "$hits" ]; then echo "(no match)"; else printf '%s\n' "$hits"; fi
+          }
+          show_paths
 
           echo
           echo "--- the flag paths, as they exist now (cap 20) ---"
@@ -400,72 +431,141 @@ jobs:
           echo "seeded value: ${SEED_DIGEST:-not-seeded} (from the seeding step)"
           python -m pip install -q binarycookies
           python - <<'PY' || echo "(no cookie store readable)"
-          import glob, hashlib, os, sys
+          import hashlib, os, subprocess
           import binarycookies
 
           seed = os.environ.get("SEED_DIGEST", "")
           home = os.path.expanduser("~")
+          # List the directory and match case-insensitively in Python. A glob
+          # pattern of `*roblox*` does NOT match `com.Roblox.RobloxStudio...`:
+          # fnmatch is case-sensitive regardless of the filesystem being
+          # case-insensitive, and the previous version reported "no roblox-named
+          # cookie store exists at all" on a run that had just written four of
+          # them. A false "nothing here" is worse than no check, because it
+          # reads as an answer.
           paths = []
-          for root in ("Library/Cookies", "Library/HTTPStorages"):
-              paths += glob.glob(os.path.join(home, root, "*roblox*"))
+          for root in ("Library/Cookies", "Library/HTTPStorages",
+                       "Library/Application Support", "Library/Application Support/Roblox",
+                       "Library/Preferences", "Library/Containers"):
+              d = os.path.join(home, root)
+              if not os.path.isdir(d):
+                  continue
+              try:
+                  entries = os.listdir(d)
+              except OSError as exc:
+                  print(f"  (cannot list {root}: {exc})")
+                  continue
+              for n in entries:
+                  if "roblox" in n.lower() or "cookie" in n.lower():
+                      paths.append(os.path.join(d, n))
           if not paths:
-              print("  (no roblox-named cookie store exists at all)")
+              print("  (no roblox- or cookie-named entry exists under ~/Library at all)")
+
           for p in sorted(set(paths)):
               short = p.replace(home, "~")
+              if os.path.isdir(p):
+                  print(f"  {short}/  (directory)")
+                  continue
               try:
                   with open(p, "rb") as h:
                       cookies = list(binarycookies.load(h))
-              except Exception as exc:
-                  print(f"  {short}\n    unreadable ({exc})")
+              except Exception:
+                  # Not a binarycookies file. Named because it looked relevant,
+                  # which is itself the useful signal, so do not treat it as an
+                  # error - just say it is not one.
+                  print(f"  {short}  (not a binarycookies file, {os.path.getsize(p)} bytes)")
                   continue
               names = [c.name for c in cookies]
               hit = next((c for c in cookies if c.name == ".ROBLOSECURITY"), None)
               if hit is None:
-                  print(f"  {short}\n    names={names} -> CLEARED (.ROBLOSECURITY gone)")
+                  print(f"  {short}\n    names={names} -> CLEARED, no .ROBLOSECURITY")
                   continue
               digest = hashlib.sha256(hit.value.encode()).hexdigest()[:12]
               verdict = "KEPT, untouched" if digest == seed else "REPLACED by Studio"
               print(f"  {short}\n    names={names} -> {verdict}: "
                     f"{len(hit.value)} chars, sha256:{digest}")
+
+          # The decisive search, and the one that has been missing: whatever
+          # Studio actually reads is a file somewhere that mentions the cookie
+          # name. Searching the home directory for the literal finds it, instead
+          # of naming candidate paths and hoping one of them is right — which is
+          # what three previous attempts did.
+          #
+          # Guarded, because this is the last thing the step does and an
+          # unhandled failure here discards every finding above it: a missing
+          # `grep`, a permission error, or the timeout all raise, and a
+          # diagnostic that dies on its own final line reports nothing at all.
+          print()
+          print("--- any file on this machine mentioning .ROBLOSECURITY (cap 15) ---")
+          try:
+              r = subprocess.run(
+                  ["grep", "-rl", "--binary-files=text", "-s", ".ROBLOSECURITY", home],
+                  capture_output=True, text=True, timeout=180)
+              hits = [h for h in r.stdout.splitlines() if h][:15]
+          except (OSError, subprocess.SubprocessError) as exc:
+              print(f"  (search unavailable: {exc})")
+              hits = []
+          for h in hits:
+              print("  " + h.replace(home, "~"))
+          if not hits:
+              print("  (none — nothing on disk references the cookie name at all)")
           PY
 
       # --------------------------------------------------------------- verdict
+      # A single-quoted heredoc, not a brace group of double-quoted `echo`s.
+      # This is the second version of this step, and the first one shipped a
+      # silent failure: two of the table rows ended with an ODD number of
+      # backslashes before their closing backtick, so the backtick was unescaped
+      # and opened a command substitution. Bash reported a syntax error *inside*
+      # `$( )` — at run time, not at parse time — so `bash -n` passed on the very
+      # file that was broken, and the step summary was never written.
+      #
+      # A quoted heredoc removes the whole class: nothing inside is interpreted,
+      # so there are no backslashes to get wrong and no `|` to escape. GitHub
+      # still substitutes `${{ ... }}`, because that happens before bash sees the
+      # file.
       - name: Verdict
         if: always()
         shell: bash
         run: |
-          {
-            echo "### Studio MCP attach - ${{ matrix.os }}"
-            echo ""
-            echo "| stage | result |"
-            echo "|---|---|"
-            echo "| install | \`${{ steps.s1_mac.outputs.outcome }}\` |"
-            echo "| cookie valid (API) | \`${{ steps.s2_mac.outputs.outcome }}\` |"
-            echo "| launch, with a place | \`${{ steps.s3_mac.outputs.outcome }}\` (alive=\`${{ steps.s3_mac.outputs.alive }}\`) |"
-            echo "| cookie stores seeded | \`${{ steps.s3_mac.outputs.cookie_stores }}\` |"
-            echo "| **mesh** | \`${{ steps.mesh.outputs.outcome }}\` |"
-            echo ""
-            echo "user id \`${{ steps.s2_mac.outputs.user_id }}\` · binary \`${{ steps.s3_mac.outputs.discovered_binary }}\` · bundle id \`${{ steps.s3_mac.outputs.bundle_id }}\` · seeded \`${{ steps.s3_mac.outputs.seed_digest }}\`"
-            echo ""
-            echo "#### What this log should look like if it worked"
-            echo ""
-            echo "Three greps, and **all three matter**:"
-            echo ""
-            echo "| grep | success looks like | failure looks like |"
-            echo "|---|---|---|"
-            echo "| \`mcp\\|assistant\\|externalmcp\` | several lines: the Assistant plugin loading, and the external MCP server starting | **nothing at all** |"
-            echo "| \`login\\|logged in\\|authenticat\\` | a sign-in or session line | **nothing at all** |"
-            echo "| \`13469\\|listening\\|websocket\\` | the mesh port being opened | **nothing at all** |"
-            echo ""
-            echo "**There is no positive \"logged out\" line to grep for.** Studio does not"
-            echo "announce the failure, so the signal is *absence* — a grep that matches"
-            echo "nothing is the finding, not a broken grep. That is why the diagnose step"
-            echo "above prints \`(no match)\` explicitly rather than staying quiet: a silent"
-            echo "pass would be indistinguishable from a working run."
-            echo ""
-            echo "So read it as: the account was observed logged out, and the log does not"
-            echo "say so. The fix attempted here is seeding the cookie store Studio"
-            echo "*actually* uses, discovered from its own bundle id rather than guessed —"
-            echo "because \`cookie valid\` above only proves the Roblox API accepted a header,"
-            echo "which is a different reader from Studio finding the cookie on disk."
-          } >> "$GITHUB_STEP_SUMMARY"
+          cat >> "$GITHUB_STEP_SUMMARY" <<'MD'
+          ### Studio MCP attach
+
+          | stage | result |
+          |---|---|
+          | install | `${{ steps.s1_mac.outputs.outcome }}` |
+          | cookie valid (API only — this is not a sign-in) | `${{ steps.s2_mac.outputs.outcome }}` |
+          | launch, with a place | `${{ steps.s3_mac.outputs.outcome }}` (alive=`${{ steps.s3_mac.outputs.alive }}`) |
+          | cookie stores seeded | `${{ steps.s3_mac.outputs.cookie_stores }}` |
+          | **mesh** | `${{ steps.mesh.outputs.outcome }}` |
+
+          user id `${{ steps.s2_mac.outputs.user_id }}` · installed binary `${{ steps.s3_mac.outputs.discovered_binary }}` · bundle id `${{ steps.s3_mac.outputs.bundle_id }}` · seeded digest `${{ steps.s3_mac.outputs.seed_digest }}`
+
+          #### The one line that settles it
+
+          Studio logs `Authenticated : NO` at startup when it is not signed in,
+          followed by `LoginController::login with category 'Local'`. That pair is
+          the whole finding: Studio came up, attempted an automatic local sign-in,
+          and had no usable credential. Every other stage can be green while this
+          line says `NO`.
+
+          **An earlier revision of this file claimed the opposite** — that Studio
+          prints no logged-out line, so absence was the only evidence available.
+          That claim was wrong, and this run disproved it. It came from reading
+          greps that had not yet been given a pattern that matches, not from the
+          log itself.
+
+          #### How to read the diagnose output
+
+          | section | what a healthy run shows |
+          |---|---|
+          | MCP / Assistant / ExternalMCP | the Assistant plugin loading, and the external MCP server starting |
+          | sign-in | `Authenticated : YES`, or no login attempt at all |
+          | the place, and the mesh port | the place opening, and port 13469 being served |
+          | cookie stores, kept or cleared | every seeded store still holding the seeded digest |
+
+          A section printing `(no match)` is reporting absence, and absence is
+          still worth stating — a silent pass is indistinguishable from a working
+          one. But absence is no longer the primary evidence for sign-in:
+          `Authenticated : NO` is, and it is a positive line.
+          MD

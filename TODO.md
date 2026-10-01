@@ -2439,24 +2439,11 @@ never once meant that. Same shape as the two other mistakes in this exercise —
 asserting a mechanism from a nearby observation, and acting on an unexamined
 path. This is the third.
 
-**And the path *was* unexamined.** `~/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies`
-came from commit `83640d7` and was never verified against a real Mac. A
-correctly-formed cookie under a bundle id Studio does not use is
-indistinguishable from no cookie at all — which is precisely the observed state.
-
-**No positive "logged out" line exists in the log.** Studio does not announce the
-failure, so the only evidence is *absence*. This has a sharp consequence for how
-the diagnose step must be written, and the old one got it wrong in the exact way
-that matters:
-
-```bash
-grep -iE 'mcp|assistant' "$log" | head -30 || echo "(no match)"
-```
-
-`||` binds to `head`, and **`head` exits 0 on empty input**. So `(no match)` was
-unreachable, and a log with nothing in it printed nothing at all — a silent pass,
-indistinguishable from a working run. The step existed to surface absence and was
-structurally incapable of doing so.
+**And a second claim of mine, from the same hour, was also false.** I wrote that
+*"Studio prints no logged-out line, so absence is the only evidence."* **That is
+wrong**, and run 36871784425 disproved it: the log carries `Authenticated : NO`.
+The claim came from greps that had not been given a pattern matching it. See
+finding 6.
 
 #### What the rerun changes, and why it is discovery rather than another guess
 
@@ -2498,18 +2485,130 @@ The YAML, all six bash blocks and both embedded Python heredocs are checked
 before dispatch — the heredoc terminator has to sit at column 0 after YAML dedent
 or the rest of the step is silently swallowed as heredoc body.
 
+### RUN 36871784425 — the mesh step ran for the first time, and two of my own claims fell
+
+Every stage before the mesh went green, `wait_for_studio` timed out as before, and
+this time the diagnose step produced output. Three of its four sections were
+wrong, and two of the corrections are to claims made *in this file* hours earlier.
+
+#### 6. RETRACTED: "Studio prints no logged-out line" was false
+
+I wrote that into the workflow header, on the reasoning that the greps had found
+nothing. The greps had found nothing because the **pattern was wrong**. The line
+was in the log the whole time:
+
+```
+[FLog::StudioTimingLog] Authenticated : NO
+[FLog::LoginController] LoginController::login with category 'Local'
+```
+
+Studio came up, attempted an automatic local sign-in, and had no usable
+credential. `Authenticated : NO` is a **positive** signal, not an absence.
+
+This is the fourth time in this exercise that a *nearby observation* was promoted
+into a claim about the thing under test, and the pattern is now worth naming
+explicitly: a grep returning nothing is evidence about **the grep**, and I read it
+as evidence about Studio. The claim was unfalsifiable as stated — "there is no
+line to find" cannot be disproved by looking harder, only by finding one. The grep
+is now `Authenticated\s*:`, in its own section, placed *ahead* of the broad login
+lines that buried it.
+
+#### 7. The cookie store question is settled by measurement: neither candidate is it
+
+The discovery approach worked as designed and produced a real answer:
+
+| measured | value |
+|---|---|
+| `open` on the DMG's app | installs and launches a **different** bundle |
+| installed binary | `/Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio` |
+| its `CFBundleIdentifier` | `com.Roblox.RobloxStudio` |
+| stores seeded under that exact id | `~/Library/Cookies/…` and `~/Library/HTTPStorages/…`, all four writes verified |
+| Studio's verdict | **`Authenticated : NO`** |
+
+So `~/Library/Cookies` and `~/Library/HTTPStorages` are both wrong, and the
+2026-09-14 path was wrong in a way that was never going to work. Three attempts
+have now guessed at this; the next step is to stop guessing. The diagnose step
+enumerates every `roblox`/`cookie`-named entry under `~/Library` **and** greps the
+whole home directory for the literal `.ROBLOSECURITY`, so the store names itself
+instead of being predicted.
+
+All three `Assistant-ExternalMCPEnabled` paths survived the run, so the flag is
+written where it persists. **Whether Studio reads one of them is still unmeasured**
+and is not claimed anywhere.
+
+#### 8. Two defects in the diagnostics themselves, both of which reported confident nonsense
+
+**The cookie-store read-back reported "no roblox-named cookie store exists at
+all" on a run that had just written four of them.** It globbed `*roblox*` while
+the files are named `com.Roblox.RobloxStudio.binarycookies` — and `fnmatch` is
+case-sensitive *regardless of the filesystem being case-insensitive*, which is
+what made it survive review. A false "nothing is here" is worse than no check at
+all, because it reads as an answer. Now the directory is listed and matched in
+Python.
+
+**The Verdict step never wrote its summary.** Two table rows ended with an odd
+number of backslashes before their closing backtick. `\\` collapses to one literal
+backslash, leaving the backtick **bare**, which opened a command substitution; a
+later backtick in the file closed it, so the file was syntactically valid and the
+substitution merely spanned lines. Bash parses the enclosed text only when it runs
+it, so:
+
+- **`bash -n` passed on the file that was broken.** My pre-dispatch check ran it,
+  reported green, and the step failed in CI.
+- the error named **line 22**, which had nothing to do with the defect on line 21.
+
+The fix is structural rather than a typo repair: the summary is now a
+single-quoted heredoc, where nothing is interpreted, so there are no backslashes
+to get wrong and no `|` to escape.
+
+**The generalisable lesson, and the one I got wrong twice while building the
+check:** an odd number of backslashes before a backtick is the defect signature,
+not an even one — `\` + backtick is the *correct* escape. My first version of the
+lint had that inverted and drowned the real finding in false positives on the
+rows that were fine.
+
+#### What the validation now does, and why it is not `bash -n`
+
+Three defects in this file passed `bash -n` and were caught only by other means:
+
+| check | what only it catches |
+|---|---|
+| dangling `steps.<id>` references; `.outcome` vs `.outputs.outcome` | a gate that can never be satisfied, so a stage silently never runs |
+| `set -u` audit of cross-step variables | an absent value aborting a step, so it reports no outcome and the *next* gate skips |
+| backslash-run lint before backticks | a command substitution spanning lines — invisible to the parser |
+| **executing** the verdict, the seeder and the diagnose probe | everything above, plus logic errors |
+
+The last one is the one that matters, and it is new: the seeder and the diagnose
+probe are now run against a throwaway `HOME` on every change. The diagnose probe
+is built from real seeded jars covering *kept*, *replaced*, *cleared* and
+*not-a-cookie-file*, and asserts each is classified correctly — which is how the
+case-sensitivity bug above would have been caught locally instead of in a
+four-minute CI run. Each check has a **negative control**: the committed,
+defective version is run through the suite and must fail.
+
+A harness bug worth recording too, because it nearly sent me after the wrong
+thing: the first attempt to reproduce the Verdict failure extracted the script from
+`gh`'s `##[group]Run` echo and merged a copy of its first line into the marker,
+producing `{ {` — an unclosed group and a syntax error that belonged to my
+extractor, not to CI. **A repro of the wrong thing is worse than no repro**, and
+it is indistinguishable from a real one unless the extraction is checked.
+
 #### What would be tried next, in order
 
-1. ~~Fresh cookie, validated, then immediately re-run attempt 4.~~ **Done**, and
-   it is what produced finding 5.
-2. **Read the diagnose output.** The seeded-digest comparison names which of the
-   two cookie theories is live; nothing else will.
-3. **`Assistant-ExternalMCPEnabled` on macOS is still unmeasured.** If the cookie
-   theories both come back "Studio never opened the file", the sign-in is not the
-   blocker and the flag path becomes the prime suspect — so read its real location
-   off a signed-in Mac rather than inheriting a fourth path from Windows.
-4. If the flag is confirmed correct and attach still fails, the proxy is next, and
-   the Studio log's own MCP/Assistant lines will say so.
+1. ~~Fresh cookie, validated, then re-run.~~ **Done** — run 36871784425.
+2. ~~Read the diagnose output.~~ **Done.** `Authenticated : NO`, and neither
+   candidate store is the one Studio reads.
+3. **Find the store Studio actually reads.** The home-directory grep for
+   `.ROBLOSECURITY` is the first attempt at letting the machine answer this rather
+   than another predicted path. If it finds nothing, the credential is not in a
+   cookie file at all — most likely the macOS keychain — and cookie seeding is the
+   wrong approach entirely, which is a real possibility worth being open to.
+4. **`Assistant-ExternalMCPEnabled` on macOS is still unmeasured.** The flag
+   survives in all three locations, so the question is only whether Studio reads
+   one. This cannot be answered until the sign-in works, because the MCP server
+   needs an authenticated Studio.
+5. If the sign-in is solved and attach still fails, the proxy is next, and the
+   Studio log's own MCP/Assistant lines will say so.
 
 #### Also fixed as a side effect: CI on `macos-latest` is now green
 
