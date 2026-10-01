@@ -54,23 +54,37 @@
 #   a different reader from Studio finding the cookie on disk, and a green step
 #   was being read as a signed-in Studio.
 #
-#   WHAT THE DISCOVERY ACTUALLY YIELDED (run 36871784425), which settles the
-#   store question by measurement rather than by another guess:
+#   WHAT THE DISCOVERY ACTUALLY YIELDED, by measurement (run 36874406284):
 #
 #     * `open` on the DMG's app does not open that app. It installs and launches
 #       a DIFFERENT bundle, so the real binary is
 #       /Applications/RobloxStudio.app/Contents/MacOS/RobloxStudio and its
 #       CFBundleIdentifier is `com.Roblox.RobloxStudio`.
-#     * Both ~/Library/Cookies and ~/Library/HTTPStorages were seeded under that
-#       exact id, all four writes verified, and Studio still came up
-#       `Authenticated : NO`. So neither store is what it reads.
-#     * All three Assistant-ExternalMCPEnabled paths survived the run, so the flag
-#       is written where it survives. Whether Studio *reads* one is still
-#       unmeasured, and is not claimed here.
+#     * `~/Library/Cookies/…` came back with the seeded digest UNCHANGED, so
+#       Studio never opened it.
+#     * `~/Library/HTTPStorages/…` came back holding rbx-ip2, GuestData,
+#       RBXEventTrackerV2 and friends — cookies this workflow never wrote — with
+#       our `.ROBLOSECURITY` gone. That is the store Studio reads, and it
+#       DISCARDED the cookie. The 2026-09-14 path had the right directory and
+#       was never going to work, because the credential was not the problem.
 #
-#   So rather than guess a fourth path, the diagnose step now enumerates every
-#   roblox- or cookie-named entry under ~/Library AND greps the whole home
-#   directory for the literal `.ROBLOSECURITY`, so the store names itself.
+#   WHY, and this is the finding: the log names Studio's own auth surface, and it
+#   is OAuth2, not a cookie —
+#
+#       //www.roblox.com/RobloxStudioAuth/oauth2RefreshToken.
+#       //www.roblox.com/RobloxStudioAuth/accessToken.
+#       www.roblox.com-oauth2RefreshToken-Studio
+#
+#   A refresh token comes from an interactive OAuth authorisation, so seeding a
+#   `.ROBLOSECURITY` cannot sign Studio in. The cookie is one input among several,
+#   not the credential. Those strings establish the auth *surface*; the disk
+#   search below looks for the storage, and reports UNKNOWN rather than absent if
+#   it cannot complete — a search that failed must never print "nothing found".
+#
+#   All three Assistant-ExternalMCPEnabled paths survived the run, so the flag is
+#   written where it persists. Whether Studio *reads* one is still unmeasured, and
+#   is not claimed here — it is also strictly downstream of the sign-in, since the
+#   MCP server needs an authenticated Studio.
 #
 # Two things this gets right that the 2026-09-14 workflow did not:
 #
@@ -478,37 +492,62 @@ jobs:
               names = [c.name for c in cookies]
               hit = next((c for c in cookies if c.name == ".ROBLOSECURITY"), None)
               if hit is None:
-                  print(f"  {short}\n    names={names} -> CLEARED, no .ROBLOSECURITY")
+                  # A jar holding cookies this workflow never wrote is a jar
+                  # Studio wrote. That is the signal that matters, and it is how
+                  # the store Studio actually reads gets identified without
+                  # guessing: not the one we seeded, but the one that came back
+                  # with its own contents.
+                  ours = {"rbx-ip2", "RBXEventTrackerV2", "GuestData",
+                          "RBXPaymentsFlowContext"}
+                  wrote = sorted(ours.intersection(names))
+                  if wrote:
+                      print(f"  {short}\n    names={names} -> STUDIO USED THIS ONE: "
+                            f"it wrote {wrote} here, and .ROBLOSECURITY is gone")
+                  else:
+                      print(f"  {short}\n    names={names} -> no .ROBLOSECURITY, and "
+                            f"nothing recognisably Studio's either")
                   continue
               digest = hashlib.sha256(hit.value.encode()).hexdigest()[:12]
               verdict = "KEPT, untouched" if digest == seed else "REPLACED by Studio"
               print(f"  {short}\n    names={names} -> {verdict}: "
                     f"{len(hit.value)} chars, sha256:{digest}")
 
-          # The decisive search, and the one that has been missing: whatever
-          # Studio actually reads is a file somewhere that mentions the cookie
-          # name. Searching the home directory for the literal finds it, instead
-          # of naming candidate paths and hoping one of them is right — which is
-          # what three previous attempts did.
+          # Which store Studio reads is now answered by the read-back above, so
+          # this is not looking for the cookie any more — it is looking for the
+          # OAuth2 credential the log names. Scoped to ~/Library and pruned,
+          # because a recursive grep over the whole home directory timed out at
+          # 180 s on a runner whose $HOME holds the tool cache and the checkout.
           #
-          # Guarded, because this is the last thing the step does and an
-          # unhandled failure here discards every finding above it: a missing
-          # `grep`, a permission error, or the timeout all raise, and a
-          # diagnostic that dies on its own final line reports nothing at all.
+          # Two things are searched, because the log names two:
+          #   .ROBLOSECURITY        the legacy cookie
+          #   oauth2RefreshToken    what Studio's own sign-in actually uses
           print()
-          print("--- any file on this machine mentioning .ROBLOSECURITY (cap 15) ---")
-          try:
-              r = subprocess.run(
-                  ["grep", "-rl", "--binary-files=text", "-s", ".ROBLOSECURITY", home],
-                  capture_output=True, text=True, timeout=180)
-              hits = [h for h in r.stdout.splitlines() if h][:15]
-          except (OSError, subprocess.SubprocessError) as exc:
-              print(f"  (search unavailable: {exc})")
-              hits = []
-          for h in hits:
-              print("  " + h.replace(home, "~"))
-          if not hits:
-              print("  (none — nothing on disk references the cookie name at all)")
+          print("--- files under ~/Library naming a credential (cap 20 each) ---")
+          searched = 0
+          for needle in (".ROBLOSECURITY", "oauth2RefreshToken"):
+              print(f"  [{needle}]")
+              try:
+                  r = subprocess.run(
+                      ["grep", "-rl", "--binary-files=text", "-s",
+                       "--exclude-dir=Caches", "--exclude-dir=.git",
+                       needle, os.path.join(home, "Library")],
+                      capture_output=True, text=True, timeout=120)
+                  searched += 1
+                  hits = [h for h in r.stdout.splitlines() if h][:20]
+              except (OSError, subprocess.SubprocessError) as exc:
+                  # Deliberately NOT followed by a "none found" line. An earlier
+                  # version printed both, which is a contradiction that reads as
+                  # a result: it claimed the disk was empty on the same run that
+                  # reported the search had failed.
+                  print(f"    (search did not complete: {exc})")
+                  continue
+              for h in hits:
+                  print("    " + h.replace(home, "~"))
+              if not hits:
+                  print("    (none)")
+          if searched == 0:
+              print("  (no search completed — treat the credential store as UNKNOWN,")
+              print("   not as absent. Widen or raise the timeout before concluding.)")
           PY
 
       # --------------------------------------------------------------- verdict
@@ -541,7 +580,15 @@ jobs:
 
           user id `${{ steps.s2_mac.outputs.user_id }}` · installed binary `${{ steps.s3_mac.outputs.discovered_binary }}` · bundle id `${{ steps.s3_mac.outputs.bundle_id }}` · seeded digest `${{ steps.s3_mac.outputs.seed_digest }}`
 
-          #### The one line that settles it
+          #### Read the cookie section first — it names the store
+
+          The stage table is not the interesting part. The diagnose step reports,
+          per store, whether our cookie was **left alone**, **replaced**, or
+          whether **Studio wrote its own cookies in and dropped ours**. Only the
+          last identifies the store Studio actually reads, and it is found by what
+          Studio put there rather than by a path we chose.
+
+          #### The one line that settles sign-in
 
           Studio logs `Authenticated : NO` at startup when it is not signed in,
           followed by `LoginController::login with category 'Local'`. That pair is

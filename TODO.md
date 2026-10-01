@@ -2593,22 +2593,111 @@ producing `{ {` — an unclosed group and a syntax error that belonged to my
 extractor, not to CI. **A repro of the wrong thing is worse than no repro**, and
 it is indistinguishable from a real one unless the extraction is checked.
 
+### RUN 36874406284 — the store is identified, and Studio signs in with OAuth2, not a cookie
+
+Run 2 of the rewritten workflow. The Verdict step's heredoc fix is confirmed live
+(the summary rendered), and the read-back now works, which makes the cookie
+question answerable rather than arguable.
+
+#### 9. The store Studio reads is `HTTPStorages`, and it discarded our cookie
+
+This is the whole result, and it is the opposite of what the seeding assumed:
+
+| store | after Studio ran | verdict |
+|---|---|---|
+| `~/Library/Cookies/com.Roblox.RobloxStudio.binarycookies` | `.ROBLOSECURITY` present, **digest identical to the seed** | Studio **never opened it** |
+| `~/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies` | our cookie **gone**; `rbx-ip2`, `RBXEventTrackerV2`, `GuestData`, `RBXPaymentsFlowContext`, `__utma`, `__utmb`, `__utmz`, `_pxvid`, `_px3` present | **Studio wrote here** |
+
+Two facts fall out, and they are different from the two live theories:
+
+- `HTTPStorages`, not `Cookies`, is the store Studio uses. The 2026-09-14 path had
+  the right *directory* and was still failing, because nothing was ever in it for
+  Studio to find.
+- Studio **read** the store and **removed** the cookie. This is theory (b), not
+  (a): the file was found, opened, and the credential discarded.
+
+The read-back now reports that shape directly — a jar holding cookies this
+workflow never wrote is a jar Studio wrote, and it says so rather than printing a
+bare "cleared".
+
+#### 10. Studio's own sign-in is OAuth2, and `.ROBLOSECURITY` alone may be the wrong credential
+
+The log names its own auth surface, and it is not only a cookie:
+
+```
+//www.roblox.com/RobloxStudioAuth/.ROBLOSECURITY.
+//www.roblox.com/RobloxStudioAuth/accessToken.
+//www.roblox.com/RobloxStudioAuth/Cookies.
+//www.roblox.com/RobloxStudioAuth/oauth2RefreshToken.
+//www.roblox.com/RobloxStudioAuth/userid.
+RobloxStudioCookieManager   StudioCookieManager   CookieKeyValueStorage
+www.roblox.com-oauth2RefreshToken-Studio
+```
+
+`oauth2RefreshToken` alongside an `accessToken`, and a persisted key shaped like
+`www.roblox.com-oauth2RefreshToken-Studio`, say Studio's sign-in is an **OAuth2
+refresh token**, with the cookie as one input among several rather than the
+credential itself.
+
+**How far this can be pushed, stated honestly:** these are strings recovered from
+the log, so they establish the auth *surface*, not the on-disk layout — a name in
+a log is not a file on disk, and the disk search has not yet confirmed one. But it
+does explain the measurement in finding 9 without needing any further guess: a
+cookie was planted, Studio found its store, and dropped the cookie because a
+cookie is not what it authenticates with.
+
+**The consequence, which is the real result of this exercise:** if that is right,
+cookie seeding is the wrong approach for Studio's own sign-in, and no amount of
+finding a better cookie *path* will fix it. An OAuth2 refresh token has to come
+from Roblox's OAuth flow, which is a browser/interactive authorisation — a
+materially different request from "here is a `.ROBLOSECURITY`". That is worth
+knowing **before** another run is dispatched, and it is the thing to decide next.
+
+#### 11. Third false negative from a diagnostic, this one in my own guard
+
+The credential search printed both:
+
+```
+(search unavailable: Command '[...]' timed out after 180 seconds)
+(none — nothing on disk references the cookie name at all)
+```
+
+A recursive `grep -r` over `$HOME` timed out on a runner whose home holds the tool
+cache and the checkout — and the guard then printed "nothing on disk" anyway, on
+the same run that reported the search had failed. **A failure and its opposite,
+printed together, is worse than either alone**: the second line is a confident
+claim produced by the absence of evidence, which is the exact failure mode this
+file keeps hitting.
+
+Three of this run's four diagnostic sections produced confident nonsense, and all
+three were mine. The pattern is consistent enough to name: a diagnostic that
+cannot distinguish *"I looked and found nothing"* from *"I did not look"* will
+eventually report the second as the first.
+
+So the search is now scoped to `~/Library` with `Caches` pruned, looks for both
+`.ROBLOSECURITY` **and** `oauth2RefreshToken`, and on failure says the store is
+**UNKNOWN** rather than absent. The probe asserts that a failed search is never
+followed by a "none found" line.
+
 #### What would be tried next, in order
 
 1. ~~Fresh cookie, validated, then re-run.~~ **Done** — run 36871784425.
-2. ~~Read the diagnose output.~~ **Done.** `Authenticated : NO`, and neither
-   candidate store is the one Studio reads.
-3. **Find the store Studio actually reads.** The home-directory grep for
-   `.ROBLOSECURITY` is the first attempt at letting the machine answer this rather
-   than another predicted path. If it finds nothing, the credential is not in a
-   cookie file at all — most likely the macOS keychain — and cookie seeding is the
-   wrong approach entirely, which is a real possibility worth being open to.
-4. **`Assistant-ExternalMCPEnabled` on macOS is still unmeasured.** The flag
+2. ~~Read the diagnose output.~~ **Done** — run 36874406284. `Authenticated : NO`,
+   `HTTPStorages` is the store Studio reads, and it discards a planted cookie.
+3. ~~Find the store Studio actually reads.~~ **Done**, and the answer was not a
+   cookie jar: `oauth2RefreshToken` is the credential Studio signs in with.
+4. **Decide whether OAuth2 is viable here, before spending another run.** A
+   refresh token comes from Roblox's OAuth authorisation flow, which is
+   interactive. So the options are: a self-hosted macOS runner where a browser
+   sign-in can happen once and be captured; an account whose Studio session is
+   already established and whose profile is committed or seeded; or accepting
+   that live-Studio CI is not reachable from a GitHub-hosted runner and dropping
+   the leg. **This is a decision, not another experiment** — the measurement now
+   rules out the thing the last several runs were trying.
+5. **`Assistant-ExternalMCPEnabled` on macOS is still unmeasured.** The flag
    survives in all three locations, so the question is only whether Studio reads
-   one. This cannot be answered until the sign-in works, because the MCP server
-   needs an authenticated Studio.
-5. If the sign-in is solved and attach still fails, the proxy is next, and the
-   Studio log's own MCP/Assistant lines will say so.
+   one. It cannot be answered until the sign-in works, because the MCP server
+   needs an authenticated Studio — which makes it strictly downstream of 4.
 
 #### Also fixed as a side effect: CI on `macos-latest` is now green
 
