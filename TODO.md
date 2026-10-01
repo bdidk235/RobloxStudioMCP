@@ -2274,6 +2274,125 @@ Also worth recording: the diagnose step that would have caught this ran
 a timing artefact — but the empty *profile* and *logs* after a 30 s first-run
 init are not, and those are what actually say Studio never started.
 
+### SETTLED 2026-10-01, by measurement: the live-Studio CI attempt, five runs
+
+Read the run logs rather than the commit messages, then re-ran it. The two
+causes below are confirmed; so is a third that nobody had hit before, and a hard
+stop that ends the exercise for now.
+
+#### 0. The secret was an *environment* secret, and I first reported it missing
+
+`gh secret list` is empty because `ROBLOSECURITY` is a secret on the
+**`ROBLOSECURITY` environment**, not on the repo. The 2026-09-14 workflow's
+`environment: ROBLOSECURITY` was not decoration. Worth recording because I
+checked repo scope, saw nothing, and stated the secret was unset — a wrong
+answer from checking the wrong place.
+
+#### 1. macOS: the 2026-09-14 blocker was a bug in its own self-check — now fixed
+
+`AttributeError: 'Cookie' object has no attribute 'get'`. `binarycookies.load()`
+returns pydantic objects, so the round-trip assertion was `c.get("name")` where
+it had to be `c.name`. **The cookie had been written correctly**; the assertion
+killed the job and masked every step after it. Rewritten; the cookie stage now
+passes and the run gets to the mesh.
+
+#### 2. Windows: Studio cannot be installed on a GitHub-hosted runner at all
+
+Not the zip, not the bootstrapper, and not the most robust community installer.
+Three routes, three measurements:
+
+| route | result |
+|---|---|
+| single-file zip (2026-09-14) | files present, process never ran |
+| `RobloxStudioLauncherBeta.exe` | downloads **200, 7.6 MB**, a real file — then writes nothing: `versions_dir_exists False`, `versions_entries 0`, `log_files 0` after a full 120 s poll |
+| `OrbitalOwen/roblox-win-installer-action@1.1` | `Preparing login` → `Downloading` → `Installing` → `Launching RobloxStudioLauncherBeta.exe`, then five minutes of nothing, killed at cleanup with `RobloxStudioBeta.exe` never appearing |
+
+The runner image is `windows-2025-vs2026` — a Server container with **no
+interactive desktop** — and both installers need one. This is the runner, not
+the code, and no amount of retrying changes it. Recorded so nobody spends
+another day on it.
+
+**The expensive miss, now visible:** commit `0f87c48` chose the community
+installer on 2026-09-14. That run was **cancelled, not failed** — so the one
+commit aimed at the real cause never received a verdict, and the escalation
+moved to the zip route, which could not work. Four of the thirteen commits were
+cancelled and carry no information at all.
+
+#### 3. macOS reaches the process but not the mesh
+
+Attempt 4, end to end: install **ok**, cookie **ok**, flag written, **process
+alive** — then `wait_for_studio 180` timed out. So the 2026-09-14 blocker is
+genuinely fixed and the failure has moved past it. Three candidates remain, and
+they are indistinguishable from outside:
+
+- `Assistant-ExternalMCPEnabled` was written somewhere Studio never reads. The
+  path is a **guess inherited from the Windows layout** and has never been
+  confirmed on a Mac.
+- Studio is not actually signed in. The cookie being accepted by the Roblox API
+  is a *different reader* from the one Studio uses.
+- The MCP proxy is absent or never started on macOS.
+
+A useful side-finding: **MCP attach does not need a place.** A Studio with no
+document still attaches and reports `name: null`, so the attach can be tested
+without edit access to a published place — a separate permission problem the old
+workflow never got past.
+
+#### 4. The cookie was revoked mid-exercise — the actual stop
+
+| time | result |
+|---|---|
+| 11:30 | secret created |
+| 11:32 | **HTTP 200**, user `1863835763`, on `macos-latest` **and** `windows-latest` |
+| 12:05 | attempt 4 resolves a user id — still good |
+| 12:10 | attempt 5: `curl: (56) ... 401` |
+| 12:11 | validator re-run: **HTTP 401, `RESULT=REJECTED`** |
+
+Same secret, same validator, 200 then 401 inside ~40 minutes, with the last
+known-good use immediately before the first bad one. The account had already
+been flagged once, so **signing a Studio in from a runner IP is the most likely
+cause** — but that is a plausible story, not a measured one, and is recorded as
+such.
+
+To continue: re-paste a fresh cookie and run `validate-cookie.yml` **first**. It
+costs about a minute and is the only thing standing between a re-run and another
+dead hour.
+
+#### What would be tried next, in order
+
+1. Fresh cookie, validated, then immediately re-run attempt 4. Everything up to
+   the mesh is already green, so the only unknown is the attach.
+2. Read the `Assistant-ExternalMCPEnabled` location off a real signed-in Mac
+   rather than guessing it — the three candidate paths tried are all inherited.
+3. If the flag is confirmed correct and attach still fails, the proxy is the
+   next suspect, and the Studio log's own MCP/Assistant lines will say so.
+
+#### Also fixed as a side effect: CI on `macos-latest` is now green
+
+Getting here meant running the suite on a Mac, which had never happened. It
+found four genuine failures, three of them test defects and one mine:
+
+- `platform.basename` was asserted to **agree** with `os.path.basename`, which is
+  only true on Windows — `ntpath` already treats both separators, so the
+  assertion said nothing there, and on macOS the two *must* disagree, which is
+  the helper's documented purpose.
+- the off-Mac tripwire used `assertFalse`, correct when the environments were
+  Windows and not-Windows, but permanently false on `macos-latest`, so the job
+  could never go green. Both sides now assert the **claim** — no live
+  integration exercised — which is host-independent and has teeth: it fails when
+  `ROBLOX_STUDIO_MCP_INTEGRATION=1` retires the claim.
+- `os.path.basename` on a path parsed out of a log, where the separator belongs
+  to the machine that wrote it.
+- a hardcoded `version-a\RobloxStudioBeta.exe` against a host-joined path.
+- **mine:** `pngBase64` is optional on `CaptureResult` and went into
+  `Buffer.from` unguarded. Found by `tsconfig.check.json`, which the `AGENTS.md`
+  gate table named wrongly — it said `npx tsc --noEmit` while CI runs
+  `tsc --noEmit -p tsconfig.check.json`. Table corrected.
+- `build-freshness.test.ts` was **unsatisfiable in CI**: `dist/` is gitignored
+  and `ci.yml` ran tests before build. It only ever passed locally because a
+  working copy already had a build. Reordered.
+
+All four CI jobs are green on both platforms for the first time.
+
 ### Fixed during the pass
 
 - [x] **`launch` no longer writes into Studios the caller never named.** This is
