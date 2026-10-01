@@ -142,7 +142,7 @@ jobs:
               echo "(no executable in Contents/MacOS)"
             fi
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           exit 0
 
       - name: Bundle identity, linkage and signature
@@ -261,5 +261,5 @@ jobs:
             done < <(find "$app" -type l 2>/dev/null | head -12)
             [ "$n" -eq 0 ] && echo '(no symlinks)'
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           exit 0
