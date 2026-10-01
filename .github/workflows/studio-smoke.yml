@@ -1,0 +1,191 @@
+# Studio install smoke test.
+#
+# Manual, and deliberately separate from ci.yml. The 2026-09-14 attempt at
+# live-Studio CI spent 13 commits and 8 failing runs and never established the
+# most basic question: does Studio even *run* on a CI runner? Its Windows install
+# step asserted that RobloxStudioBeta.exe and StudioMCP.exe existed, the single-file
+# zip satisfies both, and the diagnose step then found no process, no profile and
+# no logs. File existence was reported as a successful install.
+#
+# So this asks exactly one question, with no authentication and no MCP, so that a
+# failure is unambiguous:
+#
+#     does a Studio process actually come up on this runner?
+#
+# Asserted on a RUNNING PROCESS, never on a file. The bootstrapper route is used
+# rather than the zip, because the zip is what skipped the install state last
+# time.
+#
+# Fold the working version into ci.yml once both platforms are green here.
+
+name: Studio install smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------- macOS
+      - name: Install and launch Studio (macOS)
+        if: runner.os == 'macOS'
+        id: mac
+        shell: bash
+        run: |
+          set -uo pipefail
+          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; echo "$1: $2"; }
+
+          dmg="/tmp/rbx-studio.dmg"
+          if ! curl -sS -L --fail --retry 3 -o "$dmg" \
+               "https://setup.rbxcdn.com/mac/RobloxStudio.dmg"; then
+            report outcome "download-failed"
+            exit 1
+          fi
+          report dmg_mb "$(du -m "$dmg" | cut -f1)"
+
+          mnt="/tmp/rbx-studio-mnt"
+          # `|| true` on detach: cleanup must not mask the real verdict.
+          hdiutil attach "$dmg" -nobrowse -mountpoint "$mnt" || {
+            report outcome "mount-failed"; exit 1; }
+          app="$(find "$mnt" -maxdepth 1 -name '*.app' -type d -print -quit)"
+          if [ -z "$app" ]; then
+            report outcome "no-app-in-dmg"
+            hdiutil detach "$mnt" || true
+            exit 1
+          fi
+          report app_in_dmg "$(basename "$app")"
+
+          # Copy rather than run from the mount: a read-only volume cannot host
+          # the profile Studio writes on first run, which is a plausible reason a
+          # launch from the dmg produced no profile and no logs.
+          cp -R "$app" /Applications/
+          installed="/Applications/$(basename "$app")"
+          xattr -dr com.apple.quarantine "$installed" 2>/dev/null || true
+          hdiutil detach "$mnt" || true
+          rm -f "$dmg"
+
+          # Launch with no place. A Studio with no document reports name: null on
+          # the mesh, which is fine - the only question here is whether the
+          # process comes up at all.
+          open "$installed"
+          alive=0
+          for _ in $(seq 1 30); do
+            if pgrep -x RobloxStudio >/dev/null 2>&1; then alive=1; break; fi
+            sleep 2
+          done
+
+          report alive "$alive"
+          report process_count "$(pgrep -x RobloxStudio | wc -l | tr -d ' ')"
+          # Did it get far enough to write a profile and a log? A process can be
+          # alive and still useless, and these two distinguish the cases.
+          report profile_dirs "$(find "$HOME/Library/Roblox" -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+          report log_files "$(ls -1 "$HOME/Library/Logs/Roblox" 2>/dev/null | wc -l | tr -d ' ')"
+          report log_dir_exists "$([ -d "$HOME/Library/Logs/Roblox" ] && echo yes || echo no)"
+
+          # Name only, never contents: a log can be megabytes.
+          if [ -d "$HOME/Library/Logs/Roblox" ]; then
+            report newest_log "$(ls -t "$HOME/Library/Logs/Roblox" 2>/dev/null | head -n1)"
+          fi
+
+          if [ "$alive" != "1" ]; then
+            report outcome "process-never-started"
+            # Startup is the usual culprit and it is invisible without this.
+            report console_log "$(tail -c 400 /Users/runner/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -c 300)"
+            exit 1
+          fi
+          report outcome "running"
+
+      # -------------------------------------------------------------- Windows
+      - name: Install and launch Studio (Windows)
+        if: runner.os == 'Windows'
+        id: win
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Report($k, $v) {
+            "$k=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "$k : $v"
+          }
+
+          # The bootstrapper, not the zip. The zip lays down the two binaries
+          # without the install state, which is what made the previous attempt
+          # report a successful install and then find nothing running.
+          $bootstrapper = Join-Path $env:RUNNER_TEMP 'RobloxStudioLauncherBeta.exe'
+          Invoke-WebRequest -Uri 'https://setup.robloxcdn.com/RobloxStudioLauncherBeta.exe' `
+                             -OutFile $bootstrapper
+          Report bootstrapper_mb ([math]::Round((Get-Item $bootstrapper).Length / 1MB, 1))
+
+          Start-Process -FilePath $bootstrapper | Out-Null
+
+          # Poll for a RUNNING Studio, which is the only assertion that means
+          # anything. Installing writes files; running is the question.
+          $exe = $null
+          for ($i = 0; $i -lt 60; $i++) {
+            $p = Get-Process RobloxStudioBeta -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+            if ($p) { $exe = $p; break }
+            Start-Sleep -Seconds 2
+          }
+
+          if (-not $exe) {
+            Report alive 0
+            Report versions_dir_exists (Test-Path "$env:LOCALAPPDATA\Roblox\Versions")
+            Report versions_entries (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue).Count)
+            Report log_files (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue).Count)
+            Report mcp_proxy_exists (Test-Path "$env:LOCALAPPDATA\Roblox\mcp.bat")
+            Report outcome 'process-never-started'
+            exit 1
+          }
+
+          Report alive 1
+          Report exe_path $exe.Path
+          Report versions_entries (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue).Count)
+          Report log_files (@(Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue).Count)
+
+          # Does the MCP proxy exist now that the bootstrapper has run? The zip
+          # route had to fabricate mcp.bat by hand; if this is present natively
+          # that workaround is unnecessary.
+          Report mcp_proxy_exists (Test-Path "$env:LOCALAPPDATA\Roblox\mcp.bat")
+          $proxy = Get-ChildItem "$env:LOCALAPPDATA\Roblox\Versions" -Directory -ErrorAction SilentlyContinue |
+                   ForEach-Object { Join-Path $_.FullName 'StudioMCP.exe' } |
+                   Where-Object { Test-Path $_ } | Select-Object -First 1
+          Report studiomcp_exe ([bool]$proxy)
+
+          # Names only. A Studio log runs to megabytes.
+          $log = Get-ChildItem "$env:LOCALAPPDATA\Roblox\logs" -File -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($log) { Report newest_log $log.Name }
+
+          Report outcome 'running'
+
+      - name: Verdict
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Studio install smoke - ${{ matrix.os }}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| outcome | \`${{ steps.mac.outputs.outcome || steps.win.outputs.outcome }}\` |"
+            echo "| alive | \`${{ steps.mac.outputs.alive || steps.win.outputs.alive }}\` |"
+            echo "| log files | \`${{ steps.win.outputs.log_files }}\` |"
+            echo "| newest log | \`${{ steps.mac.outputs.newest_log || steps.win.outputs.newest_log }}\` |"
+            echo ""
+            if [ "${{ steps.mac.outputs.outcome || steps.win.outputs.outcome }}" = "running" ]; then
+              echo "A Studio process came up. Install is viable on this runner;"
+              echo "the next question is authentication, not installation."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
