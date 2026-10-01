@@ -1,43 +1,78 @@
-# macOS Studio -> MCP attach, end to end.
+# Studio -> MCP attach on macOS.
 #
-# Attempts 1-3, measured 2026-10-01:
-#   macOS   install works. alive=1 on attempts 1 and 2, 2 for 2.
-#   Windows cannot be installed on a GitHub-hosted runner at all. Not the
-#           bootstrapper (attempt 2: downloads 200 / 7.6 MB, then writes
-#           nothing), not the most robust community installer (attempt 3:
-#           launches RobloxStudioLauncherBeta.exe, which then sits there for
-#           five minutes and is killed at cleanup, with RobloxStudioBeta.exe
-#           never appearing). The runner image is windows-2025-vs2026, a Server
-#           container with no interactive desktop, and both installers need one.
-#           That is the runner, not this code, and no amount of retrying changes
-#           it. So the Windows leg is dropped rather than nursed.
+# Reports the furthest stage reached, so a run is a stage map rather than a
+# single pass/fail. Every step records its outcome and exits 0; the Verdict step
+# reads them.
 #
-# This is the actual objective: does a Studio on a Mac reach the MCP mesh?
+# MEASURED, 2026-10-01. Where macOS actually stops, and why:
 #
-# Two things make it a fair test rather than another 2026-09-14:
+#   install ok | cookie accepted by the API (see below — NOT a sign-in) | flag
+#   written | process alive WITH a place open | MESH never appears.
 #
-#   * No place is opened. A Studio with no document still attaches to the mesh
-#     and reports name: null, so the attach can be tested without needing edit
-#     access to a published place - which is a whole separate permission problem
-#     the old workflow tripped over and never got past.
+#   Windows  install NEVER SUCCEEDS on a GitHub-hosted runner. Three routes
+#            measured, all failing:
+#              - single-file zip (2026-09-14): files present, process never ran
+#              - RobloxStudioLauncherBeta.exe: downloads 200 / 7.6 MB, then
+#                writes nothing. versions_dir_exists False, 0 logs, 120s poll.
+#              - OrbitalOwen/roblox-win-installer-action@1.1: launches
+#                RobloxStudioLauncherBeta.exe, five minutes of nothing, killed at
+#                cleanup, RobloxStudioBeta.exe never appearing.
+#            The image is windows-2025-vs2026, a Server container with no
+#            interactive desktop, which both installers require. That is the
+#            runner, not this code.
 #
-# CORRECTION, measured. That bullet above was wrong, and it cost a run. A Studio
-# with no document does appear on the mesh as name: null, which is a true
-# statement about the mesh listing and a false one about the MCP server - and the
-# MCP server is the thing being tested. Attempt 4 launched with no place, the
-# process came up, and the attach timed out with nothing else broken. A place is
-# now opened from a committed fixture via --localPlaceFile, which also keeps the
-# test clear of place permissions.
-#   * The cookie round-trip is asserted correctly. The 2026-09-14 macOS job
-#     died on its own verification calling .get("name") on what
-#     binarycookies.load() returns, which are pydantic objects. It is .name. The
-#     cookie had been written; the assertion was what failed, and that masked
-#     everything after it.
+#            The Windows leg was REMOVED from this workflow on 2026-10-01 rather
+#            than left to fail on every dispatch. Re-running a known-unfixable
+#            leg costs minutes and dilutes the signal: the point of this file is
+#            to localise the macOS failure, and a second red X alongside it makes
+#            the run harder to read, not easier. The measurements above are kept
+#            here and in studio-smoke.yml, which is where the install-only attempt
+#            belongs. Restoring the leg is one `os:` entry and one step; it needs a
+#            runner with an interactive desktop, which is the actual prerequisite.
 #
-# Asserted in order, so a failure names its own stage: cookie read back, signed
-# in, MCP flag in place, process up, mesh sees it.
+# WHY MACOS STOPPED, and what this run changes.
+#
+#   The burner account is NOT signed in. That was observed directly, and it is
+#   the whole cause of the mesh never appearing — the MCP server needs a
+#   signed-in Studio.
+#
+#   What made it hard to see: `curl -H "Cookie: .ROBLOSECURITY=..." ` against
+#   users.roblox.com returns 200, and that step stayed green through every run.
+#   Those are two different readers. The API reads a header this workflow sends;
+#   Studio has to find the cookie in its own on-disk store. Treating a green
+#   `cookie valid` as a signed-in Studio is the mistake this run exists to undo.
+#
+#   Note what is NOT available as evidence: Studio prints no "logged out" line.
+#   The Diagnose step therefore treats *absence* as the finding and says so
+#   explicitly, because a grep that silently matches nothing is indistinguishable
+#   from a pass.
+#
+#   Two causes were considered and this run cannot separate them from outside:
+#     (a) the cookie was written to a store Studio never opens. The 2026-09-14
+#         path, ~/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies, was
+#         inherited rather than observed, and a name Studio does not use is
+#         indistinguishable from no cookie at all.
+#     (b) Studio cleared the cookie as invalid on a later launch.
+#   So the cookie store is now DISCOVERED — the bundle identifier is read out of
+#   the app that is actually running, and every candidate store is seeded, then
+#   each is read back *after* Studio has run to see which one Studio kept. That
+#   distinguishes (a) from (b): a file still holding our value means Studio never
+#   touched it, which is (a).
+#
+# Two things this gets right that the 2026-09-14 workflow did not:
+#
+#   * A PLACE IS OPENED. A Studio with no document comes up as a process and its
+#     MCP server never starts. That is true of the mesh *listing* (name: null)
+#     and false of the MCP *server*, and the MCP server is what is under test.
+#   * The cookie round-trip is asserted correctly. The old job called
+#     .get("name") on what binarycookies.load() returns, which are pydantic
+#     objects, raised AttributeError, and took the job down after the cookie had
+#     already been written correctly - masking every step after it.
+#
+# A committed place is used, so there is no published place and therefore no
+# edit-permission problem for a burner account.
 
-name: macOS MCP attach
+name: Studio MCP attach
 
 on:
   workflow_dispatch:
@@ -47,41 +82,43 @@ permissions:
 
 jobs:
   attach:
-    name: macos-latest
-    runs-on: macos-latest
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     environment: ROBLOSECURITY
-    timeout-minutes: 25
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        # macOS only, deliberately. See the header on the removed Windows leg.
+        os: [macos-latest]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Studio
-        id: install
+      # ------------------------------------------------------------------ macOS
+      - name: Install Studio (macOS)
+        id: s1_mac
         shell: bash
         run: |
           set -uo pipefail
           report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
-
           dmg=/tmp/rbx-studio.dmg
           curl -sS -L --fail --retry 3 -o "$dmg" "https://setup.rbxcdn.com/mac/RobloxStudio.dmg" || {
-            report outcome download-failed; exit 1; }
+            report outcome download-failed; exit 0; }
           mnt=/tmp/rbx-studio-mnt
-          hdiutil attach "$dmg" -nobrowse -mountpoint "$mnt" || {
-            report outcome mount-failed; exit 1; }
+          hdiutil attach "$dmg" -nobrowse -mountpoint "$mnt" || { report outcome mount-failed; exit 0; }
           app="$(find "$mnt" -maxdepth 1 -name '*.app' -type d -print -quit)"
-          [ -n "$app" ] || { report outcome no-app-in-dmg; hdiutil detach "$mnt" || true; exit 1; }
+          [ -n "$app" ] || { report outcome no-app-in-dmg; hdiutil detach "$mnt" || true; exit 0; }
           # Copied out of the mount: a read-only volume cannot host the profile
           # Studio writes on first run.
           cp -R "$app" /Applications/
-          installed="/Applications/$(basename "$app")"
-          xattr -dr com.apple.quarantine "$installed" 2>/dev/null || true
+          STUDIO_APP="/Applications/$(basename "$app")"
+          xattr -dr com.apple.quarantine "$STUDIO_APP" 2>/dev/null || true
           hdiutil detach "$mnt" || true
           rm -f "$dmg"
-          echo "STUDIO_APP=$installed" >> "$GITHUB_ENV"
-          report app "$(basename "$installed")"
+          echo "STUDIO_APP=$STUDIO_APP" >> "$GITHUB_ENV"
           report outcome installed
 
-      - name: Seed the session cookie
-        id: cookie
+      - name: Resolve the account (macOS)
+        id: s2_mac
         shell: bash
         env:
           COOKIE: ${{ secrets.ROBLOSECURITY }}
@@ -89,210 +126,346 @@ jobs:
           set -uo pipefail
           report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
           echo "::add-mask::$COOKIE"
+          # Proves the token is good, and gives the user id the plugin-settings
+          # path needs. It does NOT mean Studio is signed in: this reads the
+          # cookie out of a header, Studio has to find it on disk, and treating
+          # the two as the same is what left the account logged out through
+          # several runs while this step stayed green.
 
-          # The user id is needed twice: for the plugin settings directory, and
-          # to tell "logged in as nobody" from "logged in".
           user_id="$(curl -sS --fail -H "Cookie: .ROBLOSECURITY=$COOKIE" \
             https://users.roblox.com/v1/users/authenticated \
             | grep -o '"id":[0-9]*' | head -n1 | grep -o '[0-9]*')"
-          if [ -z "$user_id" ]; then
-            report outcome user-id-unresolved
-            exit 1
-          fi
+          [ -n "$user_id" ] || { report outcome user-id-unresolved; exit 0; }
           report user_id "$user_id"
           echo "USER_ID=$user_id" >> "$GITHUB_ENV"
+          # The cookie itself is written by the launch step, after Studio has run
+          # once and its store exists.
+          report outcome cookie-valid
 
-          python -m pip install -q binarycookies
-          # `.name`, not `.get("name")`. binarycookies.load() yields pydantic
-          # model objects; the 2026-09-14 workflow called .get() on them, raised
-          # AttributeError, and took the whole job down after the cookie had
-          # already been written correctly.
-          python - "$HOME/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies" <<'PY'
-          import datetime, os, sys
-          import binarycookies
-
-          path = sys.argv[1]
-          cookie = os.environ["COOKIE"]
-          now = datetime.datetime.now(datetime.timezone.utc)
-          entry = {
-              "name": ".ROBLOSECURITY",
-              "value": cookie,
-              "url": "https://roblox.com",
-              "path": "/",
-              "create_datetime": now.isoformat(),
-              "expiry_datetime": (now + datetime.timedelta(days=3650)).isoformat(),
-              "flag": "Secure; HttpOnly",
-          }
-          os.makedirs(os.path.dirname(path), exist_ok=True)
-          with open(path, "wb") as handle:
-              binarycookies.dump(entry, handle)
-          with open(path, "rb") as handle:
-              names = [c.name for c in binarycookies.load(handle)]
-          assert ".ROBLOSECURITY" in names, f"round-trip failed: {names}"
-          print("cookie written and read back OK")
-          PY
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            report outcome cookie-roundtrip-failed
-            exit 1
-          fi
-          report outcome cookie-seeded
-
-          # The legacy plist store as well, because which one Studio reads is not
-          # documented and the old workflow seeded both for that reason.
-          defaults write com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" \
-            -string "COOK::<${COOKIE}>" 2>/dev/null || report plist_write "failed"
-
-      - name: Enable the MCP flag
-        id: flag
+      - name: Launch with a place (macOS)
+        id: s3_mac
         shell: bash
+        env:
+          COOKIE: ${{ secrets.ROBLOSECURITY }}
         run: |
           set -uo pipefail
           report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
-          # The path the 2026-09-14 workflow used, on its stated reasoning that
-          # "the macOS data dir mirrors Windows %LOCALAPPDATA%\Roblox". That is
-          # a guess, not a measurement, and it is one of the things this run is
-          # meant to test - so several plausible locations are written and which
-          # ones existed afterwards is reported.
-          for dir in \
-            "$HOME/Library/Roblox/$USER_ID/InstalledPlugins/0" \
-            "$HOME/Library/Application Support/Roblox/RobloxStudio/InstalledPlugins/0" \
-            "$HOME/Library/Application Support/Roblox/$USER_ID/InstalledPlugins/0" ; do
-            mkdir -p "$dir" 2>/dev/null && \
-              printf '{ "Assistant-ExternalMCPEnabled":true }' > "$dir/settings.json" && \
-              report "wrote_$(echo "$dir" | tr '/ ' '__')" ok
-          done
-          report outcome flag-seeded
-
-      - name: Launch Studio with a place
-        id: launch
-        shell: bash
-        run: |
-          set -uo pipefail
-          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+          # Every input here arrives from an earlier step's GITHUB_ENV, and
+          # `set -u` turns a missing one into an aborted step. An aborted step
+          # reports no outcome, so the mesh gate below skips and the stage map
+          # loses the very stage that failed. Each is therefore checked by name,
+          # and the reason is recorded rather than left as a silent skip.
+          [ -n "${STUDIO_APP:-}" ] || { report outcome no-studio-app; exit 0; }
+          [ -n "${USER_ID:-}" ]     || { report outcome no-user-id; exit 0; }
+          [ -n "${COOKIE:-}" ]      || { report outcome no-cookie; exit 0; }
           pkill -x RobloxStudio 2>/dev/null || true
           sleep 2
-
-          # A PLACE IS REQUIRED, and getting this wrong is what the previous
-          # attempt did. It launched Studio with no document, the process came up,
-          # and the MCP server never appeared - so the attach timed out with
-          # nothing wrong except the launch. A Studio with no document does show
-          # on the mesh as name: null, which is what made it look like attach
-          # should not need one; that was a true statement about the mesh listing
-          # and a false one about the MCP server, and the distinction is the
-          # whole bug.
-          #
-          # ci/fixture-baseplate.rbxl is committed to this repo precisely so this
-          # is deterministic: no published place, so no edit-permission problem
-          # for a burner account, and nothing that depends on what the runner
-          # happens to have in its AutoSaves directory.
           place="$GITHUB_WORKSPACE/ci/fixture-baseplate.rbxl"
-          if [ ! -f "$place" ]; then
-            report outcome "fixture-missing"
-            exit 1
-          fi
+          [ -f "$place" ] || { report outcome fixture-missing; exit 0; }
           report place_bytes "$(wc -c < "$place" | tr -d ' ')"
 
-          # Two phases, and the second one DISCOVERS the binary rather than
-          # assuming a path. Two earlier attempts died here on asserted paths:
-          # first `open --args` handed the place to the installer bundle, then
-          # `Contents/MacOS/RobloxStudio` turned out not to exist inside it.
-          # Both were guesses about a layout nobody had looked at.
-          #
-          # Phase 1: open the bundle with NO arguments. Measured to work - this
-          # is what every earlier attempt did, and it is what installs Studio and
-          # launches it as a side effect.
+          # Phase 1: open the bundle with NO arguments - measured to install and
+          # launch Studio as a side effect. Phase 2: read the installed binary's
+          # real path off the running process rather than predicting it, because
+          # two earlier attempts died on paths nobody had looked at.
           open "$STUDIO_APP"
           for _ in $(seq 1 45); do
             pgrep -x RobloxStudio >/dev/null 2>&1 && break
             sleep 2
           done
-          if ! pgrep -x RobloxStudio >/dev/null 2>&1; then
-            report outcome "installer-did-not-start-studio"
-            report apps_in_applications "$(ls -1 /Applications 2>/dev/null | grep -i roblox | tr '\n' ' ')"
-            report bundle_macos "$(ls -1 "$STUDIO_APP/Contents/MacOS" 2>/dev/null | tr '\n' ' ')"
-            exit 1
-          fi
-
-          # Phase 2: ask the running process where it actually is. This is the
-          # whole point - the installed binary's path is read off a process that
-          # demonstrably exists, instead of being predicted.
+          pgrep -x RobloxStudio >/dev/null 2>&1 || {
+            report outcome installer-did-not-start-studio; exit 0; }
           real_bin="$(ps -o comm= -p "$(pgrep -x RobloxStudio | head -n1)" | tr -d ' ')"
           report discovered_binary "$real_bin"
-          report bundle_macos "$(ls -1 "$STUDIO_APP/Contents/MacOS" 2>/dev/null | tr '\n' ' ')"
-          if [ -z "$real_bin" ] || [ ! -x "$real_bin" ]; then
-            report outcome "discovered-path-unusable"
-            exit 1
-          fi
+          [ -n "$real_bin" ] && [ -x "$real_bin" ] || { report outcome discovered-path-unusable; exit 0; }
 
-          # Stop it so the relaunch with a place is a clean, single instance.
-          # macOS ignores `open --args` for an app that is already running, so
-          # this is not optional.
+          # Let it get far enough to create whatever stores it uses, so phase 2
+          # can seed them. A fresh install has no cookie store until it runs.
+          sleep 25
+
+          # DISCOVER the cookie store, rather than naming it. The name is what has
+          # been wrong: the 2026-09-14 job wrote
+          # ~/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies and the
+          # account was still logged out. Two independent signals, because either
+          # alone can mislead - the bundle identifier of the app that is actually
+          # running, and whatever Roblox-named files Studio has now made for
+          # itself. Info.plist sits in Contents/, one level up from the binary.
+          contents="$(dirname "$(dirname "$real_bin")")"
+          bundle_id="$(plutil -extract CFBundleIdentifier raw -o - \
+            "$contents/Info.plist" 2>/dev/null || true)"
+          if [ -z "$bundle_id" ]; then
+            bundle_id="$(defaults read "$contents/Info.plist" CFBundleIdentifier 2>/dev/null || true)"
+          fi
+          report bundle_id "$bundle_id"
+          # What Studio made for itself, after one run. Capped.
+          report stores_created "$(find "$HOME/Library" -maxdepth 3 \
+            \( -iname '*roblox*binarycookies' -o -iname '*roblox*' -type d \) 2>/dev/null \
+            | head -12 | tr '\n' ' ')"
+
           pkill -x RobloxStudio 2>/dev/null || true
           for _ in $(seq 1 15); do
             pgrep -x RobloxStudio >/dev/null 2>&1 || break
             sleep 1
           done
 
+          # Now seed, using the identifiers discovered above and falling back to
+          # the legacy names. Written to EVERY candidate so a miss is not the
+          # failure mode again - the account being logged out is what cost the
+          # last several runs. Paths only are printed; the cookie never is.
+          python -m pip install -q binarycookies
+          python - "$COOKIE" "$USER_ID" "$bundle_id" > /tmp/cookie-seed.log 2>&1 <<'PY'
+          import datetime, os, sys
+          import binarycookies
+
+          cookie, user_id, bundle_id = sys.argv[1], sys.argv[2], sys.argv[3]
+          home = os.path.expanduser("~")
+          now = datetime.datetime.now(datetime.timezone.utc)
+          entry = {"name": ".ROBLOSECURITY", "value": cookie, "url": "https://roblox.com",
+                   "path": "/", "create_datetime": now.isoformat(),
+                   "expiry_datetime": (now + datetime.timedelta(days=3650)).isoformat(),
+                   "flag": "Secure; HttpOnly"}
+
+          ids = [i for i in [bundle_id, "com.Roblox.RobloxStudio",
+                             "com.roblox.robloxstudio"] if i]
+          # Both stores: NSHTTPCookieStorage uses ~/Library/Cookies, and some
+          # builds keep an HTTPStorages copy as well.
+          targets = []
+          for i in dict.fromkeys(ids):
+              for root in ("Library/Cookies", "Library/HTTPStorages"):
+                  targets.append(os.path.join(home, root, f"{i}.binarycookies"))
+          # Whatever Studio already made for itself, if the ids above missed it.
+          for root in ("Library/Cookies", "Library/HTTPStorages"):
+              d = os.path.join(home, root)
+              if os.path.isdir(d):
+                  targets += [os.path.join(d, n)
+                              for n in os.listdir(d) if "roblox" in n.lower()]
+
+          written, failed = [], []
+          for path in dict.fromkeys(targets):
+              try:
+                  os.makedirs(os.path.dirname(path), exist_ok=True)
+                  with open(path, "wb") as h:
+                      binarycookies.dump(entry, h)
+                  with open(path, "rb") as h:
+                      names = [c.name for c in binarycookies.load(h)]
+                  if ".ROBLOSECURITY" in names:
+                      written.append(path)
+                  else:
+                      failed.append(f"{path} (round-trip lost it)")
+              except Exception as exc:
+                  failed.append(f"{path} ({exc})")
+          for p in written:
+              print("WROTE", p)
+          for p in failed:
+              print("FAILED", p)
+          # One machine-readable line, so the Verdict names the stores it took
+          # rather than just saying "seeded".
+          print("SEEDED:" + "|".join(written))
+          if not written:
+              sys.exit("no cookie store could be written")
+          PY
+          if [ $? -ne 0 ]; then
+            report outcome cookie-write-failed
+            report cookie_detail "$(grep -v '^SEEDED:' /tmp/cookie-seed.log | tr '\n' ' ' | head -c 400)"
+            exit 0
+          fi
+          # A digest of what we seeded, so the diagnose step can tell "Studio
+          # never opened this store" from "Studio read it and swapped it out".
+          # A digest, not the value: this is a comparison key, not a credential.
+          SEED_DIGEST="$(printf '%s' "$COOKIE" | shasum -a 256 | cut -c1-12)"
+          echo "SEED_DIGEST=$SEED_DIGEST" >> "$GITHUB_ENV"
+          grep -E '^(WROTE|FAILED)' /tmp/cookie-seed.log
+          report cookie_stores "$(sed -n 's/^SEEDED://p' /tmp/cookie-seed.log \
+            | tr '|' ' ' | head -c 300)"
+          report seed_digest "$SEED_DIGEST"
+
+          # The MCP flag, now that the profile directories certainly exist.
+          for dir in \
+            "$HOME/Library/Roblox/$USER_ID/InstalledPlugins/0" \
+            "$HOME/Library/Application Support/Roblox/RobloxStudio/InstalledPlugins/0" \
+            "$HOME/Library/Application Support/Roblox/$USER_ID/InstalledPlugins/0" ; do
+            mkdir -p "$dir" 2>/dev/null && \
+              printf '{ "Assistant-ExternalMCPEnabled":true }' > "$dir/settings.json"
+          done
+          report flag_paths_written 3
+
           nohup "$real_bin" --task EditFile --localPlaceFile "$place" \
             > /tmp/studio-stdout.txt 2>&1 &
 
           alive=0
-          for _ in $(seq 1 45); do
+          for _ in $(seq 1 60); do
             if pgrep -x RobloxStudio >/dev/null 2>&1; then alive=1; break; fi
             sleep 2
           done
           report alive "$alive"
           if [ "$alive" != "1" ]; then
             report outcome process-never-started
-            # Why it died, if it said so. Capped: this is a process's stdout, not
-            # a log dump.
-            report stdout_tail "$(head -c 400 /tmp/studio-stdout.txt 2>/dev/null | tr '\n' ' ')"
+            report stdout_tail "$(head -c 300 /tmp/studio-stdout.txt 2>/dev/null | tr '\n' ' ')"
+            exit 0
+          fi
+          # Time to open the place and bring the MCP server up.
+          sleep 30
+          # Counted as files, because that is what the diagnose step reads. The
+          # count used to include the version subdirectories this directory also
+          # holds, so it reported a non-zero number with no log behind it.
+          report log_files "$(find "$HOME/Library/Logs/Roblox" -type f -name '*.log' 2>/dev/null | wc -l | tr -d ' ')"
+          report outcome launched
+
+      # ------------------------------------------------------------- the mesh
+      # `.outputs.outcome`, not `.outcome`. Every step here reports through
+      # GITHUB_OUTPUT and exits 0, so the *step* outcome is always `success`;
+      # gating on it would make this step unreachable — the one stage the whole
+      # workflow exists to reach. This is a real bug that was in the file: the
+      # gate read `steps.s3_mac.outcome == 'launched'`, which is never true, so
+      # the mesh was never waited for and the stage map reported a clean run
+      # without ever testing the thing under test.
+      - name: Wait for the MCP mesh
+        if: steps.s3_mac.outputs.outcome == 'launched'
+        id: mesh
+        shell: bash
+        working-directory: python
+        run: |
+          set -uo pipefail
+          pip install -q -e ".[dev]" 2>&1 | tail -1
+          # The project's own waiter, so a pass means the real client reached the
+          # real mesh rather than a hand-rolled probe agreeing with itself.
+          if python -m examples.wait_for_studio 120; then
+            echo "outcome=attached" >> "$GITHUB_OUTPUT"
+          else
+            echo "outcome=not-attached" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
-          # Give it time to open the place and bring the MCP server up. The
-          # attach, if it is going to happen, happens on Studio's own schedule.
-          sleep 30
-          report log_files "$(ls -1 "$HOME/Library/Logs/Roblox" 2>/dev/null | wc -l | tr -d ' ')"
-          # The place opened or it did not. This is the observable that the
-          # no-place run could not produce.
-          report mesh_name_in_log "$(grep -c 'fixture-baseplate' "$HOME"/Library/Logs/Roblox/*.log 2>/dev/null | head -1 | cut -d: -f2)"
-          report outcome launched
-
-      - name: Wait for the MCP mesh
-        id: mesh
+      # ------------------------------------------------------------- diagnosis
+      # Why the mesh step failed, from Studio's own log. A bare timeout names no
+      # cause; this separates the two live candidates above — a cookie store
+      # Studio never opens, and a cookie Studio rejected — and reports on the
+      # MCP flag, which is still unmeasured on macOS. Grepped and capped, because a
+      # Studio log runs to megabytes and printing it whole has wedged a console
+      # here before.
+      - name: Diagnose the mesh failure (macOS)
+        if: always() && steps.mesh.outputs.outcome != 'attached'
         shell: bash
         run: |
           set -uo pipefail
-          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
-          cd python
-          pip install -q -e ".[dev]" 2>&1 | tail -2
-          # This is the project's own waiter, so a pass means the real client
-          # reached the real mesh rather than a hand-rolled probe agreeing with
-          # itself.
-          if python -m examples.wait_for_studio 180; then
-            report outcome attached
-          else
-            report outcome not-attached
-            exit 1
+          logdir="$HOME/Library/Logs/Roblox"
+          # The newest regular FILE, not the newest entry — the directory holds
+          # version subdirectories, and `ls -t | head -1` lands on one of those,
+          # after which `wc -l < dir` fails. `stat -f` is the BSD/macOS form, and
+          # `sort -rn` is used rather than `find -newermt` because BSD find has
+          # no `-newermt`. `cut -d' ' -f2-` keeps paths containing spaces intact.
+          log="$(find "$logdir" -type f -name '*.log' -exec stat -f '%m %N' {} + 2>/dev/null \
+            | sort -rn | head -n1 | cut -d' ' -f2-)"
+          if [ -z "$log" ] || [ ! -f "$log" ]; then
+            echo "no Studio log file under $logdir"
+            find "$logdir" -maxdepth 2 2>/dev/null | head -20
+            exit 0
+          fi
+          echo "log: ${log#$logdir/} ($(wc -l < "$log" | tr -d ' ') lines, $(wc -c < "$log" | tr -d ' ') bytes)"
+
+          # Absence is the evidence here: Studio never prints a "logged out" line,
+          # so a pattern that matches nothing must say so loudly. `grep ... |
+          # head ... || echo` cannot do that — `head` succeeds on empty input, so
+          # the fallback never fires and silence reads like a pass.
+          show() {
+            echo
+            echo "--- $1 ---"
+            local hits
+            hits="$(grep -iE "$2" "$log" 2>/dev/null | head -"$3")"
+            if [ -z "$hits" ]; then echo "(no match — this absence IS the signal)";
+            else printf '%s\n' "$hits"; fi
+          }
+          show "MCP / Assistant / ExternalMCP (cap 30)" 'mcp|assistant|externalmcp' 30
+          show "sign-in (cap 15)" 'login|logged in|authenticat|session' 15
+          show "the place, and the mesh port (cap 15)" 'fixture-baseplate|13469|listening|websocket' 15
+
+          echo
+          echo "--- the flag paths, as they exist now (cap 20) ---"
+          found="$(find "$HOME/Library" -maxdepth 6 -path '*InstalledPlugins*settings.json' 2>/dev/null | head -20)"
+          if [ -z "$found" ]; then echo "(none — the flag went nowhere Studio reads)";
+          else printf '%s\n' "$found" | while read -r f; do echo "$f: $(cat "$f")"; done
           fi
 
+          # Did Studio KEEP the cookie we seeded? This is the step that separates
+          # a wrongly-named store from a rejected cookie:
+          #   matches SEED  -> Studio never opened it        (wrong store)
+          #   differs, or .ROBLOSECURITY gone -> Studio read it and dropped it
+          # Only a digest and a length are reported; the cookie is not.
+          echo
+          echo "--- cookie stores after Studio ran: kept, replaced, or cleared? ---"
+          # `${SEED_DIGEST:-...}`, not `$SEED_DIGEST`. Under `set -u` an unset
+          # variable aborts the step, and this step runs precisely when an earlier
+          # one failed — so an unset digest would silence the diagnosis on the
+          # runs that need it most.
+          echo "seeded value: ${SEED_DIGEST:-not-seeded} (from the seeding step)"
+          python -m pip install -q binarycookies
+          python - <<'PY' || echo "(no cookie store readable)"
+          import glob, hashlib, os, sys
+          import binarycookies
+
+          seed = os.environ.get("SEED_DIGEST", "")
+          home = os.path.expanduser("~")
+          paths = []
+          for root in ("Library/Cookies", "Library/HTTPStorages"):
+              paths += glob.glob(os.path.join(home, root, "*roblox*"))
+          if not paths:
+              print("  (no roblox-named cookie store exists at all)")
+          for p in sorted(set(paths)):
+              short = p.replace(home, "~")
+              try:
+                  with open(p, "rb") as h:
+                      cookies = list(binarycookies.load(h))
+              except Exception as exc:
+                  print(f"  {short}\n    unreadable ({exc})")
+                  continue
+              names = [c.name for c in cookies]
+              hit = next((c for c in cookies if c.name == ".ROBLOSECURITY"), None)
+              if hit is None:
+                  print(f"  {short}\n    names={names} -> CLEARED (.ROBLOSECURITY gone)")
+                  continue
+              digest = hashlib.sha256(hit.value.encode()).hexdigest()[:12]
+              verdict = "KEPT, untouched" if digest == seed else "REPLACED by Studio"
+              print(f"  {short}\n    names={names} -> {verdict}: "
+                    f"{len(hit.value)} chars, sha256:{digest}")
+          PY
+
+      # --------------------------------------------------------------- verdict
       - name: Verdict
         if: always()
         shell: bash
         run: |
           {
-            echo "### macOS MCP attach"
+            echo "### Studio MCP attach - ${{ matrix.os }}"
             echo ""
             echo "| stage | result |"
             echo "|---|---|"
-            echo "| install | \`${{ steps.install.outputs.outcome }}\` |"
-            echo "| cookie | \`${{ steps.cookie.outputs.outcome }}\` |"
-            echo "| flag | \`${{ steps.flag.outputs.outcome }}\` |"
-            echo "| launch | \`${{ steps.launch.outputs.outcome }}\` (alive=${{ steps.launch.outputs.alive }}) |"
-            echo "| mesh | \`${{ steps.mesh.outputs.outcome }}\` |"
+            echo "| install | \`${{ steps.s1_mac.outputs.outcome }}\` |"
+            echo "| cookie valid (API) | \`${{ steps.s2_mac.outputs.outcome }}\` |"
+            echo "| launch, with a place | \`${{ steps.s3_mac.outputs.outcome }}\` (alive=\`${{ steps.s3_mac.outputs.alive }}\`) |"
+            echo "| cookie stores seeded | \`${{ steps.s3_mac.outputs.cookie_stores }}\` |"
+            echo "| **mesh** | \`${{ steps.mesh.outputs.outcome }}\` |"
             echo ""
-            echo "user id: \`${{ steps.cookie.outputs.user_id }}\`"
-            echo "log files after launch: \`${{ steps.launch.outputs.log_files }}\`"
+            echo "user id \`${{ steps.s2_mac.outputs.user_id }}\` · binary \`${{ steps.s3_mac.outputs.discovered_binary }}\` · bundle id \`${{ steps.s3_mac.outputs.bundle_id }}\` · seeded \`${{ steps.s3_mac.outputs.seed_digest }}\`"
+            echo ""
+            echo "#### What this log should look like if it worked"
+            echo ""
+            echo "Three greps, and **all three matter**:"
+            echo ""
+            echo "| grep | success looks like | failure looks like |"
+            echo "|---|---|---|"
+            echo "| \`mcp\\|assistant\\|externalmcp\` | several lines: the Assistant plugin loading, and the external MCP server starting | **nothing at all** |"
+            echo "| \`login\\|logged in\\|authenticat\\` | a sign-in or session line | **nothing at all** |"
+            echo "| \`13469\\|listening\\|websocket\\` | the mesh port being opened | **nothing at all** |"
+            echo ""
+            echo "**There is no positive \"logged out\" line to grep for.** Studio does not"
+            echo "announce the failure, so the signal is *absence* — a grep that matches"
+            echo "nothing is the finding, not a broken grep. That is why the diagnose step"
+            echo "above prints \`(no match)\` explicitly rather than staying quiet: a silent"
+            echo "pass would be indistinguishable from a working run."
+            echo ""
+            echo "So read it as: the account was observed logged out, and the log does not"
+            echo "say so. The fix attempted here is seeding the cookie store Studio"
+            echo "*actually* uses, discovered from its own bundle id rather than guessed —"
+            echo "because \`cookie valid\` above only proves the Roblox API accepted a header,"
+            echo "which is a different reader from Studio finding the cookie on disk."
           } >> "$GITHUB_STEP_SUMMARY"

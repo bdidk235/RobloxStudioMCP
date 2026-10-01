@@ -2307,10 +2307,20 @@ Three routes, three measurements:
 | `RobloxStudioLauncherBeta.exe` | downloads **200, 7.6 MB**, a real file — then writes nothing: `versions_dir_exists False`, `versions_entries 0`, `log_files 0` after a full 120 s poll |
 | `OrbitalOwen/roblox-win-installer-action@1.1` | `Preparing login` → `Downloading` → `Installing` → `Launching RobloxStudioLauncherBeta.exe`, then five minutes of nothing, killed at cleanup with `RobloxStudioBeta.exe` never appearing |
 
-The runner image is `windows-2025-vs2026` — a Server container with **no
+**The runner image is `windows-2025-vs2026`** — a Server container with **no
 interactive desktop** — and both installers need one. This is the runner, not
 the code, and no amount of retrying changes it. Recorded so nobody spends
 another day on it.
+
+**The Windows leg was removed from `macos-mcp-attach.yml` on 2026-10-01**, by
+ruling, rather than left to fail on every dispatch. Re-running a leg already
+proven unfixable on this runner costs minutes and actively *hurts* the signal: the
+file's job is to localise the macOS failure, and a second red X next to it makes
+the run harder to read rather than easier. The measurements stay in the workflow
+header and in `studio-smoke.yml`, which is where an install-only attempt belongs.
+Restoring it is one matrix entry plus one step — gated on a runner with an
+interactive desktop, which is the actual prerequisite and the only thing that
+would change the outcome.
 
 **The expensive miss, now visible:** commit `0f87c48` chose the community
 installer on 2026-09-14. That run was **cancelled, not failed** — so the one
@@ -2325,6 +2335,10 @@ alive** — then `wait_for_studio 180` timed out. So the 2026-09-14 blocker is
 genuinely fixed and the failure has moved past it. Three candidates remain, and
 they are indistinguishable from outside:
 
+> Read "cookie **ok**" as "the Roblox API accepted a header this workflow sent",
+> **not** as "Studio is signed in". Those were treated as the same thing and the
+> second is false — see finding 5.
+
 - `Assistant-ExternalMCPEnabled` was written somewhere Studio never reads. The
   path is a **guess inherited from the Windows layout** and has never been
   confirmed on a Mac.
@@ -2332,10 +2346,19 @@ they are indistinguishable from outside:
   is a *different reader* from the one Studio uses.
 - The MCP proxy is absent or never started on macOS.
 
-A useful side-finding: **MCP attach does not need a place.** A Studio with no
-document still attaches and reports `name: null`, so the attach can be tested
-without edit access to a published place — a separate permission problem the old
-workflow never got past.
+**Candidate 2 is the answer — see finding 5 below.** Candidates 1 and 3 are
+therefore *untested*, not eliminated, and are not to be read as ruled out.
+
+**A side-finding here was later retracted, and it is worth flagging because it is
+the same error twice:** *"MCP attach does not need a place — a Studio with no
+document still attaches and reports `name: null`."* The `name: null` observation
+is real, but it comes from the mesh **listing**, not from the MCP **server**
+starting. A Studio with no document is listed and never brings its MCP server up,
+so the place-free attach this suggested was never actually demonstrated. The
+correct statement: **the MCP server needs a place open**, and a listing entry is
+not evidence of one. This is the second time in this exercise that a *nearby*
+observation got promoted into a claim about the thing under test — the first was
+reading a green `cookie valid` as a signed-in Studio.
 
 #### 4. The cookie was revoked mid-exercise — the actual stop
 
@@ -2394,14 +2417,99 @@ To continue: a self-hosted macOS runner, and a **different** automation account
 alternate account"* with minimal permissions, which is the right pattern and was
 followed here; it is the specific instance that has accumulated history.
 
+#### 5. Candidate (b) resolved: the burner account is not signed in on the runner
+
+Attempt 4's candidate list above had three entries. **One of them is the whole
+cause**, established 2026-10-01 by inspecting the run rather than by reasoning
+about it: the account is logged out in Studio. The MCP server needs a signed-in
+Studio, so this alone accounts for the mesh never appearing — and it makes
+candidates (a) and (c) untested rather than wrong.
+
+**What hid it, and is the part worth keeping.** The `cookie valid` step calls
+`users.roblox.com/v1/users/authenticated` with
+`-H "Cookie: .ROBLOSECURITY=$COOKIE"`. It returned **200 through every run**,
+including the ones where Studio was demonstrably logged out. Those are two
+different readers:
+
+- the API reads a header **this workflow sends it**;
+- Studio has to find the cookie in **its own on-disk store**.
+
+A green `cookie valid` was therefore being read as "Studio is signed in", and it
+never once meant that. Same shape as the two other mistakes in this exercise —
+asserting a mechanism from a nearby observation, and acting on an unexamined
+path. This is the third.
+
+**And the path *was* unexamined.** `~/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies`
+came from commit `83640d7` and was never verified against a real Mac. A
+correctly-formed cookie under a bundle id Studio does not use is
+indistinguishable from no cookie at all — which is precisely the observed state.
+
+**No positive "logged out" line exists in the log.** Studio does not announce the
+failure, so the only evidence is *absence*. This has a sharp consequence for how
+the diagnose step must be written, and the old one got it wrong in the exact way
+that matters:
+
+```bash
+grep -iE 'mcp|assistant' "$log" | head -30 || echo "(no match)"
+```
+
+`||` binds to `head`, and **`head` exits 0 on empty input**. So `(no match)` was
+unreachable, and a log with nothing in it printed nothing at all — a silent pass,
+indistinguishable from a working run. The step existed to surface absence and was
+structurally incapable of doing so.
+
+#### What the rerun changes, and why it is discovery rather than another guess
+
+Three guessed paths have now failed. The rerun stops naming them:
+
+- The cookie store is **discovered**, not predicted — `CFBundleIdentifier` is read
+  out of the `Info.plist` of the app that is *actually running* (`Contents/`, next
+  to the binary), plus whatever Roblox-named files Studio has created for itself
+  after one run. Guessing a bundle id is what failed.
+- **Every** candidate store is seeded, not the first one that looks plausible, so
+  a miss is no longer the failure mode.
+- Studio must run **once before** seeding, because a fresh install has no cookie
+  store to write into.
+- The diagnose step then **reads each store back** and compares a SHA-256 prefix
+  of the value against the one that was seeded. That is what separates the two
+  live theories: *digest matches* → Studio never opened the file (wrong store);
+  *`.ROBLOSECURITY` gone or the digest differs* → Studio read it and dropped it
+  (rejected cookie). A digest, not the value — it is a comparison key, not a
+  credential.
+- The flag path is still unconfirmed on macOS and is **not** claimed to be
+  fixed. `Assistant-ExternalMCPEnabled` writes to all three candidate paths and
+  the diagnose step prints what exists afterwards, so the next run says whether
+  any of them survived.
+
+**Two workflow bugs found and fixed while validating this**, both of which would
+have made the run report a clean stage map for a stage that never executed:
+
+- `Wait for the MCP mesh` was gated on `steps.s3_mac.outcome == 'launched'`.
+  Every step here reports through `GITHUB_OUTPUT` and **exits 0**, so the *step*
+  outcome is always `success` — the condition was unsatisfiable and the mesh step
+  was **dead code**. Same class of error on the diagnose step's
+  `steps.mesh.outcome == 'not-attached'`, where the real value is
+  `steps.mesh.outputs.outcome`. Both now read `.outputs.outcome`.
+- `Diagnose` selected its log with `ls -t "$logdir" | head -n1`, which lands on a
+  **version subdirectory**, not a log file; `wc -l < dir` then fails. Now
+  `find -type f -name '*.log' -newermt`.
+
+The YAML, all six bash blocks and both embedded Python heredocs are checked
+before dispatch — the heredoc terminator has to sit at column 0 after YAML dedent
+or the rest of the step is silently swallowed as heredoc body.
+
 #### What would be tried next, in order
 
-1. Fresh cookie, validated, then immediately re-run attempt 4. Everything up to
-   the mesh is already green, so the only unknown is the attach.
-2. Read the `Assistant-ExternalMCPEnabled` location off a real signed-in Mac
-   rather than guessing it — the three candidate paths tried are all inherited.
-3. If the flag is confirmed correct and attach still fails, the proxy is the
-   next suspect, and the Studio log's own MCP/Assistant lines will say so.
+1. ~~Fresh cookie, validated, then immediately re-run attempt 4.~~ **Done**, and
+   it is what produced finding 5.
+2. **Read the diagnose output.** The seeded-digest comparison names which of the
+   two cookie theories is live; nothing else will.
+3. **`Assistant-ExternalMCPEnabled` on macOS is still unmeasured.** If the cookie
+   theories both come back "Studio never opened the file", the sign-in is not the
+   blocker and the flag path becomes the prime suspect — so read its real location
+   off a signed-in Mac rather than inheriting a fourth path from Windows.
+4. If the flag is confirmed correct and attach still fails, the proxy is next, and
+   the Studio log's own MCP/Assistant lines will say so.
 
 #### Also fixed as a side effect: CI on `macos-latest` is now green
 
