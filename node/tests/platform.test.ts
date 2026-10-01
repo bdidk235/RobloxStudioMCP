@@ -36,11 +36,31 @@ const WIN_BANNER =
   "C:\\Users\\User\\AppData\\Local\\Temp\\robloxstudio-mcp-baseplates\\Baseplate-1.rbxl";
 
 describe("unproven", () => {
+  /**
+   * The claim is about the **suite**, not about the host, and this asserts the
+   * claim.
+   *
+   * It used to assert `isWindows()`, on the reasoning that a passing macOS suite
+   * on a Mac might be read as a working port. But that asserts something about
+   * the host, and it was permanently false on the `macos-latest` runner, so the
+   * job could never go green - the opposite of what it was for.
+   *
+   * The claim is "no macOS integration was exercised", and that is still true on
+   * a Mac: every case here is a *fixture* - shaped input, parsed output - and a
+   * Mac running the same fixtures proves exactly as little as a PC does. So the
+   * assertion is on the one thing that would actually retire the claim: the live
+   * integration suite running. When someone points it at a real Studio, this
+   * fails and the claim has to be revisited on purpose rather than by accident.
+   *
+   * Mirrors `python/tests/test_platform_macos.py::Unproven`.
+   */
   it("states that no macOS integration was exercised", () => {
+    const live = process.env["ROBLOX_STUDIO_MCP_INTEGRATION"] === "1";
     expect(
-      isWindows(),
-      "this suite runs on " + process.platform + ", so no macOS integration was exercised",
-    ).toBe(true);
+      live,
+      `ROBLOX_STUDIO_MCP_INTEGRATION=1, so live integration IS running and this ` +
+        `claim is retired - revisit it (host: ${process.platform})`,
+    ).toBe(false);
   });
 });
 

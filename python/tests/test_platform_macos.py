@@ -41,24 +41,30 @@ class Unproven(unittest.TestCase):
     def test_macos_integration_is_unproven(self):
         """Stated so nobody reads the passing tests as a working Mac port.
 
-        There is no Mac in this environment, so every macOS assertion below is
-        about parsing. If a Mac ever becomes available, run the live
-        `verify_locks_live.py`-style probe and flip this.
+        Every macOS assertion below is a *fixture*: shaped input, parsed output.
+        If a Mac ever becomes genuinely exercised, run the live probe and retire
+        this.
 
-        **This skips on macOS rather than failing there.** It used to
-        ``assertFalse``, which was the right call when the only environments
-        were Windows and "not Windows" - it made the suite red wherever the
-        claim was weakest. But the ``macos-latest`` runner *is* a Mac, so the
-        assertion became permanently false there and the job could never go
-        green, which is the opposite of what it was for. The reason is kept
-        verbatim in the skip message so the gap stays visible.
+        **The assertion is on the claim, not on the host.** It used to be
+        ``assertFalse(platform.is_macos())``, which asserted something about the
+        machine rather than about the suite - and the ``macos-latest`` runner
+        *is* a Mac, so it was permanently false there and the job could never go
+        green, the opposite of what it was for.
+
+        The claim is still true on a Mac: the same fixtures prove as little there
+        as on a PC. So what is asserted is the one thing that would actually
+        retire it - the live integration suite running. Point that at a real
+        Studio and this fails, forcing the claim to be revisited deliberately
+        rather than quietly outliving its own refutation.
+
+        Mirrors ``node/tests/platform.test.ts::unproven``.
         """
-        if platform.is_macos():
-            self.skipTest(
-                "running on %r, so no macOS integration was exercised - the "
-                "assertions below are fixture-based and do not prove the port"
-                % sys.platform
-            )
+        live = os.environ.get("ROBLOX_STUDIO_MCP_INTEGRATION") == "1"
+        self.assertFalse(
+            live,
+            "ROBLOX_STUDIO_MCP_INTEGRATION=1, so live integration IS running and "
+            "this claim is retired - revisit it (host: %r)" % sys.platform,
+        )
 
 
 class BannerPattern(unittest.TestCase):
