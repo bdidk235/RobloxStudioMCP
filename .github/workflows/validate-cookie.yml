@@ -1,0 +1,136 @@
+# Pre-flight: is the ROBLOSECURITY cookie still good?
+#
+# Manual only. The point is to find out whether the cookie authenticates
+# *before* spending a five-attempt CI budget on it, because this account has
+# already been flagged by Roblox once and a flagged login fails in a way that
+# looks identical to a broken workflow.
+#
+# It reports the HTTP status, the numeric user id, and Roblox's own error text.
+# It never prints the cookie, and the username is masked because this is a
+# public repository and the account is a burner.
+#
+# Delete this file once the answer is known and stable - it is a diagnostic, not
+# a gate. It belongs here rather than as a step in ci.yml so that running it
+# cannot perturb the suite.
+
+name: Validate ROBLOSECURITY
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Cookie check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Required for the environment secret to be readable.
+    environment: ROBLOSECURITY
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the cookie
+        id: cookie
+        shell: bash
+        env:
+          COOKIE: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          # Belt and braces: mask it even though nothing below prints it, so a
+          # future edit that does print it leaks nothing.
+          echo "::add-mask::$COOKIE"
+          if [ -z "$COOKIE" ]; then
+            echo "RESULT=EMPTY" >> "$GITHUB_OUTPUT"
+            echo "The environment secret is empty."
+            exit 0
+          fi
+          {
+            echo "len=${#COOKIE}"
+            # A real .ROBLOSECURITY is a long opaque token. A short value means
+            # the wrong thing got pasted (a quoted string, "name=value", a
+            # truncated copy), which is worth catching before the API call
+            # returns a confusing 401.
+            case "$COOKIE" in
+              *Cookie=*|*cookie=*) echo "shape=has_cookie_prefix" >> "$GITHUB_OUTPUT" ;;
+              *) echo "shape=bare" >> "$GITHUB_OUTPUT" ;;
+            esac
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Call the authenticated-user endpoint
+        id: probe
+        shell: bash
+        env:
+          COOKIE: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          set -u
+          if [ "${{ steps.cookie.outputs.len }}" = "" ]; then
+            echo "SKIP - no cookie to test"
+            exit 0
+          fi
+          echo "cookie length: ${{ steps.cookie.outputs.len }}"
+          echo "cookie shape:  ${{ steps.cookie.outputs.shape }}"
+
+          body="$(mktemp)"
+          # -w '%{http_code}' so the status and the body come from ONE request.
+          # Two requests could straddle a token rotation and report a
+          # combination that never happened.
+          status="$(curl -sS -o "$body" -w '%{http_code}' \
+            -H "Cookie: .ROBLOSECURITY=$COOKIE" \
+            -H 'Accept: application/json' \
+            https://users.roblox.com/v1/users/authenticated || echo 000)"
+
+          echo "HTTP status: $status"
+          case "$status" in
+            200)
+              # The id is the evidence that the cookie resolved to an account.
+              # The username is not printed: public repo, burner account.
+              id="$(grep -o '"id":[0-9]*' "$body" | head -n1 | grep -o '[0-9]*')"
+              echo "RESULT=OK"
+              echo "resolved user id: ${id:-<none parsed>}"
+              ;;
+            401|403)
+              # This is the flagged / rejected case. Roblox's message says
+              # which, and it is the whole point of running this first.
+              echo "RESULT=REJECTED"
+              echo "body: $(head -c 600 "$body")"
+              ;;
+            *)
+              echo "RESULT=UNEXPECTED"
+              echo "body: $(head -c 600 "$body")"
+              ;;
+          esac
+          {
+            echo "status=$status"
+            echo "result=$RESULT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verdict
+        shell: bash
+        env:
+          STATUS: ${{ steps.probe.outputs.status }}
+          RESULT: ${{ steps.probe.outputs.result }}
+        run: |
+          {
+            echo "### ROBLOSECURITY pre-flight (${{ matrix.os }})"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| HTTP | \`$STATUS\` |"
+            echo "| verdict | **$RESULT** |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$RESULT" = "OK" ]; then
+            echo "Cookie authenticates. The 5-attempt budget can be spent."
+          elif [ "$RESULT" = "REJECTED" ]; then
+            echo "Cookie rejected. A CI run would fail at sign-in and the log would"
+            echo "look like a workflow bug. Fix the cookie first."
+          elif [ "$RESULT" = "EMPTY" ]; then
+            echo "No cookie in the ROBLOSECURITY environment."
+          else
+            echo "Inconclusive - see the body above."
+          fi
