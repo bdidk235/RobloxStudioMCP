@@ -1,0 +1,219 @@
+# macOS Studio -> MCP attach, end to end.
+#
+# Attempts 1-3, measured 2026-10-01:
+#   macOS   install works. alive=1 on attempts 1 and 2, 2 for 2.
+#   Windows cannot be installed on a GitHub-hosted runner at all. Not the
+#           bootstrapper (attempt 2: downloads 200 / 7.6 MB, then writes
+#           nothing), not the most robust community installer (attempt 3:
+#           launches RobloxStudioLauncherBeta.exe, which then sits there for
+#           five minutes and is killed at cleanup, with RobloxStudioBeta.exe
+#           never appearing). The runner image is windows-2025-vs2026, a Server
+#           container with no interactive desktop, and both installers need one.
+#           That is the runner, not this code, and no amount of retrying changes
+#           it. So the Windows leg is dropped rather than nursed.
+#
+# This is the actual objective: does a Studio on a Mac reach the MCP mesh?
+#
+# Two things make it a fair test rather than another 2026-09-14:
+#
+#   * No place is opened. A Studio with no document still attaches to the mesh
+#     and reports name: null, so the attach can be tested without needing edit
+#     access to a published place - which is a whole separate permission problem
+#     the old workflow tripped over and never got past.
+#   * The cookie round-trip is asserted correctly. The 2026-09-14 macOS job
+#     died on its own verification calling .get("name") on what
+#     binarycookies.load() returns, which are pydantic objects. It is .name. The
+#     cookie had been written; the assertion was what failed, and that masked
+#     everything after it.
+#
+# Asserted in order, so a failure names its own stage: cookie read back, signed
+# in, MCP flag in place, process up, mesh sees it.
+
+name: macOS MCP attach
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  attach:
+    name: macos-latest
+    runs-on: macos-latest
+    environment: ROBLOSECURITY
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Studio
+        id: install
+        shell: bash
+        run: |
+          set -uo pipefail
+          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+
+          dmg=/tmp/rbx-studio.dmg
+          curl -sS -L --fail --retry 3 -o "$dmg" "https://setup.rbxcdn.com/mac/RobloxStudio.dmg" || {
+            report outcome download-failed; exit 1; }
+          mnt=/tmp/rbx-studio-mnt
+          hdiutil attach "$dmg" -nobrowse -mountpoint "$mnt" || {
+            report outcome mount-failed; exit 1; }
+          app="$(find "$mnt" -maxdepth 1 -name '*.app' -type d -print -quit)"
+          [ -n "$app" ] || { report outcome no-app-in-dmg; hdiutil detach "$mnt" || true; exit 1; }
+          # Copied out of the mount: a read-only volume cannot host the profile
+          # Studio writes on first run.
+          cp -R "$app" /Applications/
+          installed="/Applications/$(basename "$app")"
+          xattr -dr com.apple.quarantine "$installed" 2>/dev/null || true
+          hdiutil detach "$mnt" || true
+          rm -f "$dmg"
+          echo "STUDIO_APP=$installed" >> "$GITHUB_ENV"
+          report app "$(basename "$installed")"
+          report outcome installed
+
+      - name: Seed the session cookie
+        id: cookie
+        shell: bash
+        env:
+          COOKIE: ${{ secrets.ROBLOSECURITY }}
+        run: |
+          set -uo pipefail
+          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+          echo "::add-mask::$COOKIE"
+
+          # The user id is needed twice: for the plugin settings directory, and
+          # to tell "logged in as nobody" from "logged in".
+          user_id="$(curl -sS --fail -H "Cookie: .ROBLOSECURITY=$COOKIE" \
+            https://users.roblox.com/v1/users/authenticated \
+            | grep -o '"id":[0-9]*' | head -n1 | grep -o '[0-9]*')"
+          if [ -z "$user_id" ]; then
+            report outcome user-id-unresolved
+            exit 1
+          fi
+          report user_id "$user_id"
+          echo "USER_ID=$user_id" >> "$GITHUB_ENV"
+
+          python -m pip install -q binarycookies
+          # `.name`, not `.get("name")`. binarycookies.load() yields pydantic
+          # model objects; the 2026-09-14 workflow called .get() on them, raised
+          # AttributeError, and took the whole job down after the cookie had
+          # already been written correctly.
+          python - "$HOME/Library/HTTPStorages/com.Roblox.RobloxStudio.binarycookies" <<'PY'
+          import datetime, os, sys
+          import binarycookies
+
+          path = sys.argv[1]
+          cookie = os.environ["COOKIE"]
+          now = datetime.datetime.now(datetime.timezone.utc)
+          entry = {
+              "name": ".ROBLOSECURITY",
+              "value": cookie,
+              "url": "https://roblox.com",
+              "path": "/",
+              "create_datetime": now.isoformat(),
+              "expiry_datetime": (now + datetime.timedelta(days=3650)).isoformat(),
+              "flag": "Secure; HttpOnly",
+          }
+          os.makedirs(os.path.dirname(path), exist_ok=True)
+          with open(path, "wb") as handle:
+              binarycookies.dump(entry, handle)
+          with open(path, "rb") as handle:
+              names = [c.name for c in binarycookies.load(handle)]
+          assert ".ROBLOSECURITY" in names, f"round-trip failed: {names}"
+          print("cookie written and read back OK")
+          PY
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            report outcome cookie-roundtrip-failed
+            exit 1
+          fi
+          report outcome cookie-seeded
+
+          # The legacy plist store as well, because which one Studio reads is not
+          # documented and the old workflow seeded both for that reason.
+          defaults write com.roblox.RobloxStudioBrowser "roblox.com.ROBLOSECURITY" \
+            -string "COOK::<${COOKIE}>" 2>/dev/null || report plist_write "failed"
+
+      - name: Enable the MCP flag
+        id: flag
+        shell: bash
+        run: |
+          set -uo pipefail
+          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+          # The path the 2026-09-14 workflow used, on its stated reasoning that
+          # "the macOS data dir mirrors Windows %LOCALAPPDATA%\Roblox". That is
+          # a guess, not a measurement, and it is one of the things this run is
+          # meant to test - so several plausible locations are written and which
+          # ones existed afterwards is reported.
+          for dir in \
+            "$HOME/Library/Roblox/$USER_ID/InstalledPlugins/0" \
+            "$HOME/Library/Application Support/Roblox/RobloxStudio/InstalledPlugins/0" \
+            "$HOME/Library/Application Support/Roblox/$USER_ID/InstalledPlugins/0" ; do
+            mkdir -p "$dir" 2>/dev/null && \
+              printf '{ "Assistant-ExternalMCPEnabled":true }' > "$dir/settings.json" && \
+              report "wrote_$(echo "$dir" | tr '/ ' '__')" ok
+          done
+          report outcome flag-seeded
+
+      - name: Launch Studio with no place
+        id: launch
+        shell: bash
+        run: |
+          set -uo pipefail
+          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+          pkill -x RobloxStudio 2>/dev/null || true
+          sleep 2
+          # No place: a Studio with no document still attaches, reporting
+          # name: null. This keeps the test clear of place permissions.
+          open "$STUDIO_APP"
+          alive=0
+          for _ in $(seq 1 45); do
+            if pgrep -x RobloxStudio >/dev/null 2>&1; then alive=1; break; fi
+            sleep 2
+          done
+          report alive "$alive"
+          [ "$alive" = "1" ] || { report outcome process-never-started; exit 1; }
+
+          # Give it time to write its log and settle. The attach, if it is going
+          # to happen, happens on Studio's own schedule.
+          sleep 20
+          report log_files "$(ls -1 "$HOME/Library/Logs/Roblox" 2>/dev/null | wc -l | tr -d ' ')"
+          report outcome launched
+
+      - name: Wait for the MCP mesh
+        id: mesh
+        shell: bash
+        run: |
+          set -uo pipefail
+          report() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+          cd python
+          pip install -q -e ".[dev]" 2>&1 | tail -2
+          # This is the project's own waiter, so a pass means the real client
+          # reached the real mesh rather than a hand-rolled probe agreeing with
+          # itself.
+          if python -m examples.wait_for_studio 180; then
+            report outcome attached
+          else
+            report outcome not-attached
+            exit 1
+          fi
+
+      - name: Verdict
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### macOS MCP attach"
+            echo ""
+            echo "| stage | result |"
+            echo "|---|---|"
+            echo "| install | \`${{ steps.install.outputs.outcome }}\` |"
+            echo "| cookie | \`${{ steps.cookie.outputs.outcome }}\` |"
+            echo "| flag | \`${{ steps.flag.outputs.outcome }}\` |"
+            echo "| launch | \`${{ steps.launch.outputs.outcome }}\` (alive=${{ steps.launch.outputs.alive }}) |"
+            echo "| mesh | \`${{ steps.mesh.outputs.outcome }}\` |"
+            echo ""
+            echo "user id: \`${{ steps.cookie.outputs.user_id }}\`"
+            echo "log files after launch: \`${{ steps.launch.outputs.log_files }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
