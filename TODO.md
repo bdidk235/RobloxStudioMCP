@@ -2357,19 +2357,42 @@ alternatives a 401 alone could not exclude. It is also the second time this
 account has been flagged, and the block arrived immediately after a Studio was
 signed in from a runner IP.
 
-**Which raises the question this record should ask before anyone retries: was
-the CI run itself the cause?** The sequence is suggestive rather than proven:
-the cookie authenticated at 11:32, attempt 4 used it to sign a Studio in at
-~12:05, and it was dead by 12:10. If signing in from a datacenter IP is what
-trips the flag, then a fresh cookie from *this same account* is likely to be
-blocked again, and the retry should not be expected to work. That is a question
-for whoever owns the account, not something measurable from here.
+**Then confirmed as the mechanism, by Roblox's own notice (2026-10-01):** the
+*"No protection"* opt-out for **Account Session Protection** is being removed,
+accounts that opted out are *"rolled back into a standard protection behavior"*,
+and session protection *"will continue to be used as a security signal to help
+detect suspicious activity"*.
 
-To continue: re-paste a fresh cookie and run `validate-cookie.yml` **first**. It
-costs about a minute and is the only thing standing between a re-run and another
-dead hour. But see the note above — a second cookie from a blocked account may
-be blocked on arrival, and the honest reading is that this path needs a
-different account rather than a fresher token.
+That closes the loop. The account is not blocked **for** using a cookie — the
+same notice states that *"developer automation, browser extensions, and other
+Roblox-related workflows that use `.ROBLOSECURITY` cookies will be unaffected"*.
+It was blocked because session protection, now **on standard for every account**,
+fired on the sign-in. And this account specifically was *rolled back into* that
+standard behaviour, so it now has more protection than it had, not less.
+
+**The consequence worth stating plainly: the one lever that might have softened
+this is the one being withdrawn.** There is no longer any account-level setting
+that reduces session protection, so no cookie or configuration on this account
+can make a CI sign-in look routine. The remaining lever is not presenting the
+signal in the first place — a self-hosted macOS runner, which has a real user
+session and is not a datacentre IP.
+
+**Open Cloud is Roblox's stated recommendation, and it does not cover this
+project.** Checked rather than assumed, because assuming either way would have
+been the easy error here. Open Cloud is a REST API against `apis.roblox.com` —
+places, data stores, universes, users, thumbnails — authenticated by API key or
+OAuth 2.0. **This project drives Studio's local MCP server, a desktop-app
+feature, and there is no Open Cloud endpoint that launches Studio or attaches an
+MCP client to it.** Open Cloud is the right answer for place and data automation
+from CI; it is not a substitute for a cookie here. Roblox's own docs place
+cookie auth on the legacy track — *"can incorporate breaking changes without
+notice, and have minimal stability guarantees"* — and this notice is the first
+concrete evidence of that becoming real.
+
+To continue: a self-hosted macOS runner, and a **different** automation account
+— this one is flagged twice. Roblox's own guidance for API keys is a *"dedicated
+alternate account"* with minimal permissions, which is the right pattern and was
+followed here; it is the specific instance that has accumulated history.
 
 #### What would be tried next, in order
 
