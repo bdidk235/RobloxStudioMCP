@@ -90,16 +90,19 @@ jobs:
               # The id is the evidence that the cookie resolved to an account.
               # The username is not printed: public repo, burner account.
               id="$(grep -o '"id":[0-9]*' "$body" | head -n1 | grep -o '[0-9]*')"
+              RESULT=OK
               echo "RESULT=OK"
               echo "resolved user id: ${id:-<none parsed>}"
               ;;
             401|403)
               # This is the flagged / rejected case. Roblox's message says
               # which, and it is the whole point of running this first.
+              RESULT=REJECTED
               echo "RESULT=REJECTED"
               echo "body: $(head -c 600 "$body")"
               ;;
             *)
+              RESULT=UNEXPECTED
               echo "RESULT=UNEXPECTED"
               echo "body: $(head -c 600 "$body")"
               ;;
