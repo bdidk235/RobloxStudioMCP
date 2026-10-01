@@ -48,6 +48,14 @@ Those are not the same and the difference matters.
 
 ## macOS: researched and implemented, still never executed
 
+> **Superseded 2026-10-01 on the "never run" part, not the rest.** There is still
+> no Mac here, but live-Studio CI *did* run on `macos-latest` on 2026-09-14 and
+> failed — twice over, for reasons unrelated to this code. So macOS has been
+> exercised as far as *"Studio installed, first-run init completed"*, and never
+> as far as MCP attach. See *"why the live-Studio CI jobs never worked"* below for
+> what actually stopped it and what a retry must do first. Everything below about
+> the macOS branch of `platform.py` is still theory checked against sources.
+
 The macOS branch of `platform.py` was written from theory. It has now been
 re-checked against what people have actually done, and two things changed. **It
 still has never run** — there is no Mac here — so this is about correctness
@@ -1409,7 +1417,7 @@ Provenance, kept separate as always:
 | macOS **directories** | **user-authoritative**: Roblox's own docs state them (`/studio/mcp`, `/studio/command-line-interface`, `/projects/place-files`, support article on logs); corroborated by `Superwheat/renium` and `Chrrxs/robloxstudio-mcp` |
 | macOS **`roblox-studio:` scheme** | **negative result, unproven either way** - no `CFBundleURLTypes` evidence readable, no Mac forum post. The route is refused because it is *unevidenced*, not because it is absent |
 | macOS **log filename token width** | **weakest claim in the module** - one Windows-era support example says Mac names "look the same". If log discovery goes quiet on a Mac, check the regex, not the directory |
-| macOS **integration** | **unverified** - no Mac, no measurement, no claim |
+| macOS **integration** | **unverified** - no Mac here, and the `macos-latest` CI attempt died before MCP attach. Nothing in this row is measured. See *"why the live-Studio CI jobs never worked"* |
 
 - [x] **`extended/platform.py` centralises every platform difference.** Previously
       these were scattered through `instance.py`, `logid.py` and `locks.py`:
@@ -2169,6 +2177,102 @@ identical call succeeded 3 of 3 on immediate retry. Not reproduced. Recorded
 because it is the same *shape* as the thing just settled — a plausible-looking
 error with nothing behind it — and a reader who hits it deserves to know it was
 seen once and not explained.
+
+### SETTLED 2026-10-01: why the live-Studio CI jobs never worked
+
+The standing entry here said *"macOS integration never executed (no Mac)"* and
+left it as an environment limit. That was wrong in a way that mattered: CI is
+the path to macOS, it **was tried**, and reading the **run logs** rather than the
+commit messages gives two specific, fixable causes.
+
+**The history.** 2026-09-14, ~2.5 hours, 13 commits, 8 failing runs, then
+`c1d4ef7` *"Drop Studio jobs from CI; unit tests only"* (−573 lines of `ci.yml`):
+
+| time | commit | what it tried |
+|---|---|---|
+| 21:47 | `231605e` | introduce live-Studio jobs, gate on a secret |
+| 21:56 | `d2fce66` | in-job secret check (job-level `if:` cannot see secrets) |
+| 22:00 | `f47f478` | reference the `ROBLOSECURITY` environment |
+| 22:06 | `21b623e` | fix Studio installs on both platforms *(cancelled)* |
+| 22:28 | `cddf6d8` | pre-seed the MCP flag on macOS from the cookie user ID *(cancelled)* |
+| 22:49 | `0f87c48` | `roblox-win-installer-action` for Windows *(cancelled)* |
+| 23:01 | `28bb49a` | fast cached zip install; "fix macOS attach stalls" |
+| 23:10 | `e0049f2` | recreate `mcp.bat`, pre-wait diagnostics *(cancelled)* |
+| 23:34 | `18f7aea` | shorten the wait to 60 s; grep logs for the place ID |
+| 23:40 | `9611e00` | wait 5 s before grepping Studio logs |
+| 23:55 | `3d52877` | seed Windows `wincreds` |
+| 00:02 | `83640d7` | seed macOS `HTTPStorages` cookie |
+| 00:11 | `c1d4ef7` | **give up; unit tests only** |
+
+#### macOS: the job died on a bug in its own self-check
+
+Run `34791398348`, job *Python + Studio (macos-latest)*, step **"Seed auth and
+MCP flag (macOS)"**:
+
+```
+AttributeError: 'Cookie' object has no attribute 'get'
+  File "<stdin>", line 19, in <module>
+  File ".../pydantic/main.py", line 1042, in __getattr__
+```
+
+The cookie **was written**. The crash is in the round-trip assertion that
+followed, which called `.get("name")` on what `binarycookies.load()` returns —
+pydantic model objects, not dicts. The fix is `c.name`.
+
+The consequence is the part worth keeping: macOS **never reached "Log in and
+launch Studio"**, so the macOS MCP path is not "broken", it is **untested**. The
+cheap blocker was masking the expensive question the whole exercise existed to
+answer. Any retry must get past that step first, and must not assume the step
+after it works.
+
+#### Windows: Studio never ran at all
+
+Every run that reached **"Wait for Studio MCP"** timed out (`28bb49a`,
+`18f7aea`, `83640d7`; one earlier run died even before that, at seeding). The
+diagnose step in run `34791398348` says why, and it is not an MCP problem:
+
+```
+--- Studio processes ---            (no rows)
+--- mcp.bat ---                     (nothing)
+--- plugin settings files ---       (none found)
+--- Studio logs ---                 WARNING: no Studio logs found
+```
+
+No process, no profile, no logs — after a first-run init that had 30 s to
+produce them. The install step asserted only that `RobloxStudioBeta.exe` and
+`StudioMCP.exe` exist, which the single-file zip from `setup.rbxcdn.com`
+satisfies; the workflow's own comment says as much (*"The zip skips the
+bootstrapper"*). **Those two binaries existing is not evidence Studio can
+launch**, and asserting on them is what made the step report success.
+
+#### The finding that would have saved the most time
+
+`0f87c48` switched the Windows install to `roblox-win-installer-action` — the
+route most likely to produce a launchable Studio. **That run was cancelled, not
+failed**, so the one commit aimed at the actual cause was never evaluated. Four
+of the thirteen commits (`21b623e`, `cddf6d8`, `0f87c48`, `e0049f2`) were
+cancelled and have no verdict at all; the escalation was reading cancelled runs
+as though they had failed.
+
+#### What is still unmeasured, and what a retry should do first
+
+- macOS MCP attach: **completely unmeasured**. The authentication and flag
+  seeding were never proven either — the run died on the assertion, not on the
+  thing the assertion was checking.
+- `$HOME/Library/Roblox/$user_id/InstalledPlugins/0/settings.json` is a **guess**
+  carried over from the Windows path on the stated reasoning that *"the macOS
+  data dir mirrors Windows `%LOCALAPPDATA%\Roblox`"*. No evidence either way.
+  This is the same class of unverified claim the skills were just corrected for.
+- **Order for a retry:** fix the pydantic assertion → confirm the cookie reads
+  back *and* Studio opens logged in → confirm `Assistant-ExternalMCPEnabled`
+  actually takes effect on macOS → only then judge MCP attach. On Windows, use
+  the real installer and assert on a **running process**, not on file existence.
+
+Also worth recording: the diagnose step that would have caught this ran
+**0.7 s after** the launch step, and its `Start-Sleep 5` was added only to the
+*log grep*, not to the process check. The empty process list was therefore partly
+a timing artefact — but the empty *profile* and *logs* after a 30 s first-run
+init are not, and those are what actually say Studio never started.
 
 ### Fixed during the pass
 

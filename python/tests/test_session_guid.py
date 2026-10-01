@@ -17,7 +17,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
-from roblox_studio_mcp.extended import logid  # noqa: E402
+from roblox_studio_mcp.extended import logid, platform  # noqa: E402
 
 #: Verbatim shapes from pid 12324's log on this machine.
 NUMERIC = (
@@ -78,7 +78,14 @@ class PlaceSessionPath(unittest.TestCase):
     def test_the_counter_is_recoverable_from_the_path(self):
         path = logid.place_session_path(PATH_FORM)
         self.assertIn("_AutoRecovery_3.rbxl", path)
-        self.assertEqual(os.path.basename(path), "Template_95206881_AutoRecovery_3.rbxl")
+        # `platform.basename`, not `os.path.basename`. The path here comes out of
+        # a *log* and the fixture is Windows-shaped, so the separator belongs to
+        # the machine that wrote the log, not to the machine reading it. On the
+        # `macos-latest` runner `posixpath` does not split on `\` and this
+        # returned 'AutoSaves\Template_95206881_AutoRecovery_3.rbxl' whole.
+        self.assertEqual(
+            platform.basename(path), "Template_95206881_AutoRecovery_3.rbxl"
+        )
 
     def test_empty_log_is_none(self):
         self.assertIsNone(logid.place_session_path(""))

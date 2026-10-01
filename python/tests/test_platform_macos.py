@@ -44,12 +44,21 @@ class Unproven(unittest.TestCase):
         There is no Mac in this environment, so every macOS assertion below is
         about parsing. If a Mac ever becomes available, run the live
         `verify_locks_live.py`-style probe and flip this.
+
+        **This skips on macOS rather than failing there.** It used to
+        ``assertFalse``, which was the right call when the only environments
+        were Windows and "not Windows" - it made the suite red wherever the
+        claim was weakest. But the ``macos-latest`` runner *is* a Mac, so the
+        assertion became permanently false there and the job could never go
+        green, which is the opposite of what it was for. The reason is kept
+        verbatim in the skip message so the gap stays visible.
         """
-        self.assertFalse(
-            platform.is_macos(),
-            "this suite is running on %r, so no macOS integration was exercised"
-            % sys.platform,
-        )
+        if platform.is_macos():
+            self.skipTest(
+                "running on %r, so no macOS integration was exercised - the "
+                "assertions below are fixture-based and do not prove the port"
+                % sys.platform
+            )
 
 
 class BannerPattern(unittest.TestCase):
@@ -244,10 +253,37 @@ class Basename(unittest.TestCase):
         was false: ``ntpath`` already treats both separators. A test that pins a
         false claim is worse than no test.
         """
+    def test_it_handles_both_separators_whatever_the_host(self):
+        """The host's separator must not decide how a *logged* path is split.
+
+        A Studio log is data about a launch on some other machine, so the
+        separator in it belongs to the writer, not the reader.
+
+        The assertion used to be that this agrees with ``os.path.basename``, and
+        that is only true on Windows: ``ntpath`` already treats both separators,
+        so the two coincide there and the test said nothing. On macOS
+        ``posixpath`` splits on ``/`` only, so for a Windows path the two
+        **must** disagree - and this helper disagreeing is the correct
+        behaviour, not a bug. Measured on the ``macos-latest`` runner, where the
+        old assertion failed with the whole path returned unchanged.
+        """
         for path in ("/Users/me/Library/Application Support/Baseplate-1.rbxl",
                      r"C:\Users\User\AppData\Local\Temp\Baseplate-1.rbxl",
                      "Baseplate-1.rbxl"):
-            self.assertEqual(os.path.basename(path), platform.basename(path), path)
+            self.assertEqual(platform.basename(path), "Baseplate-1.rbxl", path)
+
+        if platform.is_macos():
+            # Documented, not incidental: this is the case that proves the
+            # helper is doing something `os.path.basename` cannot here.
+            self.assertNotEqual(
+                os.path.basename(r"C:\Users\me\Baseplate-1.rbxl"),
+                platform.basename(r"C:\Users\me\Baseplate-1.rbxl"),
+            )
+        else:
+            for path in ("/Users/me/Library/Application Support/Baseplate-1.rbxl",
+                         r"C:\Users\User\AppData\Local\Temp\Baseplate-1.rbxl",
+                         "Baseplate-1.rbxl"):
+                self.assertEqual(os.path.basename(path), platform.basename(path), path)
 
 
 class PathsWithSpaces(unittest.TestCase):

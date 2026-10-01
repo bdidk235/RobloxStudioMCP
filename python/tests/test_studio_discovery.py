@@ -60,7 +60,14 @@ class FindStudioExeMessages(unittest.TestCase):
             "version-a": {"RobloxStudioBeta.exe": 250},
         })
         self.assertIsNone(message)
-        self.assertTrue(exe.endswith("version-a\\RobloxStudioBeta.exe"))
+        # Asserted component-wise, not with a literal `version-a\RobloxStudioBeta.exe`.
+        # `is_windows` is mocked True so the Windows branch runs, but the path is
+        # still assembled with the *host's* separator, so on the `macos-latest`
+        # runner it came back joined with `/` and the hardcoded backslash failed.
+        # What is being claimed is "the exe lives in the version directory", and
+        # that is what the two components say.
+        self.assertEqual(os.path.basename(exe), "RobloxStudioBeta.exe")
+        self.assertEqual(os.path.basename(os.path.dirname(exe)), "version-a")
 
     def test_no_installs_at_all(self):
         message, _ = self._find({})

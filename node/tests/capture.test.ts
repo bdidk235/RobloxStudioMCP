@@ -325,7 +325,13 @@ describe("savePath failure", () => {
     // working the recovery text would be a lie.
     const result = await capturePng(capturingStudio());
     expect(result.savePath).toBeUndefined();
-    expect(Buffer.from(result.pngBase64, "base64")).toEqual(encodePng(W, H, RGBA));
+    // `pngBase64` is optional on `CaptureResult`, so assert it before using it
+    // rather than letting `Buffer.from(undefined)` be the failure - that would
+    // report a type error, not "the recovery advice is a lie".
+    expect(result.pngBase64).toBeTypeOf("string");
+    expect(Buffer.from(result.pngBase64 as string, "base64")).toEqual(
+      encodePng(W, H, RGBA),
+    );
   });
 });
 

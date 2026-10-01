@@ -47,7 +47,7 @@ These are not conventions. Each one exists because the alternative was measured.
 |---|---|---|
 | Python tests | `python -m pytest tests -q` | behaviour |
 | Python types | `pytest tests/test_typecheck.py` (runs pyright) | wrong key, `None` deref, wrong argument type |
-| Node types | `npx tsc --noEmit` | the same, at compile time |
+| Node types | `pnpm --dir node typecheck` | the same, at compile time. **Use this, not bare `tsc --noEmit`** — the script is `tsc --noEmit -p tsconfig.check.json`, a stricter project that includes the tests. Measured 2026-10-01: the bare invocation passed a file the checked one rejected, and the difference shipped to `main` and turned CI red. |
 | Node tests | `npx vitest run` | behaviour |
 | Build freshness | included in vitest | `dist/` older than `src/` |
 | **Parity** | `pytest tests/test_parity.py` + `npx vitest run tests/parity.test.ts` | either side's tool surface drifting |
