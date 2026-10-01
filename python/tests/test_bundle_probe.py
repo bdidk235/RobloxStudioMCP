@@ -62,16 +62,44 @@ pytestmark = pytest.mark.skipif(
 TIMEOUT = 20
 
 
-def _step_text(title: str) -> str:
-    """The `run:` body of the named step, straight from the YAML."""
-    import yaml
+def _step_run(title: str) -> str:
+    """The `run:` body of the named step, dedented, with no YAML dependency.
 
-    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    for job in doc["jobs"].values():
-        for step in job["steps"]:
-            if step.get("name") == title:
-                return step["run"]
-    raise AssertionError(f"no step named {title!r} in {WORKFLOW.name}")
+    PyYAML is deliberately not used: it is not a dependency of this project - the
+    dev extra is exactly `pytest` and `pytest-asyncio` - and importing it here
+    made all five tests in this file fail on CI with ModuleNotFoundError while
+    passing locally, because the local shell happened to have it installed for
+    an unrelated script. Adding a dependency to test one workflow is the wrong
+    trade, and this block scalar is simple enough to read directly.
+    """
+    lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+
+    start = next(
+        (i for i, ln in enumerate(lines) if ln.strip() == f"- name: {title}"),
+        None,
+    )
+    assert start is not None, f"no step named {title!r} in {WORKFLOW.name}"
+
+    run_at = next(
+        (i for i in range(start, len(lines)) if lines[i].strip() == "run: |"),
+        None,
+    )
+    assert run_at is not None, f"step {title!r} has no literal run: block"
+
+    step_indent = len(lines[run_at]) - len(lines[run_at].lstrip())
+    body: list[str] = []
+    for ln in lines[run_at + 1:]:
+        if not ln.strip():
+            body.append("")
+            continue
+        if len(ln) - len(ln.lstrip()) <= step_indent:
+            break  # dedented back out to the step's own level
+        body.append(ln)
+
+    indents = [len(b) - len(b.lstrip()) for b in body if b.strip()]
+    assert indents, f"step {title!r} has an empty run block"
+    cut = min(indents)
+    return "\n".join(b[cut:] if b.strip() else "" for b in body)
 
 
 def _linkage_block() -> str:
@@ -81,7 +109,7 @@ def _linkage_block() -> str:
     loop aborts on the first dependency; extracting only the body drops the
     `missing:` tally the assertions are about. Both mistakes were made.
     """
-    run = _step_text("Bundle identity, linkage and signature")
+    run = _step_run("Bundle identity, linkage and signature")
     m = re.search(r'(loader="\$\(cd .*?\n)(.*?echo "missing: \$miss"\n)', run, re.S)
     assert m, "the linkage block moved; update the extraction"
     return m.group(1) + m.group(2)
@@ -126,21 +154,34 @@ def _run_linkage(tmp_path: pathlib.Path, otool_output: str) -> str:
     return r.stdout
 
 
-def test_linkage_reports_each_dependency_once(tmp_path: pathlib.Path) -> None:
+@pytest.fixture(scope="module")
+def linkage_output(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """The workflow's linkage block, executed once.
+
+    Three of the tests below assert different things about the same
+    deterministic output, and a bash spawn costs ~7s on this host, so running it
+    per test turned a 2s file into a 36s one. The output does not depend on the
+    test reading it, so it is computed once here. Only the negative control
+    spawns a second time, because its whole point is to run a *different* block.
+    """
+    return _run_linkage(tmp_path_factory.mktemp("linkage"), FAKE_OTOOL_L)
+
+
+def test_linkage_reports_each_dependency_once(linkage_output: str) -> None:
     """A universal binary lists every dependency twice; the report must not.
 
     `otool -L` prints one slice per architecture. Without `sort -u` the tally
     doubles, and the shipped workflow reported "missing: 2" for a single
     unresolvable dylib - which reads as two separate problems.
     """
-    out = _run_linkage(tmp_path, FAKE_OTOOL_L)
+    out = linkage_output
     assert out.count("MISSING @rpath/libmimalloc.3.dylib") == 1, out
     assert out.count("MISSING @loader_path/Frameworks/Absent.dylib") == 1, out
     assert "missing: 4" in out, out
 
 
-def test_linkage_classifies_every_branch(tmp_path: pathlib.Path) -> None:
-    out = _run_linkage(tmp_path, FAKE_OTOOL_L)
+def test_linkage_classifies_every_branch(linkage_output: str) -> None:
+    out = linkage_output
     # System libraries are skipped, not reported.
     assert "libSystem" not in out, out
     assert "CoreFoundation" not in out, out
@@ -153,14 +194,14 @@ def test_linkage_classifies_every_branch(tmp_path: pathlib.Path) -> None:
     assert "(bare) libbare.dylib" in out, out
 
 
-def test_present_dependency_is_not_counted_missing(tmp_path: pathlib.Path) -> None:
+def test_present_dependency_is_not_counted_missing(linkage_output: str) -> None:
     """The tally's whole purpose: what exists must not appear in what is missing.
 
     A `missing:` count that included the resolvable dependency would mean the
     existence test is inverted or skipped, and the number would still look
     plausible.
     """
-    out = _run_linkage(tmp_path, FAKE_OTOOL_L)
+    out = linkage_output
     ok = [ln for ln in out.splitlines() if ln.startswith("ok ")]
     assert ok == ["ok      @loader_path/Frameworks/Present.dylib"], out
     tally = int(re.search(r"missing: (\d+)", out).group(1))
@@ -169,7 +210,7 @@ def test_present_dependency_is_not_counted_missing(tmp_path: pathlib.Path) -> No
 
 def test_rpath_list_is_deduplicated(tmp_path: pathlib.Path) -> None:
     """LC_RPATH is also printed per architecture, so it needs `sort -u` too."""
-    run = _step_text("Bundle identity, linkage and signature")
+    run = _step_run("Bundle identity, linkage and signature")
     m = re.search(r'rpaths="\$\((.*?)\)"', run, re.S)
     assert m, "the rpath extraction moved; update this test"
     pipeline = m.group(1)
