@@ -2,47 +2,52 @@
 
 > ## STANDING CONSTRAINT - do not touch
 >
-> **Do not touch "Game TESTING" in Studio.** Stated by the user. Nothing in this
-> project may read, write, execute, launch, stop or otherwise interact with it.
+> **Touch only a Studio instance you launched yourself, or one the user has
+> explicitly put in scope.** "Touch" covers read, write, execute, launch, stop
+> and capture, so an instance the agent did not create is off limits until the
+> user grants it - by naming the instance, or by asking for the work that
+> reaches it. A grant may be scoped **read-only**, which permits list, identity,
+> grep and watch and nothing else. Grants are per-instance and never carry over.
+> If a tool call would reach an ungranted instance, stop and ask.
 >
-> This is recorded rather than remembered because "Game TESTING" appears nowhere
-> in this repository - not in the attached Studios, which are both mesh-named
-> `Place1`, and not in any config. So nothing here can warn me at the point of
-> contact; the only thing standing between an agent and that content is this
-> note. Treat any Studio, place, script or project by that name as off limits,
-> and if a tool call would reach it, stop and ask rather than proceeding.
+> **REWRITTEN 2026-10-02 (user), replacing a rule keyed on the place name "Game
+> TESTING".** The old rule treated a *name* as the handle on the thing to avoid,
+> and a name is not one. It fired that day on a URL slug (`Game-TESTING`) for
+> place `114727448637763` whose name could not be confirmed from here at all -
+> the public page renders client-side, and `multiget-place-details` needs auth.
+> So the rule could fire on a guess and could equally have missed the real thing
+> under any other name. The instance is the unit, not the name.
 >
-> **AMENDED 2026-09-30 — the name has changed, so this note no longer matches
-> the world.** The Studio that reported "Game TESTING" (`fa092c48`) is **gone**;
-> it survives only as a stale null-name registry row. A different Studio is
-> attached in its place, reporting **`rbx-re.rbxl`** (`studio_id
-> 1631ed70-bb8e-43a7-8b24-fc224da7f9a9`, debug id `0_186523`).
+> **`AGENTS.md` rule 1 carries this same rule.** Both files must be updated
+> together whenever this ruling changes - a rule that exists in two places and
+> is corrected in one is a rule that lies in the other.
 >
-> **`AGENTS.md` rule 1 carries the same stale text** (it was `CLAUDE.md` until
-> the rename, and the rule was copied forward unchanged). Both files must be
-> updated together whenever this ruling changes — a rule that exists in two
-> places and is corrected in one is a rule that lies in the other.
+> **Grant carried forward, and still live: RULING 2026-09-30 (user): `rbx-re.rbxl`
+> is read-only.** No writes, no executes, no console writes, no stop, no capture
+> targeting it. Read-only tools (list, identity, grep, watch) may observe it;
+> nothing may mutate it or run code in it. Verification work uses the baseplate
+> Studio with an explicit `studio_id`, never an omitted one.
 >
-> **Whether that is the same place is UNVERIFIED, and cannot be settled from
-> here** — every way of checking is a read of that Studio, which this note
-> forbids. A name-based check would now pass it, which is precisely the failure
-> mode this note exists to prevent. **RULING 2026-09-30 (user): `rbx-re.rbxl`
-> (`1631ed70-bb8e-43a7-8b24-fc224da7f9a9`) is read-only.** No writes, no
-> executes, no console writes, no stop, no capture targeting it. Read-only
-> tools (list, identity, grep, watch) may observe it; nothing may mutate it
-> or run code in it. Verification work uses the baseplate Studio with an
-> explicit `studio_id`, never an omitted one.
+> What that ruling replaced, for the record: the Studio that reported "Game
+> TESTING" (`fa092c48`) is **gone**, surviving only as a stale null-name
+> registry row, and whether it was ever the same place as `rbx-re.rbxl` was
+> **UNVERIFIED and unresolvable from here** - every way of checking is a read of
+> that Studio, which the constraint forbids. Weak evidence that it was not the
+> same: `rbx-re.rbxl`'s console carries `CoreGui.__ClampProbe.__L` work and
+> four unrelated faults, which does not resemble the same content. That is
+> inference from a console listing, and it was **not sufficient to lift the
+> constraint on its own**.
 >
-> Weak evidence that it is *not* the same: its console carries
-> `CoreGui.__ClampProbe.__L` work and four unrelated faults, which does not
-> resemble the same content. That is inference from a console listing, and it is
-> **not sufficient to lift the constraint**. Read it only if told to.
+> Resolve an explicit `studio_id` with `extended_list_studios` before a call
+> that needs one: an omitted `studio_id` is a guess whenever more than one
+> Studio is attached. Note also that a `studio_id` is re-minted on every Studio
+> restart, so it identifies a session, not a place.
 >
 > Related: prefer `extended_wait_for` and read-only tools over anything that
 > mutates a running session, so that verification does not require touching a
 > live place at all.
 
-Last updated 2026-09-30. Each item records the evidence that settled it, and
+Last updated 2026-10-02. Each item records the evidence that settled it, and
 whether the evidence was measured live or read from docs/another implementation.
 Those are not the same and the difference matters.
 
@@ -1378,7 +1383,10 @@ the part worth keeping.
 - [x] **The standing constraint at the top of this file keyed on a name that no
       longer exists.** "Game TESTING" was `fa092c48`, now a stale null-name
       registry row. The Studio attached in its place reports **`rbx-re.rbxl`**
-      (`1631ed70`, debug id `0_186523`). **Resolved by user ruling 2026-09-30:
+      (`1631ed70`, debug id `0_186523`). **Later generalised 2026-10-02: the
+      name-keyed rule itself was replaced, per-instance, because it fired on a
+      URL slug whose name could not be confirmed - see the block at the top.**
+      **Resolved by user ruling 2026-09-30:
       `rbx-re.rbxl` is read-only** (observe via read-only tools; never mutate,
       execute, or stop). What can be said: its console shows
       `CoreGui.__ClampProbe` work and four unrelated faults, which does not
@@ -3452,3 +3460,186 @@ hardened-runtime bundle with no obtainable app behind it on macOS, and an OAuth2
 sign-in needing a browser authorisation a datacentre IP cannot complete. One
 machine with a desktop and a signed-in account removes all three at once, and the
 first command in the table above then runs unchanged.
+
+## Saving a place: local vs cloud, researched 2026-10-02
+
+The rule now lives in `AGENTS.md` standing rule 6. This is the evidence behind
+it, kept separate because the two were very easy to conflate - I did.
+
+**Provenance.** Everything marked `DOCUMENTED` was read from a page I fetched.
+Everything marked `MEASURED` I ran. The one item marked otherwise was confirmed
+only by a search snippet. **No Roblox API was executed.**
+
+### Two operations, not one
+
+| | destination | gated on | content-validated |
+|---|---|---|---|
+| **Local** (`.rbxl` on disk) | the filesystem | nothing - or a human | no |
+| **Cloud** (`SavePlaceAsync`) | Roblox's cloud | identity + `AssetCreateUpdate` | no |
+
+Neither is content-validated. The deep UGC validation is a *third*, unrelated
+thing (below) and it applies to neither.
+
+### Local: no API exists. Ruling: ask the user.
+
+`DOCUMENTED` - the devforum thread is titled *"Add support for a place save API to
+save local files in place."* A feature request is the evidence: the API does not
+exist. The author's stated workaround is sending keystrokes to emulate Cmd+S /
+Ctrl+S, described in the thread as *"flaky so isn't 100% reliable."*
+
+`DOCUMENTED` - the built-in Studio MCP **does** have `user_keyboard_input`, which
+is that same keystroke hack as a first-party tool. It does not help. The docs
+(`create.roblox.com/docs/studio/mcp`) file it under **"Player input
+simulation"**, beside `character_navigation` and `user_mouse_input`. This repo's
+own transport notes independently record interaction tools as client-datamodel
+only. Two sources agree: it drives the *game*, not the editor chrome, so it
+cannot press Ctrl+S in the editor.
+
+So the only reliable local save is the user pressing save. That is a ruling, not
+a preference, and it follows from the absence of an API rather than from any
+judgement about risk.
+
+### Cloud: `AssetService:SavePlaceAsync` is real and works
+
+`DOCUMENTED` - `create.roblox.com/docs/reference/engine/classes/AssetService`:
+
+```luau
+AssetService:SavePlaceAsync(requestParameters: Dictionary?): ()
+```
+
+Yields, returns nothing, **Capabilities: `AssetCreateUpdate`**. The page's prose
+gives the usage - and this is the one line I could not find anywhere else:
+
+```luau
+AssetService:SavePlaceAsync({PlaceId = 1, SaveWithoutPublish = true})
+```
+
+`PlaceId` is **optional**; omit it and it saves the currently open place, which
+may be a published one. That is the sharp edge, and it is why the rule says ask
+first even though the call is one line.
+
+**The place id is not a free variable**, and `TODO.md` records this repo's own
+measured rule for it: a *template* place is its `Template_<id>_AutoRecovery_<n>`
+id paired with **universe id 0** (`URI_UNIVERSE_ID`), because the real universe
+id failed 3 times in 16 with `Error fetching latest place version`. An *unsaved
+local* place has **no id at all** - Studio reports `PlaceId: 0`, and the copies
+this project makes are named `Baseplate-<n>.rbxl`, for which
+`template_place_id()` returns `None` rather than a fabricated id. Never invent
+one.
+
+`MEASURED` - from the leaked 2016 engine source
+(`SANS3R66/roblox-2016-source-code`, `App/v8datamodel/AssetService.cpp`), which
+gives three facts the public docs do not:
+
+```cpp
+static Reflection::BoundYieldFuncDesc<AssetService, void()> func_savePlace
+    (&AssetService::savePlaceAsync, "SavePlaceAsync", Security::None);
+```
+
+- **`Security::None`** - callable from an ordinary script, no elevated security.
+  Contrast `AllowInsertFreeAssets`, the one property on the service carrying
+  *Roblox Script Security*.
+- **It is web-API bound.** The constructor's URL fields - `placeAccessUrl`,
+  `assetVersionsUrl`, `assetRevertUrl` - confirm cloud, not local disk. Now
+  corroborated three independent ways: docs, engine source, and the absence of
+  any local-save API.
+- **It is rate-limited**, and this is the bit I did not know before looking:
+  `savePlaceThrottle(&DFInt::S...`, alongside
+  `createPlaceThrottle(&DFInt::CreatePlacePerMinute, &DFInt::CreatePlacePerPlayerPerMinute)`.
+  Per-minute *and* per-player. So it is unsuitable for a tight save loop.
+
+*Caveat: 2016 source. The architecture has clearly been stable, but the specific
+`DFInt` constants are not current.*
+
+`DOCUMENTED` - `CreatePlaceAsync(placeName, templatePlaceID, description)`
+returns a new place id, same capability, and `templatePlaceID` is **required**, so
+a brand-new account has a chicken-and-egg problem.
+`CreatePlaceInPlayerInventoryAsync` is deprecated.
+
+### What "UGC validation" actually refers to - and why it is not in this path
+
+`DOCUMENTED` - `create.roblox.com/docs/marketplace/validation-system` is an
+**avatar asset** gate: bodies, cosmetics, clothing, accessories, dynamic heads,
+makeup, animations. It runs on Marketplace upload via Studio, or via
+`AvatarCreationService`. Eight categories: Schema, Mesh geometry,
+Texture/materials, Rigging/skinning, Inner/outer cages, Attachments, Dynamic
+head, Security/moderation.
+
+Four mechanisms worth having:
+
+- **It is rasterization-based.** "Mesh is completely invisible" and "not opaque
+  enough from a given view" come from rendering **six orthographic views** and
+  counting opaque pixels. A geometrically valid mesh can fail on silhouette.
+- **Custom attributes are banned** on published avatar assets - *"runtime
+  key-value pairs that could carry hidden data or scripts."*
+- **Skinning is restricted to the official R15 rig**; unauthorised joints are
+  rejected because they *"could lead to unpredictable deformations or exploit
+  avatar rendering."*
+- **HRD/DRD bone animation is gated behind trusted-creator status**, separately.
+
+And the line that settles the conflation: *"Assets that you don't intend to use
+for the Marketplace, such as those for in-game use only, do not need to pass the
+validation process."*
+
+So `SavePlaceAsync` is in the **same capability class as `CreateAssetAsync`** -
+both `Security::None`, both web-API, both gated on creator identity. Neither is
+content-validated. The place path asks *"may this identity write to this place"*,
+not *"is this place well-formed"*.
+
+Capability taxonomy across `AssetService`, which is the useful part of the surface:
+
+| capability | members |
+|---|---|
+| `AssetCreateUpdate` | `CreateAssetAsync`, `CreateAssetVersionAsync`, `CreatePlaceAsync`, `SavePlaceAsync`, `PromptCreatePlatformContentAsync` |
+| `LoadUnownedAsset` | `LoadAssetAsync` |
+| `DynamicGeneration` | `CreateEditableImage/Mesh`, `CreateDataModelContentAsync` |
+| `Basic` | `CreateDecalAsync`, `CreateMeshPartAsync`, `CreateSurfaceAppearanceAsync` |
+| `AssetManagement` | `PromptImportAnimationClipFromVideoAsync` |
+
+### No MCP exposes any of it
+
+`MEASURED` - searched for `SavePlaceAsync`, `save_place` and `save_*` across the
+official repo and four community servers. **Zero hits everywhere**, and a control
+query (`execute_luau`, known to exist) returned four hits, so the negatives are
+real rather than a silent search failure.
+
+| implementation | place-save? |
+|---|---|
+| `Roblox/studio-rust-mcp-server` (official) | No - 6 plugin tools: `GetConsoleOutput`, `GetStudioMode`, `InsertModel`, `RunCode`, `RunScriptInPlayMode`, `StartStopPlay` |
+| Built-in Studio MCP | No - 34 documented tools, none save a place |
+| `drgost1/robloxstudio-mcp` (claims 51 tools) | No |
+| `boshyxd/robloxstudio-mcp` (490 stars) | No |
+| `Chrrxs/robloxstudio-mcp` | No |
+| `hope1026/weppy-roblox-mcp` | No |
+
+A global `SavePlaceAsync` code search also showed **unofficial C# bindings** that
+already wrap it (`RobloxCS.Types`, `LUSharp`, `roblox-modloader`). Other
+ecosystems have surfaced this call; it never reached an MCP.
+
+### Rejected: "saveinstance" scripts
+
+The only mechanism found for writing a **local** `.rbxl` from a live session is a
+serializer hook driven by executor-based tooling, which works by ignoring
+Roblox's ownership and auth model. **Not a route**, and deliberately not named
+here - a reader who needs the exclusion does not need the repository, and naming
+it makes this file a pointer to it. Its one diagnostic value is that the local
+mechanism is a hook rather than an API, which is why there is no sanctioned
+version of it.
+
+### Confirmed only by a search snippet - verify before relying on it
+
+`AssetService:CreateAssetAsync` - *"can only be used in locally loaded plugins
+and uploads assets without prompting."* From a search snippet; the fetched page
+rendered the signature and a code sample but no prose description, so the
+constraint is probably on the page and I did not read it. The confirmed parts
+are the signature, the `AssetCreateUpdate` capability, and the
+`requestParameters` shape (`CreatorId`, `CreatorType`, `Name`, `Description`;
+returns `Enum.CreateAssetResult` plus the new id or an upload error).
+
+### If this is ever needed in CI
+
+Cloud save needs an authenticated Studio with a capability-enabled place, which
+is the same OAuth2 wall as the retired live-Studio work - so it is not
+CI-reachable. `rbx-dom`, `lune`'s `@lune/roblox` and Rojo write a `.rbxl` with no
+Studio and no auth, and remain the only route to disk. Their trap: they operate
+on the file, so if Studio holds unsaved changes, the file is stale.

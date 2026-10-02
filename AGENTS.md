@@ -4,10 +4,23 @@
 
 These are not conventions. Each one exists because the alternative was measured.
 
-1. **Never touch "Game TESTING" in Studio.** Stated by the user. Do not read,
-   write, execute, launch, stop or otherwise interact with it. It appears nowhere
-   in this repository, so nothing can warn you at the point of contact — this note
-   is the only safeguard. If a tool call would reach it, stop and ask.
+1. **Touch only a Studio instance you launched yourself, or one the user has
+   explicitly put in scope.** Stated by the user 2026-10-02, replacing the rule
+   keyed on the place name "Game TESTING". That rule treated a *name* as the
+   handle on the thing to avoid, and a name is not one: a place can be reached
+   without it ever appearing in this repository, and on 2026-10-02 it fired on a
+   URL slug alone without the name being confirmable. The instance is the unit.
+   - "Touch" covers read, write, execute, launch, stop and capture. An instance
+     you did not create is off limits until the user grants it — by naming the
+     instance, or by asking for the work that reaches it. If a tool call would
+     reach an ungranted one, stop and ask.
+   - A grant may be scoped. **Read-only** permits list, identity, grep and
+     watch, and nothing else.
+   - Grants are per-instance and never carry over to another one.
+   - Before any call needing an explicit `studio_id`, resolve it with
+     `extended_list_studios`. An omitted `studio_id` is a guess whenever more
+     than one Studio is attached.
+   - Current grants, with history: the block at the top of `TODO.md`.
 2. **Never print bulk data.** A ~5 MB `print` permanently wedged
    `get_console_output` for a Studio. Report measurements through
    `inspect_instance` attributes instead.
@@ -38,7 +51,35 @@ These are not conventions. Each one exists because the alternative was measured.
      gone. Restarting is not yours alone — another agent restarting the same
      MCP mid-session drops the namespace out from under you too, and it
      changes *which* code you are measuring without announcing it.
-6. **Run the gates before claiming anything works.** `pytest`, `tsc --noEmit`,
+6. **Saving a place: ask the user for local, `SavePlaceAsync` for cloud. These are
+   different operations and conflating them wastes a session.**
+   - **Local (`.rbxl` on disk) — there is no API. Ask the user to save.** Not a
+     preference: the feature request for a local-save API is still open, and the
+     only automation anyone has found is emulating Ctrl+S, which Roblox's own
+     community calls flaky. `user_keyboard_input` does **not** help — the docs
+     file it under *Player input simulation* and it is client-datamodel only, so
+     it drives the game, not the editor. Ask, then verify the file changed.
+   - **Cloud — `AssetService:SavePlaceAsync`,** and the place id is **not** a free
+     variable. Two cases, both measured here, and they differ:
+     - *Template place* — the id is the template's own, read off the
+       `Template_<id>_AutoRecovery_<n>` filename by `template_place_id()`. A URI
+       launch pairs it with **universe id 0** (`URI_UNIVERSE_ID`) — the place's
+       real universe id failed 3 times in 16 with `Error fetching latest place
+       version`. **So: use universe id 0 for template places.**
+     - *Unsaved local place* — there is **no place id to pass**. Studio reports
+       `PlaceId: 0`, and this project's own copies are named `Baseplate-<n>.rbxl`,
+       for which `template_place_id()` returns `None` rather than a fabricated one.
+       Pass no `PlaceId`.
+     It writes to Roblox's cloud, **not** to disk; it is **rate-limited** per minute
+     *and* per player; and it needs `AssetCreateUpdate` on the place. Ask first,
+     because omitting `PlaceId` saves the *open* place, which may be a published one.
+   - **Never** use "saveinstance" scripts — executor-based exploit tooling that
+     works by ignoring Roblox's ownership and auth model. Same reason as rule 1:
+     the mechanism is the violation. `TODO.md` records why, without naming them.
+   - **No MCP exposes any of this.** Not the official `Roblox/studio-rust-mcp-server`
+     (6 tools), not the built-in Studio MCP (34 documented tools), and not the
+     four community servers checked. Source and method in `TODO.md`.
+7. **Run the gates before claiming anything works.** `pytest`, `tsc --noEmit`,
    and both suites. A gate that has not been run is not a gate.
 
 ## Gates
