@@ -82,6 +82,39 @@ These are not conventions. Each one exists because the alternative was measured.
      four community servers checked. Source and method in `TODO.md`.
 7. **Run the gates before claiming anything works.** `pytest`, `tsc --noEmit`,
    and both suites. A gate that has not been run is not a gate.
+8. **Commits are SSH-signed. Do not pass `--no-gpg-sign`** — that instruction
+   was only ever a workaround, and the workaround outlived its cause.
+   - `commit.gpgsign` and `tag.gpgsign` are both `true`, with `gpg.format=ssh`
+     and `user.signingkey` pointing at `~/.ssh/id_ed25519_sign.pub`. A plain
+     `git commit` is therefore **already signed with no flag at all**.
+   - **The key carries no passphrase**, deliberately: that is what allows an
+     agent to commit unattended, and it removes the gpg-passphrase stall that
+     blocked a 47-file reorg in a parallel repo. The cost is real — anything
+     running as this user can now sign as them. Adding a passphrase later is
+     fine, because `ssh-agent` serves the key without the agent ever seeing it.
+   - **GitHub needs the public key under *Signing keys*, not *Authentication
+     keys*.** Those are separate lists. Measured 2026-10-02: a commit signed by
+     a key GitHub did not know came back `verified: false`, `reason:
+     unknown_key` — while `git verify-commit` still reported `Good signature`
+     locally. **The local check cannot detect this class of failure**; only
+     GitHub's own verdict on a pushed commit can.
+   - **Compare fingerprints; never eyeball the base64.** This failed here, in
+     this file's own author: the key was registered from a string copied out of
+     earlier output instead of re-read from disk, so GitHub held a key whose
+     private half had already been deleted, and the mismatch presented as
+     `unknown_key`. Re-read the file, then compare
+     `ssh-keygen -lf <key>.pub` against GitHub's fingerprint.
+   - Verify with `git verify-commit HEAD`; `%G?` is `G` for good.
+     `gpg.ssh.allowedSignersFile` points at `~/.config/git/allowed_signers`,
+     without which git errors instead of verifying.
+   - PowerShell quoting, measured the same day: `ssh-keygen -N '""'` sets a
+     passphrase of the literal two characters `""`, and every later use then
+     prompts. Generate through `cmd`, where `""` really is empty:
+     `cmd /c 'ssh-keygen -t ed25519 -N "" -f <path>'`.
+   - **Not done:** existing history is unsigned, and re-signing rewrites every
+     SHA on `main`. The full measurement, the `unknown_key` transcript and a
+     retraction of mine are in `TODO.md`, *Commit signing* - same reason as
+     rule 1: a rule corrected in one file and not the other lies in the other.
 
 ## Gates
 

@@ -3651,3 +3651,103 @@ is the same OAuth2 wall as the retired live-Studio work - so it is not
 CI-reachable. `rbx-dom`, `lune`'s `@lune/roblox` and Rojo write a `.rbxl` with no
 Studio and no auth, and remain the only route to disk. Their trap: they operate
 on the file, so if Studio holds unsaved changes, the file is stale.
+## Commit signing: SSH, unattended, and one trap worth keeping
+
+The cause first, because it is the reason `--no-gpg-sign` existed at all.
+
+`~/.gitconfig` already had `commit.gpgsign = true` and
+`user.signingkey = 92B341F040AAFDE4`. That key **does not exist** - the keyring
+holds zero secret keys and zero public keys, and `gpg --list-keys 92B341F040AAFDE4`
+answers `No public key`. So signing was never blocked by a passphrase; it was
+pointed at nothing. Every commit in this repo is unsigned because of that, not
+because anyone decided it should be.
+
+**MEASURED.** Replaced with SSH signing, which git 2.55 supports:
+
+| setting | value |
+|---|---|
+| `gpg.format` | `ssh` |
+| `user.signingkey` | `~/.ssh/id_ed25519_sign.pub` |
+| `gpg.ssh.allowedSignersFile` | `~/.config/git/allowed_signers` |
+| fingerprint | `SHA256:6Tgf8PSFnUF2KTOcgee38G4XvabCjcM/AcPHW8YLMQo` |
+
+**No passphrase, on purpose.** An unattended agent cannot answer a pinentry
+prompt, and a gpg passphrase had already stalled a 47-file reorg in a parallel
+repo. The cost is real - anything running as this user can now sign as them. A
+passphrase can be added later, because `ssh-agent` serves the key without the
+agent ever seeing the secret.
+
+**MEASURED, 15 of 15 checks.** Verified in *this* repo on a throwaway branch,
+because a scratch repo cannot show whether the repo's own config overrides the
+global one, nor whether a hook strips the signature. A plain `git commit` with
+no flags produced a `gpgsig -----BEGIN SSH SIGNATURE-----` header;
+`git verify-commit` returned `Good "git" signature`; `%G?` is `G`; `git tag -s`
+signs too; and `--no-gpg-sign` is the only way to produce an unsigned commit.
+
+### The trap: `git verify-commit` cannot see this class of failure
+
+**MEASURED.** A commit signed by a key GitHub had never seen came back
+
+```
+verified : False
+reason   : unknown_key
+```
+
+while `git verify-commit` reported `Good "git" signature` locally. The local
+check proves the signature is *sound*; only GitHub's own verdict on a **pushed**
+commit proves it is *recognised*. Once the correct key was registered under
+Signing keys, the same probe returned `verified: true, reason: valid`.
+
+### RETRACTED: "an auth key is not enough for signing"
+
+From the `unknown_key` above I concluded that registering the key under
+*Authentication keys* was insufficient, and said so. **That inference was
+confounded by my own error** - see below. Auth-only was never cleanly tested
+with a key that was actually doing the signing, so the claim is withdrawn. What
+is established is narrower and sufficient: **the key GitHub knows must be the
+key that signs.**
+
+### How the wrong key got registered, which is the part worth keeping
+
+I handed the user a paste string copied from **earlier output in the same
+session** rather than re-reading `id_ed25519_sign.pub` after the key had been
+regenerated. The string belonged to the *first* generation - the one whose
+`""` passphrase was wrong, and which had already been deleted. GitHub therefore
+held a public key whose private half no longer existed, and every probe failed
+for a reason that had nothing to do with signing.
+
+Two lessons, both instances of a mechanism I asserted from a nearby observation
+instead of reading the artifact:
+
+- **Re-read the file; never re-use a string from your own transcript.** A
+  regenerated key has the same path and the same comment.
+- **Compare fingerprints, never eyeball base64.** `ssh-keygen -lf <key>.pub`
+  against GitHub's displayed fingerprint settles it in one command. The right
+  key and the wrong key differ in a single character in the middle of the blob,
+  which is precisely why it survived a visual check.
+
+### PowerShell: `-N '""'` is not an empty passphrase
+
+**MEASURED.** `ssh-keygen -N '""'` from PowerShell sets the passphrase to the
+literal two characters `""`. Key generation then *succeeds silently*, and every
+later use prompts - which reads as "signing needs a passphrase" rather than
+"the passphrase is two quote marks". Generate through `cmd`, where `""` really
+is empty:
+
+```
+cmd /c 'ssh-keygen -t ed25519 -N "" -f <path>'
+```
+
+### Not done
+
+- **Existing history is unsigned.** Re-signing rewrites every SHA on `main`.
+  Not done unasked.
+- The private key sits unencrypted on disk. The tradeoff and the one-line fix
+  are above.
+
+**Provenance.** Everything marked `MEASURED` was executed here on 2026-10-02 and
+the output quoted verbatim. GitHub's verdict came from
+`GET /repos/{owner}/{repo}/commits/{sha}` -> `commit.verification` via `gh api`,
+read on a throwaway branch that was deleted from the remote afterwards; `main`
+was never moved. The retraction is mine and is recorded here rather than
+quietly dropped.
