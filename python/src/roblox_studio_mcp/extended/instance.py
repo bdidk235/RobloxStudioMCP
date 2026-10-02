@@ -552,7 +552,7 @@ async def launch_instance(
     default, not a new capability. The old code sprayed a join token into every
     attached Studio whenever it could not identify the new one by name, with no
     way for the caller to decline: measured 2026-10-01, launching one Studio wrote
-    two tokens into an unrelated Studio the user had ruled read-only. The
+    two tokens into an unrelated Studio the user had not put in scope. The
     before/after mesh diff added to :func:`_identify_launched` makes that path
     unnecessary in the normal case, so the spray is now a last resort the caller
     authorises. Declining reports the launch as **successful but unaddressed**,
@@ -818,6 +818,12 @@ async def _identify_launched(
     #
     # It stays available, because the two routes above genuinely cannot decide
     # every case. It is no longer the default, and the caller authorises it.
+    #
+    # `allow_console_write` is therefore a statement about scope, not a licence:
+    # it declines to touch Studios the caller never named, and passing it says
+    # only that this launch may. It does not grant anything on any other
+    # instance, and it is never a reason to name one implicitly - see
+    # `AGENTS.md` rule 1, which is about the instance rather than the flag.
     if not allow_console_write:
         return {
             "studio_id": None,

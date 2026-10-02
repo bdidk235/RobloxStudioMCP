@@ -16,11 +16,12 @@ These are not conventions. Each one exists because the alternative was measured.
      reach an ungranted one, stop and ask.
    - A grant may be scoped. **Read-only** permits list, identity, grep and
      watch, and nothing else.
-   - Grants are per-instance and never carry over to another one.
+   - Grants are per-instance and never carry over to another one. None are
+     currently recorded, and none are needed to state this: any instance you
+     did not launch is already covered.
    - Before any call needing an explicit `studio_id`, resolve it with
      `extended_list_studios`. An omitted `studio_id` is a guess whenever more
      than one Studio is attached.
-   - Current grants, with history: the block at the top of `TODO.md`.
 2. **Never print bulk data.** A ~5 MB `print` permanently wedged
    `get_console_output` for a Studio. Report measurements through
    `inspect_instance` attributes instead.

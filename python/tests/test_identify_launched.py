@@ -260,9 +260,9 @@ class TheMeshDiffIsTheFirstRoute(unittest.IsolatedAsyncioTestCase):
         """The measured 2026-10-01 defect, pinned as a default.
 
         Launching one Studio wrote join tokens into Studios the caller never
-        named, including one the user had ruled read-only. Two Studios, identical
-        names, no snapshot, no readable log: with no authorisation, nobody is
-        asked.
+        named, including one the user had not put in scope. Two Studios,
+        identical names, no snapshot, no readable log: with no authorisation,
+        nobody is asked.
         """
         rows = _rows(("a", "Mine.rbxl"), ("b", "Mine.rbxl"))
         got = await self._run(rows, None, identity=None)

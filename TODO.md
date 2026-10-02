@@ -8,7 +8,9 @@
 > user grants it - by naming the instance, or by asking for the work that
 > reaches it. A grant may be scoped **read-only**, which permits list, identity,
 > grep and watch and nothing else. Grants are per-instance and never carry over.
-> If a tool call would reach an ungranted instance, stop and ask.
+> If a tool call would reach an ungranted instance, stop and ask. A named grant
+> is not needed to state this - any instance the agent did not launch is already
+> covered.
 >
 > **REWRITTEN 2026-10-02 (user), replacing a rule keyed on the place name "Game
 > TESTING".** The old rule treated a *name* as the handle on the thing to avoid,
@@ -22,21 +24,23 @@
 > together whenever this ruling changes - a rule that exists in two places and
 > is corrected in one is a rule that lies in the other.
 >
-> **Grant carried forward, and still live: RULING 2026-09-30 (user): `rbx-re.rbxl`
-> is read-only.** No writes, no executes, no console writes, no stop, no capture
-> targeting it. Read-only tools (list, identity, grep, watch) may observe it;
-> nothing may mutate it or run code in it. Verification work uses the baseplate
-> Studio with an explicit `studio_id`, never an omitted one.
+> **No per-instance grants are recorded here.** The rule above covers the cases
+> a named grant used to: an instance the agent did not launch, that the user
+> has not put in scope, is off limits - reads included. There was one such
+> grant on record (`rbx-re.rbxl`, read-only, ruling 2026-09-30). **Dropped
+> 2026-10-02 (user)** on the grounds that the general rule already states it,
+> and a named instance beside a general rule is one more thing to fall out of
+> step. The practical effect is a tightening, not a loosening: read-only
+> observation of that instance was permitted by the grant and is now not, so
+> it falls under the rule like any other ungranted instance.
 >
-> What that ruling replaced, for the record: the Studio that reported "Game
-> TESTING" (`fa092c48`) is **gone**, surviving only as a stale null-name
-> registry row, and whether it was ever the same place as `rbx-re.rbxl` was
-> **UNVERIFIED and unresolvable from here** - every way of checking is a read of
-> that Studio, which the constraint forbids. Weak evidence that it was not the
-> same: `rbx-re.rbxl`'s console carries `CoreGui.__ClampProbe.__L` work and
-> four unrelated faults, which does not resemble the same content. That is
-> inference from a console listing, and it was **not sufficient to lift the
-> constraint on its own**.
+> For the record, on the name-keyed rule this replaced: the Studio that
+> reported "Game TESTING" (`fa092c48`) is **gone**, surviving only as a stale
+> null-name registry row, and whether it was ever the same place as whatever
+> replaced it was **UNVERIFIED and unresolvable from here** - every way of
+> checking is a read of that Studio, which the constraint forbids. That is why
+> the constraint was keyed on a name at all, and why keying on the instance
+> fixes it.
 >
 > Resolve an explicit `studio_id` with `extended_list_studios` before a call
 > that needs one: an omitted `studio_id` is a guess whenever more than one
@@ -1358,8 +1362,9 @@ the part worth keeping.
       by nothing — deleted 2026-09-30.** All one-shot live-measurement drivers
       whose outcomes are recorded in this file (each docstring asked a question
       this file answers). Deletion is also safety: they launch/stop Studios and
-      print console tokens, so re-running one now risks touching `rbx-re.rbxl`
-      (read-only ruling above) or spraying writes. `parity/` keeps the
+      print console tokens, so re-running one now fans writes across whatever
+      Studio is attached - the standing rule at the top of this file forbids
+      that. `parity/` keeps the
       re-runnable inventory (`compare_implementations.py`,
       `find_unused_python.py`); `measure_*`/`probe_progress.py` left alone as
       offline tooling. Two of the deleted files contained dead
@@ -1383,14 +1388,14 @@ the part worth keeping.
 - [x] **The standing constraint at the top of this file keyed on a name that no
       longer exists.** "Game TESTING" was `fa092c48`, now a stale null-name
       registry row. The Studio attached in its place reports **`rbx-re.rbxl`**
-      (`1631ed70`, debug id `0_186523`). **Later generalised 2026-10-02: the
-      name-keyed rule itself was replaced, per-instance, because it fired on a
-      URL slug whose name could not be confirmed - see the block at the top.**
-      **Resolved by user ruling 2026-09-30:
-      `rbx-re.rbxl` is read-only** (observe via read-only tools; never mutate,
-      execute, or stop). What can be said: its console shows
-      `CoreGui.__ClampProbe` work and four unrelated faults, which does not
-      look like the same content.
+      (`1631ed70`, debug id `0_186523`). **Resolved twice, then retired.**
+      Ruling 2026-09-30 made `rbx-re.rbxl` read-only. Ruling 2026-10-02 replaced
+      the name-keyed rule with a per-instance one - it had fired on a URL slug
+      whose name could not be confirmed - and then dropped the `rbx-re.rbxl`
+      grant as redundant with it. So no named instance is special-cased here
+      any more; see the block at the top. What can be said about the original:
+      that Studio's console showed `CoreGui.__ClampProbe` work and four
+      unrelated faults, which does not look like the same content.
 - [x] **The Studio registry grew without bound - pruned 2026-09-30.**
       `registered_total: 7` against `count: 2`, and nothing expired. Fixed at
       the write path: `record()` drops entries unseen for 30 days (every
@@ -2096,8 +2101,10 @@ them, and with console writes disallowed it refuses rather than guessing — so
 why" is indistinguishable from "nothing matched". Same failure class as the
 unreported `console_writes` found earlier today.
 
-**Defect: `launch` wrote into a Studio the user ruled read-only.** Two `RBXPID`
-join tokens landed in `rbx-re.rbxl`. The launch passed no `studio_id`, so
+**Defect: `launch` wrote into a Studio the user had not put in scope.** Two
+`RBXPID` join tokens landed in `rbx-re.rbxl` (then under a read-only ruling;
+that ruling is retired, the constraint is not). The launch passed no
+`studio_id`, so
 `_identify_launched` fanned a token to **every** attached Studio to find which
 one answered. The ruling was honoured by the agent and **violated by the tool**:
 launching one Studio mutated an unrelated one. Cross-contamination, and the
@@ -2174,9 +2181,9 @@ good fortune to put something in the viewport first.
 
 **What is still not determined, deliberately.** Whether the *mesh* would misroute
 a capture arriving with **no** `studio_id` at all. The only probe for that is an
-unaddressed capture or `execute_luau`, and with `rbx-re.rbxl` attached either
-could land on a Studio the user has ruled read-only. Not run. Every path
-available without violating that ruling either refuses (schema) or routes
+unaddressed capture or `execute_luau`, and with a second Studio attached either
+could land on an instance the user has not put in scope. Not run. Every path
+available without violating the standing rule either refuses (schema) or routes
 correctly (measured above), so the gap is narrow and stated rather than guessed.
 
 **Also unexplained, and separate:** one `extended_capture` `save_path` write to a
@@ -3300,8 +3307,9 @@ All four CI jobs are green on both platforms for the first time.
 ## Built 2026-09-30, per user rulings
 
 Four rulings, applied in order. No live Studio calls in any of it - the temp
-Studio may still be wedged from the fuzz probes, `rbx-re.rbxl` is read-only,
-and nothing here needed a Studio to prove.
+Studio may still be wedged from the fuzz probes, any Studio the agent did not
+launch is off limits under the standing rule above, and nothing here needed a
+Studio to prove.
 
 **Ruling 1 - no cap raise; descriptions answer what/when/why, the rest goes
 in a skill.** No fixed order, per-tool context. The audit asked the question
