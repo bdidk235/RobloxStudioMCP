@@ -37,6 +37,7 @@ connected?" finds it. That is the one capability a foreign type system genuinely
 adds, and it is worth having - just not at the price of a second implementation.
 """
 
+import asyncio
 import os
 import sys
 import unittest
@@ -210,14 +211,16 @@ class EveryRaisedCodeIsDeclared(unittest.TestCase):
 
 class LaunchUriIsComplete(unittest.TestCase):
     def test_carries_all_three_keys(self):
-        uri = I.build_launch_uri(1, 0)
+        # An explicit universe id keeps this offline; the derived default is
+        # covered in test_launch_uri.py with the network stubbed.
+        uri = asyncio.run(I.build_launch_uri(1, 0))
         for key in ("task", "placeId", "universeId"):
             self.assertIn("+%s:" % key, uri)
 
     def test_has_exactly_four_parts(self):
         """Measured constraint. Dropping `universeId` looks like it works - the
         process starts and attaches - but Studio comes up with no place open."""
-        self.assertEqual(len(I.build_launch_uri(1, 0).split("+")), 4)
+        self.assertEqual(len(asyncio.run(I.build_launch_uri(1, 0)).split("+")), 4)
 
 
 class RolesAreClosed(unittest.TestCase):

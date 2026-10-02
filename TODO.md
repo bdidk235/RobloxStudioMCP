@@ -3817,3 +3817,149 @@ the output quoted verbatim. GitHub's verdict came from
 read on a throwaway branch that was deleted from the remote afterwards; `main`
 was never moved. The retraction is mine and is recorded here rather than
 quietly dropped.
+## The tool list is budgeted: three drifts, one gate
+
+`AGENTS.md` states the rule and quotes **no figure**. This section is where the
+numbers live, and it is where the history lives. The gate that keeps them honest
+is `python/tests/test_docs_freshness.py`.
+
+### The asymmetry that made this possible
+
+Every enforcement threshold in this repo is **derived from the generated
+contract**. `test_parity.py` reads `total_description_cap` and
+`per_tool_description_cap` out of `parity/tools.json` rather than hardcoding
+them, so raising the cap cannot desynchronise the gate. That is deliberate, and
+`test_docs_freshness.py` now pins it - a hardcoded cap in `test_parity.py` would
+move the failure from the documentation into the gate, where it would be silent.
+
+**The enforcement was never the thing that drifted. The prose beside it was.**
+Every failure below is a hand-maintained number disagreeing with a generated one,
+and not one of them turned a gate red.
+
+### The three drifts
+
+| # | where | what it said | what was true |
+|---|---|---|---|
+| 1 | `AGENTS.md` | a total cap of **2,700** | the cap had been raised; the line survived the raise |
+| 2 | `TODO.md`, one bullet | **7 characters** of headroom | not the live figure |
+| 3 | `TODO.md`, the *adjacent* bullet | **8 characters** of headroom, "both sides" | disagreed with #2 **and** with the contract |
+
+Drifts 2 and 3 are the pair that matters. They are adjacent bullets in the same
+section, so the file was not merely stale - it was **self-contradictory**, and a
+reader had no way to tell which was current except to go and read the generated
+contract themselves, which is the one thing the prose existed to save them from.
+
+The live figures at the time of writing, from `parity/tools.json`:
+`total_description_chars` **2,897** against `total_description_cap` **3,200**,
+with `per_tool_description_cap` 450 across **16** tools - about **303**
+characters spare, roughly two tools' worth. So a contributor reading drift #2
+would have concluded the surface was welded shut, and declined to propose a tool
+that fitted comfortably.
+
+Note the pattern, because it has now happened to the **tool count** as well, in
+two other places. A generated artefact with a hand-written number next to it is
+a standing invitation for the second to rot. The fix is not vigilance.
+
+### The gate, and why it encodes no number
+
+The obvious check - assert the prose quotes the live figure - has two defects. It
+encodes the number, so it would rot the same way on the next cap change. And it
+contradicts the rule the section states, which is that no figure belongs there at
+all.
+
+So the gate asserts **the rule, not the value**: no cap-like figure may appear in
+the normative section. It contains no threshold of its own, so it cannot drift.
+It catches a four-or-five-digit figure (`2,700`, `3200`) *and* a small integer
+next to a unit word (`8 characters`, `11 spare`), because drift #2 was a
+one-digit number and a four-digit-only detector passes straight over it.
+
+That second pattern was not designed in advance. The negative control caught it:
+with only the four-digit rule, poisoning the section with the real
+"there are 7 spare" sentence left the detector silent and the control green. The
+detector was wrong, not the test - and the control is what made that visible
+rather than shipping a gate that watched nothing.
+
+`TODO.md` is **deliberately exempt**. It is a dated evidence log; recording what
+a number *was* is its job, and rewriting history to match the present would
+destroy the record that makes the drift visible. Only the normative document is
+held figure-free.
+## The universe id is a function of the place id
+
+### RETRACTED: "the real universe id fails, so never fetch it"
+
+This file, `AGENTS.md`, a code comment and a commit message all carried the
+claim that launches with a place's real universe id *"failed 3 times in 16 with
+`Error fetching latest place version`"*, and therefore that the API's value was
+the one thing not to pass. I repeated it to the user **twice**, unprompted, and
+recommended against the change they had proposed.
+
+It does not hold. Re-measured 2026-10-02:
+
+| arm | value | launches | opened on attempt 1 | errors |
+|---|---|---|---|---|
+| control | `universeId:0` | 6 | **6** | 0 |
+| treatment | `universeId:28220420` (what the API returns) | 8 | **8** | 0 |
+
+**14 launches, 14 successes, zero `Error fetching latest place version`.** The
+value I called the broken one is the value that worked every time.
+
+### What that establishes, and what it does not
+
+It does **not** prove the two values are equivalent - 14 consecutive successes
+cannot establish that, and 0 remains the honest choice for a template place,
+which genuinely has no universe context. It establishes that **the failure did
+not recur**, and that the only counter-example is a 3-of-16 nobody could
+reproduce. Plausibly transient network, a Studio version difference, or a
+condition specific to that window.
+
+**The claim is withdrawn; the measurement is not.** It is still the only recorded
+failure, and it is still unexplained. What changed is that it no longer supports
+a rule.
+
+### Why I was wrong, in a form worth keeping
+
+I asserted a mechanism from a nearby observation instead of re-running the
+measurement, and then compounded it: when the API returned `28220420` and the
+tests pinned `28220420` as the failing value, I read that as decisive *against*
+the proposal rather than as the question to test. The match was real. The
+inference from it was not, because the 3-of-16 had never been reproduced and I
+treated a historical note as a current fact.
+
+The user's own hypothesis was better than mine: that the failures were a fast
+single call rather than a property of the value. Testing it cost fourteen
+launches and answered the question in one run.
+
+### The design that replaced it
+
+`build_launch_uri(place_id, universe_id=None)`. **A place's universe is not an
+independent parameter - it is a function of the place id.** So the default is
+`None`, meaning *ask*, and `resolve_universe_id` fetches it from
+`apis.roblox.com/universes/v1/places/{place_id}/universe`.
+
+That is better than defaulting to `0`, for a reason the old comment had
+backwards. It previously said 0 must not be a default because *"a defaulted one
+is a default in disguise, and it would let a caller inherit the fetch failure by
+omission."* But the deeper problem was structural: `universe_id` was a value the
+caller had to **already know**, and what people supply by reflex is whatever
+their last place's universe was. Deriving it removes the foot-gun rather than
+managing it.
+
+Three properties the tests pin, each with a negative control:
+
+- **An explicit value never touches the network.** Otherwise a launch would
+  silently depend on connectivity and report a network failure as a bad URI.
+- **A response with no `universeId` raises; it never becomes `0`.** Coercing it
+  would mean "no universe context" - the exact substitution this derivation
+  exists to make impossible.
+- **`retries` defaults to 3**, doubling the delay, because a single fast call is
+  the failure mode worth designing against on a launch path.
+
+Both implementations changed in one pass. Python's `build_launch_uri` and
+`launch_via_uri` are now `async`; Node's take `null` for the same reason and
+accept an injectable `fetchImpl`.
+
+**Not verified:** the derivation was exercised against the real API once
+(`95206881` → `28220420`, one call, first attempt) but the *launch* it produced
+was not re-run, because that means opening Studios on someone's desktop. The 8
+launches above used the resolved value; the end-to-end path - call the API, then
+launch with what it returned - is not separately measured.

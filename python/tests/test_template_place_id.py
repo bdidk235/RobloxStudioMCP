@@ -12,6 +12,7 @@ That matters because ``universeId 0`` is required for a URI launch to fetch. So
 hand.
 """
 
+import asyncio
 import os
 import sys
 import unittest
@@ -52,10 +53,14 @@ class TemplatePlaceId(unittest.TestCase):
 
     def test_id_pairs_with_zero_to_make_a_complete_uri(self):
         """The two facts together: the template's id from its filename, and
-        universeId 0 from the launch rule."""
+        universeId 0 as the explicit 'no universe context' value.
+
+        ``universeId 0`` used to be the *default*, on the claim that the real id
+        intermittently failed. It did not reproduce, so the default is now
+        "derive it from the place" and 0 is a value you pass on purpose."""
         path = os.path.join(ARCHIVED, "Template_95206881_AutoRecovery_4_20260930_135756.rbxl")
         self.assertEqual(
-            build_launch_uri(template_place_id(path), URI_UNIVERSE_ID),
+            asyncio.run(build_launch_uri(template_place_id(path), URI_UNIVERSE_ID)),
             "roblox-studio:1+task:EditPlace+placeId:95206881+universeId:0",
         )
 

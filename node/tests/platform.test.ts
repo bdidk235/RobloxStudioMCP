@@ -22,8 +22,11 @@ import {
 } from "../src/extended/platform.js";
 import {
   URI_UNIVERSE_ID,
+  UniverseLookupError,
   buildLaunchUri,
+  resolveUniverseId,
   templatePlaceId,
+  type FetchLike,
 } from "../src/extended/instance.js";
 
 const MAC_BANNER =
@@ -197,32 +200,130 @@ describe("exe threshold", () => {
 });
 
 describe("buildLaunchUri", () => {
-  it("emits exactly four keys", () => {
+  it("emits exactly four keys", async () => {
     // Measured. A URI needs exactly four keys, and dropping `universeId` *looks*
     // like it works - the process starts and attaches - but Studio comes up with
     // no place open, which only shows when you ask it for a name.
-    const uri = buildLaunchUri(95206881, URI_UNIVERSE_ID);
+    const uri = await buildLaunchUri(95206881, URI_UNIVERSE_ID);
     expect(uri).toBe("roblox-studio:1+task:EditPlace+placeId:95206881+universeId:0");
     // Four `+`-separated keys: the scheme version, task, placeId, universeId.
     expect(uri.split("+").length).toBe(4);
     expect(uri.startsWith("roblox-studio:1+")).toBe(true);
   });
 
-  it("carries both ids, and neither is defaulted", () => {
-    // `universeId` is a required argument, not a default, because a default here
-    // would be a default in disguise.
-    expect(buildLaunchUri(1, 2)).toContain("+universeId:2");
-    expect(buildLaunchUri(1, 2)).toContain("+placeId:1");
+  it("carries both ids when one is given", async () => {
+    expect(await buildLaunchUri(1, 2)).toContain("+universeId:2");
+    expect(await buildLaunchUri(1, 2)).toContain("+placeId:1");
   });
 
-  it("uses 0 as the universe id that fetches", () => {
-    // Provenance: value 0 is measured here; the *key* being required is
-    // user-confirmed. The real universe id is not needed.
+  it("derives the universe from the place when none is given", async () => {
+    // The point of the `null` default: a caller cannot supply a universe id that
+    // disagrees with the place, because the common case never supplies one.
+    const uri = await buildLaunchUri(95206881, null, {
+      delayMs: 0,
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ universeId: 28220420 }) }),
+    });
+    expect(uri).toBe(
+      "roblox-studio:1+task:EditPlace+placeId:95206881+universeId:28220420",
+    );
+  });
+
+  it("never touches the network when a universe id is supplied", async () => {
+    // A launch path that silently depended on the network would fail offline,
+    // and would report a network failure as if it were a bad URI.
+    const boom = async (): Promise<never> => {
+      throw new Error("the network was touched despite an explicit id");
+    };
+    const uri = await buildLaunchUri(95206881, URI_UNIVERSE_ID, { fetchImpl: boom });
+    expect(uri).toContain("+universeId:0");
+  });
+
+  it("keeps 0 available as the explicit no-universe value", () => {
+    // File > New opens a place as `-placeId N -universeId 0`, and a template
+    // genuinely has no universe context, so 0 states something true.
     expect(URI_UNIVERSE_ID).toBe(0);
   });
 
-  it("truncates rather than emitting a fractional id", () => {
-    expect(buildLaunchUri(95206881.9, 0)).toContain("+placeId:95206881");
+  it("truncates rather than emitting a fractional id", async () => {
+    expect(await buildLaunchUri(95206881.9, 0)).toContain("+placeId:95206881");
+  });
+});
+
+describe("resolveUniverseId", () => {
+  const ok = (universeId: unknown): FetchLike => async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ universeId }),
+  });
+
+  it("returns the id from a single good answer", async () => {
+    expect(await resolveUniverseId(95206881, { delayMs: 0, fetchImpl: ok(28220420) }))
+      .toBe(28220420);
+  });
+
+  it("retries a transient failure and then succeeds", async () => {
+    // The reason retries default to 3: one fast call on a launch path turns a
+    // network blip into "could not open the place", and the caller then looks at
+    // the URI instead of at the network.
+    let calls = 0;
+    const flaky: FetchLike = async () => {
+      calls += 1;
+      if (calls < 3) return { ok: false, status: 503, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => ({ universeId: 28220420 }) };
+    };
+    expect(await resolveUniverseId(95206881, { delayMs: 0, fetchImpl: flaky }))
+      .toBe(28220420);
+    expect(calls).toBe(3);
+  });
+
+  it("throws after three failures, and says how many it made", async () => {
+    const dead: FetchLike = async () => ({ ok: false, status: 500, json: async () => ({}) });
+    await expect(
+      resolveUniverseId(95206881, { delayMs: 0, fetchImpl: dead }),
+    ).rejects.toThrow(UniverseLookupError);
+  });
+
+  it("never coerces a missing universeId to 0", async () => {
+    // Coercing it would silently mean "no universe context" - the exact
+    // substitution this derivation exists to make impossible.
+    let calls = 0;
+    const count: FetchLike = async () => {
+      calls += 1;
+      return { ok: true, status: 200, json: async () => ({ somethingElse: 1 }) };
+    };
+    await expect(
+      resolveUniverseId(95206881, { delayMs: 0, fetchImpl: count }),
+    ).rejects.toThrow(/no universeId/);
+    expect(calls).toBe(3);
+  });
+
+  it("defaults to three attempts", async () => {
+    // Pinned because the request was "3 retries": a silent change would weaken
+    // the launch path with nothing failing.
+    let calls = 0;
+    const count: FetchLike = async () => {
+      calls += 1;
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    await expect(
+      resolveUniverseId(95206881, { delayMs: 0, fetchImpl: count }),
+    ).rejects.toThrow();
+    expect(calls).toBe(3);
+  });
+
+  it("negative control: retries are observable", async () => {
+    // A retry test that cannot fail proves nothing. The fake is given exactly as
+    // many failures as the resolver will attempt, so if it stopped retrying the
+    // call count would drop below 3 and this would fail.
+    let calls = 0;
+    const count: FetchLike = async () => {
+      calls += 1;
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    await expect(
+      resolveUniverseId(95206881, { delayMs: 0, fetchImpl: count }),
+    ).rejects.toThrow();
+    expect(calls).toBeGreaterThan(1);
   });
 });
 

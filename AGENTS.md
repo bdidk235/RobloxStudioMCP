@@ -62,11 +62,22 @@ These are not conventions. Each one exists because the alternative was measured.
      it drives the game, not the editor. Ask, then verify the file changed.
    - **Cloud — `AssetService:SavePlaceAsync`,** and the place id is **not** a free
      variable. Two cases, both measured here, and they differ:
-     - *Template place* — the id is the template's own, read off the
-       `Template_<id>_AutoRecovery_<n>` filename by `template_place_id()`. A URI
-       launch pairs it with **universe id 0** (`URI_UNIVERSE_ID`) — the place's
-       real universe id failed 3 times in 16 with `Error fetching latest place
-       version`. **So: use universe id 0 for template places.**
+      - *Template place* — the id is the template's own, read off the
+        `Template_<id>_AutoRecovery_<n>` filename by `template_place_id()`. Pair
+        it with **universe id 0** (`URI_UNIVERSE_ID`) to say "this place, no
+        universe context" — which is what a template is, and what *File > New*
+        emits. **Or pass no universe at all**, which derives one from the place id
+        via the API: `build_launch_uri(place_id)` does that, and both forms are
+        measured to open the place.
+        - **Do not read "use universe id 0 for template places" as a rule.** An
+          earlier version of this file said exactly that, because the place's real
+          universe id was recorded as "failed 3 times in 16 with `Error fetching
+          latest place version`". Re-tested 2026-10-02, that did not reproduce:
+          **8 of 8 launches on the real id succeeded on the first attempt**, 6 of 6
+          on 0, zero errors, no retries needed. The 3-of-16 is the only
+          counter-example and could not be reproduced. **The claim is withdrawn,
+          not the measurement** — see `TODO.md`, *The universe id is a function of
+          the place id*.
      - *Unsaved local place* — there is **no place id to pass**. Studio reports
        `PlaceId: 0`, and this project's own copies are named `Baseplate-<n>.rbxl`,
        for which `template_place_id()` returns `None` rather than a fabricated one.
@@ -185,26 +196,32 @@ which adds **16** tools on top of the raw Studio MCP tools:
 
 ### The tool list is budgeted
 
-**The cap is 3,200 characters total** across all extended descriptions, 450 per
-tool, enforced by `tests/test_parity.py`. The list is paid on every call of
-every session, so adding a tool is a deliberate decision about permanent cost,
-not a free addition.
+The tool descriptions are budgeted — a per-tool cap and a total cap — and
+`tests/test_parity.py` enforces both. The list is paid on every call of every
+session, so adding a tool is a deliberate decision about permanent cost, not a
+free addition.
 
-**No usage or headroom figure is quoted here**, and that is the fix rather than
-an omission. This line carried "2,700 characters total" after the cap had been
-raised, and elsewhere in the repo "7 characters" and "8 characters" of headroom
-appear in adjacent bullets — neither matched the generated contract, which had
-moved by hundreds. That is the same drift that hit the tool count in two other
-places, twice. Read the live figures from `parity/tools.json`
-(`total_description_chars` against `total_description_cap`), which are
-generated, and let `test_parity.py` read them from the same place rather than
-hardcoding a cap of its own. New surface is funded by trimming existing
-descriptions, never by raising the cap.
+**No cap, usage or headroom figure is written here, and that is deliberate.**
+This section has carried a wrong one three times: a total that survived a cap
+raise, and two different headroom figures in *adjacent bullets* that disagreed
+with each other and with the contract. That is the same drift that hit the tool
+count in two other places, twice. Every figure belongs in one place only:
 
-**Corrected 2026-10-02.** The live contract reads 2,897 of a 3,200 cap — about
-303 characters spare, roughly two tools' worth — where the prose claimed 7. The
-prose was the only thing wrong: the test derives its cap from the contract, so
-the gate could not drift and the documentation did.
+| want | read |
+| --- | --- |
+| the live caps and usage | `parity/tools.json` - `total_description_cap`, `per_tool_description_cap`, `total_description_chars` |
+| whether a change fits | regenerate and read the diff |
+| why a figure was what it was | `TODO.md`, *The tool list is budgeted* |
+
+`test_docs_freshness.py` enforces the rule above by failing if a cap-like figure
+appears in this section. It encodes no number itself, so it cannot rot the way
+the prose did. `test_parity.py` likewise derives its caps from the contract
+rather than hardcoding them, so **the enforcement was never the thing that
+drifted** - only the documentation was.
+
+New surface is funded by trimming existing descriptions, never by raising the
+cap. The tool list is paid on every call, every session: a cap raise is a real
+cost, so it is a decision for the user, not a silent change.
 
 ## MCP Tool Inventory (current session)
 

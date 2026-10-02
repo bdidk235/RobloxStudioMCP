@@ -61,24 +61,134 @@ export const LAUNCH_WAIT = 75.0;
  */
 export const URI_UNIVERSE_ID = 0;
 
+/** Unauthenticated endpoint mapping a place to its universe. */
+export const UNIVERSE_API =
+  "https://apis.roblox.com/universes/v1/places/{placeId}/universe";
+
+/** A place's universe could not be resolved. Carries how many attempts ran. */
+export class UniverseLookupError extends Error {
+  readonly placeId: number;
+  readonly attempts: number;
+  readonly reason: string;
+
+  constructor(placeId: number, attempts: number, reason: string) {
+    super(
+      `could not resolve a universe id for place ${placeId} after ` +
+        `${attempts} attempt(s): ${reason}`,
+    );
+    this.name = "UniverseLookupError";
+    this.placeId = placeId;
+    this.attempts = attempts;
+    this.reason = reason;
+  }
+}
+
+/** Injectable for tests; defaults to the platform `fetch`. */
+export type FetchLike = (url: string) => Promise<{
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+}>;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * Build the `roblox-studio:` URI for a published place.
+ * Ask Roblox which universe a place belongs to.
  *
- * Two required arguments. `universe_id` is not defaulted: pass
- * {@link URI_UNIVERSE_ID} unless a different universe is genuinely wanted. A
- * default here would be a default in disguise, which this project rejects.
+ * Unauthenticated: `GET {UNIVERSE_API}` returns `{universeId: N}`. Measured for
+ * the baseplate template `95206881`, which returns `28220420` — a value that
+ * opens the place, 8 launches out of 8.
+ *
+ * `retries` is 3 by default because a single fast call is the failure mode
+ * worth designing against: this runs on a launch path, so a transient network
+ * blip would otherwise surface as "could not open the place" and send the caller
+ * looking at the URI rather than at the network. Each retry waits `delay`
+ * milliseconds, doubling, so three attempts span roughly 1.5s.
+ *
+ * This is deliberately **not** inlined into {@link buildLaunchUri}'s signature
+ * path for callers who want a pure builder — see that function for why the
+ * default is `null` rather than a number.
  */
-export function buildLaunchUri(placeId: number, universeId: number): string {
+export async function resolveUniverseId(
+  placeId: number,
+  opts: { retries?: number; delayMs?: number; fetchImpl?: FetchLike } = {},
+): Promise<number> {
+  const retries = Math.max(1, opts.retries ?? 3);
+  const delayMs = opts.delayMs ?? 500;
+  const doFetch: FetchLike = opts.fetchImpl ?? ((url) => fetch(url));
+  const url = UNIVERSE_API.replace("{placeId}", String(Math.trunc(placeId)));
+
+  let reason = "no attempt made";
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await doFetch(url);
+      if (!res.ok) {
+        reason = `HTTP ${res.status}`;
+      } else {
+        const payload = (await res.json()) as { universeId?: unknown };
+        // A response with no universeId must NOT become 0. Coercing it would
+        // silently mean "no universe context" — the exact substitution this
+        // derivation exists to make impossible.
+        if (payload?.universeId === undefined || payload?.universeId === null) {
+          reason = `response carried no universeId: ${JSON.stringify(payload)}`;
+        } else {
+          return Math.trunc(Number(payload.universeId));
+        }
+      }
+    } catch (err) {
+      reason = err instanceof Error ? err.message : String(err);
+    }
+    if (attempt < retries) await sleep(delayMs * 2 ** (attempt - 1));
+  }
+  throw new UniverseLookupError(Math.trunc(placeId), retries, reason);
+}
+
+/**
+ * Build the `roblox-studio:` URI for a place, deriving its universe.
+ *
+ * **A place's universe is not an independent parameter — it is a function of the
+ * place id.** So `universeId` defaults to `null`, which means *ask*, and the
+ * answer comes from {@link resolveUniverseId} rather than from the caller. That
+ * is the point of the default: a caller cannot supply a universe id that
+ * disagrees with the place, because the common case never supplies one.
+ *
+ * Pass `universeId` explicitly only when you know a different universe is wanted
+ * — notably {@link URI_UNIVERSE_ID} (0) to say "this place, no universe context",
+ * which is what a template is and what Studio's own *File > New* emits. Both
+ * values are measured to open the place: 8 of 8 on the real id, 6 of 6 on 0.
+ *
+ * **Async because the default performs I/O.** It used to be a required argument
+ * on the reasoning that a default is "a default in disguise"; that had the
+ * causality backwards, and the deeper problem was structural — an independent
+ * `universeId` is a value the caller must already know, and what people supply
+ * by reflex is whatever their last place's universe happened to be.
+ *
+ * Mirrors the Python `build_launch_uri`; see `node/src/extended/IDENTITY.md` for
+ * where the two sides are deliberately *not* equivalent.
+ */
+export async function buildLaunchUri(
+  placeId: number,
+  universeId: number | null = null,
+  opts: { retries?: number; delayMs?: number; fetchImpl?: FetchLike } = {},
+): Promise<string> {
+  const uid = universeId === null
+    ? await resolveUniverseId(placeId, opts)
+    : universeId;
   return (
     `roblox-studio:1+task:EditPlace` +
     `+placeId:${Math.trunc(placeId)}` +
-    `+universeId:${Math.trunc(universeId)}`
+    `+universeId:${Math.trunc(uid)}`
   );
 }
 
 /** Hand the URI to the registered protocol handler. */
-export function launchViaUri(placeId: number, universeId: number): void {
-  const uri = buildLaunchUri(placeId, universeId);
+export async function launchViaUri(
+  placeId: number,
+  universeId: number | null = null,
+  opts: { retries?: number; delayMs?: number; fetchImpl?: FetchLike } = {},
+): Promise<void> {
+  const uri = await buildLaunchUri(placeId, universeId, opts);
   if (isWindows()) {
     // `start "" "<uri>"` rather than execFile: a protocol URI is not an
     // executable path, and spawn() on one raises ENOENT.
