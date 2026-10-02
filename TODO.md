@@ -55,6 +55,7 @@
 - [`The tool list is budgeted: three drifts, one gate`](#the-tool-list-is-budgeted-three-drifts-one-gate)
 - [`The universe id is a function of the place id`](#the-universe-id-is-a-function-of-the-place-id)
 - [`Place save, revisited: an independent implementation (2026-10-03)`](#place-save-revisited-an-independent-implementation-2026-10-03)
+- [`Field review, 2026-10-02: what is still open`](#field-review-2026-10-02-what-is-still-open)
 > ## STANDING CONSTRAINT - do not touch
 >
 > **Touch only a Studio instance you launched yourself, or one the user has
@@ -4054,3 +4055,75 @@ project can make alone.
   not move `README.md`'s "macOS supported but unproven" line. That claim is about
   *this* codebase's macOS branch, and one tool working on macOS says nothing
   about whether ours does.
+## Field review, 2026-10-02: what is still open
+
+A full session driving the tool against a 94-script place, three live Studios,
+`execute_luau` in every datamodel. Verdict: **intuitive in its model, hostile in
+its diagnostics** - the verbs are clear and the core primitive is good, but
+failure feedback points at the wrong thing often enough that a one-line bug
+produced the same opaque error three times and cost two wrong hypotheses first.
+
+Re-checked against the code 2026-10-03. **Six of seven findings are still open.**
+The standalone report was removed; this is the durable part.
+
+| # | finding | status, checked 2026-10-03 |
+|---|---|---|
+| 1 | **P0** - script errors are rooted in Studio's plugin, so the submitted file's line is never reported. `CommandExecution:54` is the same for every call and identifies nothing the caller wrote | **open.** No line offset anywhere in `extensions.py` |
+| 2 | **P1** - `get_console_output` is an unbounded rolling buffer; data is lost silently, with nothing indicating truncation | **partly addressed.** `extended_watch_output` added with `pattern` + `max_lines`, which covers the grep half. The silent-loss half is unchanged and **cannot be fixed** - it is a relayed tool, so the 100,015-char ceiling has no marker. Documented in `rsx-transport` instead |
+| 3 | **P2** - `execute_luau` vs `execute_luau_from_file`: neither says the file is re-read every call. Measured: no caching. The reviewer spent two turns chasing a cache that does not exist | **open.** `extended_server.py:788` says nothing about caching |
+| 4 | **P3** - `execute_luau` returns `Failed to parse command code` on syntactically valid Luau, Client datamodel only, then succeeds unchanged | **open, cause never isolated.** One session's worth of observation |
+| 5 | **P3** - `studio_id` is re-minted every launch, there is no alias, and a successful launch still returns `mesh_name: null` | **true and unchanged**, but now documented in `README.md` traps and pinned by the standing rule to re-resolve each session |
+| 6 | **P4** - nothing on the surface distinguishes a user's Studio from one an agent launched, so `Play` on someone's working Studio needs a guardrail written by hand | **open.** No `owned_by` or equivalent in either tree |
+| 7 | **P4** - Roblox's own error wording passes through with nothing connecting it to consequences: which instance, which script, whether repeating | **open** |
+
+### The symptom list, which is the durable part
+
+Every one of these exists in a consumer's instructions **only** to work around
+this surface. They are a cost ledger for the findings above, and they are the
+part worth keeping now the report is gone:
+
+| guardrail | works around |
+|---|---|
+| a byte-identical error across code variants is in your code, not the tool | §1 blame inversion |
+| never print bulk data - a ~5 MB `print` wedges the channel until restart | §2 unbounded write |
+| the console arrives as one line with literal `\n` escapes | §2 formatting |
+| returns truncate at exactly 100,015 characters, silently | return cap, no marker |
+| never cache a `studio_id` across sessions | §5 |
+
+**Six rules in one consumer's instruction file, all downstream of this surface.**
+Fixing §1 and §2 would let four of them go. That ratio - guardrails bought per
+fix - is a better way to prioritise this surface than severity labels alone.
+
+### Do not regress these
+
+- **`extended_wait_for`** - the single most valuable thing in the surface. Being
+  unable to sleep inside an agent's runtime is the hardest constraint it works
+  under, and this hands back a declarative escape (`os.clock() > 8`,
+  `#Players:GetPlayers() >= 1`) *plus* structured diagnostics (`satisfied`,
+  `timed_out`, `polls`, `poll_errors`, `settled_repeats`), so a timeout says
+  why rather than just failing.
+- **Refusing to guess when ambiguous.** An omitted `studio_id` with several
+  Studios attached errors out and **names the candidates**; the same holds for
+  `list_roblox_studios resolve`. This is what keeps rule 1 cheap to obey.
+- **`manage_instance action=stop` returns the pid and how it resolved the target.**
+  Rare, and exactly the provenance you want before killing a process.
+- **Returning an arbitrary value from arbitrary Luau**, with the caveat that raw
+  tables lose array-ness. This is how engine behaviour gets measured instead of
+  inferred.
+- **The `skill` / `extended_skill` split** - engine skills behind a live Studio
+  id, transport skills behind none, ordering dependency stated.
+
+### Priority, if this surface is worked on
+
+1. **§1** - report the script line. Cheapest change, largest effect on accuracy.
+2. **§2** - a visible `dropped` count. Not available: relayed tool.
+3. **§5** - accept a stable label wherever the id is taken.
+4. **§6** - record launch provenance. Deletes a rule from every consumer's
+   instructions, and it is the one with a directly observed cost: an agent that
+   launched its own Studios could not tell them from the user's.
+5. **§3, §4** - two description and error-detail lines.
+6. **§7** - annotate Roblox errors with instance path and repeat count.
+
+**Not done, and the reason:** §2's truncation half is a property of a tool this
+project relays and cannot extend. The rest are unbuilt because they are a
+surface change nobody has asked for, not because they are hard.
