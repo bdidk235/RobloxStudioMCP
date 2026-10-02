@@ -52,7 +52,9 @@
 - [`Retired 2026-10-01: the live-Studio CI tooling, and how to bring it back`](#retired-2026-10-01-the-live-studio-ci-tooling-and-how-to-bring-it-back)
 - [`Saving a place: local vs cloud, researched 2026-10-02`](#saving-a-place-local-vs-cloud-researched-2026-10-02)
 - [`Commit signing: SSH, unattended, and one trap worth keeping`](#commit-signing-ssh-unattended-and-one-trap-worth-keeping)
-
+- [`The tool list is budgeted: three drifts, one gate`](#the-tool-list-is-budgeted-three-drifts-one-gate)
+- [`The universe id is a function of the place id`](#the-universe-id-is-a-function-of-the-place-id)
+- [`Place save, revisited: an independent implementation (2026-10-03)`](#place-save-revisited-an-independent-implementation-2026-10-03)
 > ## STANDING CONSTRAINT - do not touch
 >
 > **Touch only a Studio instance you launched yourself, or one the user has
@@ -3963,3 +3965,92 @@ accept an injectable `fetchImpl`.
 was not re-run, because that means opening Studios on someone's desktop. The 8
 launches above used the resolved value; the end-to-end path - call the API, then
 launch with what it returned - is not separately measured.
+## Place save, revisited: an independent implementation (2026-10-03)
+
+The user went back to the devforum thread behind *Add support for a place save
+API* and found `rodeo-rbx/rodeo` referenced from it. MIT, public, 20 stars.
+
+### What it is, and is not
+
+**It is not the excluded category.** It installs a Roblox Studio **plugin**, and
+for its `--context elevated` identity it uses **StudioMCP itself**. It drives the
+legitimate editor through sanctioned mechanisms. Executor tooling works by
+injecting into a running client and ignoring ownership and auth; this does
+neither. So rule 6's exclusion does not reach it, and naming it here is fine.
+
+Worth being careful about, because the name invites a snap judgement and I have
+already made one snap judgement today that turned out to be wrong.
+
+**DOCUMENTED — the local save is host-side keystroke emulation.**
+`rodeo-cli/src/studio_backend/backend.rs:376`, verbatim:
+
+    // fire Cmd+S + wait for mtime + reply with SaveResult
+
+and `rodeo-cli/src/commands/save.rs` requires a `session_guid` — *"Studio was
+not launched by rodeo (no session) — save it from Studio directly."*
+
+**DOCUMENTED — there is no plugin-side save.** `rodeo-plugin/src/library/`
+contains no `AssetService` or `StudioService` save call. So the confirmed
+mechanism is the one rule 6 already named: emulate the keystroke.
+
+### Corrected: the flakiness is in the verification, not the keystroke
+
+`AGENTS.md` rule 6 said the emulation *"is flaky"*, which put the blame on the
+mechanism. Comparing the two implementations, the keystroke is the easy part:
+
+| | naive emulation | rodeo |
+|---|---|---|
+| fires the save | yes | yes |
+| **confirms it happened** | **no** | **waits for the working file's mtime to move**, up to 60s |
+| on failure | silent | hard error — *"never a silent exit 0"* |
+| destination write | — | copies to a `.tmp` then renames, so a failed copy cannot truncate the target |
+
+That is the whole difference, and it is a large one. What makes naive emulation
+unreliable is that **nothing observes the result**, so a save that did not happen
+is indistinguishable from one that did. This is the same failure class this file
+keeps cataloguing, in a different costume: a call that reports success without
+evidence — like a silently-ignored `format: "png"`, or a URI launch that attaches
+and opens no place.
+
+The mtime discipline is already native here. `build-freshness.test.ts` gates on
+`dist/` being newer than `src/`, and `logid` compares log filename stamps against
+process creation times. The pattern was present; it was just not applied to saves.
+
+**The instruction does not change.** Still ask the user to save. This is
+source-read evidence, not measured here, and an instruction should not move on
+someone else's implementation — especially one whose whole selling point is that
+it verifies. Building it would be new work on an unverified path.
+
+**Untested by me:** I read the source; I did not run it. Its own tests are real
+integration tests (`tests/cli/operations/save.test.ts` launches a Studio, mutates
+a place, saves, then reopens the file and asserts the change survived), which is
+good evidence, but it is the author's evidence and not mine.
+
+### It independently corroborates a finding this project already had
+
+`rodeo-plugin/src/library/studio.luau:92-93`:
+
+    -- This is the stable studio identity — independent of the launch
+    -- session_guid (only owned/launched studios have one) and of
+    -- StudioMCP's flaky id.
+
+An unrelated implementation calls StudioMCP's `studio_id` **flaky** and mints its
+own per-process identity attribute to route around it. That is this project's own
+conclusion — *"`studio_id` is a transport token rather than an identity"* — reached
+from the opposite direction, by someone who had no reason to agree.
+
+Worth recording for a reason beyond the fact itself: when a finding about
+*Roblox's* surface is reproduced by a third party, it is a property of that
+surface rather than of our reading of it. That is a stronger claim than either
+project can make alone.
+
+### Not changed by any of this
+
+- **Cloud save is untouched.** `rodeo` is about local files; `SavePlaceAsync` and
+  its capability, rate limit and place-id rules stand as recorded.
+- **No dependency is being taken.** rodeo is a separate tool with its own plugin,
+  its own port, and its own lifecycle. Nothing here is being adopted.
+- **Its macOS support is evidence about rodeo**, not about this project, and does
+  not move `README.md`'s "macOS supported but unproven" line. That claim is about
+  *this* codebase's macOS branch, and one tool working on macOS says nothing
+  about whether ours does.

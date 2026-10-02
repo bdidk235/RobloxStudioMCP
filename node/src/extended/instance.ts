@@ -94,21 +94,14 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Ask Roblox which universe a place belongs to.
+ * Ask Roblox which universe a place belongs to. Unauthenticated `GET` of
+ * {@link UNIVERSE_API}, which returns `{universeId: N}`.
  *
- * Unauthenticated: `GET {UNIVERSE_API}` returns `{universeId: N}`. Measured for
- * the baseplate template `95206881`, which returns `28220420` — a value that
- * opens the place, 8 launches out of 8.
+ * Retries because a single fast call is the failure mode worth designing against
+ * on a launch path. Raises {@link UniverseLookupError}. A response with no
+ * `universeId` is a failure, never a silent `0`.
  *
- * `retries` is 3 by default because a single fast call is the failure mode
- * worth designing against: this runs on a launch path, so a transient network
- * blip would otherwise surface as "could not open the place" and send the caller
- * looking at the URI rather than at the network. Each retry waits `delay`
- * milliseconds, doubling, so three attempts span roughly 1.5s.
- *
- * This is deliberately **not** inlined into {@link buildLaunchUri}'s signature
- * path for callers who want a pure builder — see that function for why the
- * default is `null` rather than a number.
+ * Mirrors Python `resolve_universe_id`; `TODO.md` carries the reasoning.
  */
 export async function resolveUniverseId(
   placeId: number,
@@ -147,25 +140,13 @@ export async function resolveUniverseId(
 /**
  * Build the `roblox-studio:` URI for a place, deriving its universe.
  *
- * **A place's universe is not an independent parameter — it is a function of the
- * place id.** So `universeId` defaults to `null`, which means *ask*, and the
- * answer comes from {@link resolveUniverseId} rather than from the caller. That
- * is the point of the default: a caller cannot supply a universe id that
- * disagrees with the place, because the common case never supplies one.
+ * `universeId` defaults to `null`, meaning *ask* {@link resolveUniverseId}. A
+ * place's universe is a function of its place id, so deriving it beats requiring
+ * a value the caller has to already know. Pass `0` explicitly for "this place,
+ * no universe context".
  *
- * Pass `universeId` explicitly only when you know a different universe is wanted
- * — notably {@link URI_UNIVERSE_ID} (0) to say "this place, no universe context",
- * which is what a template is and what Studio's own *File > New* emits. Both
- * values are measured to open the place: 8 of 8 on the real id, 6 of 6 on 0.
- *
- * **Async because the default performs I/O.** It used to be a required argument
- * on the reasoning that a default is "a default in disguise"; that had the
- * causality backwards, and the deeper problem was structural — an independent
- * `universeId` is a value the caller must already know, and what people supply
- * by reflex is whatever their last place's universe happened to be.
- *
- * Mirrors the Python `build_launch_uri`; see `node/src/extended/IDENTITY.md` for
- * where the two sides are deliberately *not* equivalent.
+ * Async because the default performs I/O. Mirrors Python `build_launch_uri`;
+ * `TODO.md` carries the reasoning.
  */
 export async function buildLaunchUri(
   placeId: number,

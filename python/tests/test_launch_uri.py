@@ -1,16 +1,14 @@
-"""Tests for the launch URI shape, universe resolution, and the command-line parsers.
+"""The launch URI shape, universe resolution, and the command-line parsers.
 
-The URI is the smallest thing in this project that can silently do the wrong
-thing, because a failed URI launch still produces a process and still attaches
-to the mesh. These tests pin the key count, that ``universeId`` is *always*
-present, and the derivation rule: **a place's universe is a function of its
-place id**, so ``universe_id`` defaults to ``None`` meaning "ask the API" rather
-than to a number the caller must already know.
+The URI is the smallest thing here that can silently do the wrong thing: a failed
+URI launch still produces a process and still attaches to the mesh, so a process
+count is not evidence. These pin the key count, that ``universeId`` is always
+present, and that ``universe_id=None`` means *look it up* rather than *default to
+a number* - a place's universe is a function of its place id.
 
-Nothing here touches the network. ``resolve_universe_id`` is driven through an
-injected opener, and the retry behaviour is tested against a scripted sequence of
-failures - including a negative control, because a retry test that cannot fail is
-indistinguishable from one that passes.
+Nothing here touches the network; ``resolve_universe_id`` is driven through a
+patched ``urlopen``. The retry tests include a negative control, because a retry
+test that cannot fail is indistinguishable from one that passes.
 """
 
 import asyncio

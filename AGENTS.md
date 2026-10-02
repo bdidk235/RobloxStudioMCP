@@ -55,11 +55,22 @@ These are not conventions. Each one exists because the alternative was measured.
 6. **Saving a place: ask the user for local, `SavePlaceAsync` for cloud. These are
    different operations and conflating them wastes a session.**
    - **Local (`.rbxl` on disk) — there is no API. Ask the user to save.** Not a
-     preference: the feature request for a local-save API is still open, and the
-     only automation anyone has found is emulating Ctrl+S, which Roblox's own
-     community calls flaky. `user_keyboard_input` does **not** help — the docs
-     file it under *Player input simulation* and it is client-datamodel only, so
-     it drives the game, not the editor. Ask, then verify the file changed.
+     preference: the feature request for a local-save API is still open, and
+     there is no plugin-side save either — `rodeo`, which does implement one
+     end-to-end, drives it from the **host** side by firing `Cmd+S` and then
+     waiting for the working file's mtime to move. So the mechanism is confirmed
+     as keystroke emulation.
+     - **Corrected 2026-10-03: the flakiness is in the *verification*, not the
+       keystroke.** An earlier version of this line said the emulation "is flaky",
+       which put the blame in the wrong place. What makes naive emulation
+       unreliable is that **nothing confirms the save happened**. Waiting for the
+       file's mtime to change, failing loudly when it does not, and copying
+       atomically makes it dependable. **Still ask the user** — this is
+       source-read evidence, not measured here, and the instruction should not
+       move on someone else's implementation.
+     - `user_keyboard_input` does **not** help — the docs
+       file it under *Player input simulation* and it is client-datamodel only, so
+       it drives the game, not the editor. Ask, then verify the file changed.
    - **Cloud — `AssetService:SavePlaceAsync`,** and the place id is **not** a free
      variable. Two cases, both measured here, and they differ:
       - *Template place* — the id is the template's own, read off the
@@ -94,38 +105,25 @@ These are not conventions. Each one exists because the alternative was measured.
 7. **Run the gates before claiming anything works.** `pytest`, `tsc --noEmit`,
    and both suites. A gate that has not been run is not a gate.
 8. **Commits are SSH-signed. Do not pass `--no-gpg-sign`** — that instruction
-   was only ever a workaround, and the workaround outlived its cause.
-   - `commit.gpgsign` and `tag.gpgsign` are both `true`, with `gpg.format=ssh`
-     and `user.signingkey` pointing at `~/.ssh/id_ed25519_sign.pub`. A plain
-     `git commit` is therefore **already signed with no flag at all**.
-   - **The key carries no passphrase**, deliberately: that is what allows an
-     agent to commit unattended, and it removes the gpg-passphrase stall that
-     blocked a 47-file reorg in a parallel repo. The cost is real — anything
-     running as this user can now sign as them. Adding a passphrase later is
-     fine, because `ssh-agent` serves the key without the agent ever seeing it.
+   was a workaround for a key that did not exist, and outlived its cause.
+   `commit.gpgsign` and `tag.gpgsign` are both `true`, so a plain `git commit`
+   is already signed. The key carries **no passphrase**, deliberately: an
+   unattended agent cannot answer a pinentry prompt. The cost is that anything
+   running as this user can sign as them; `ssh-agent` is the fix if wanted.
    - **GitHub needs the public key under *Signing keys*, not *Authentication
-     keys*.** Those are separate lists. Measured 2026-10-02: a commit signed by
-     a key GitHub did not know came back `verified: false`, `reason:
-     unknown_key` — while `git verify-commit` still reported `Good signature`
-     locally. **The local check cannot detect this class of failure**; only
-     GitHub's own verdict on a pushed commit can.
-   - **Compare fingerprints; never eyeball the base64.** This failed here, in
-     this file's own author: the key was registered from a string copied out of
-     earlier output instead of re-read from disk, so GitHub held a key whose
-     private half had already been deleted, and the mismatch presented as
-     `unknown_key`. Re-read the file, then compare
-     `ssh-keygen -lf <key>.pub` against GitHub's fingerprint.
-   - Verify with `git verify-commit HEAD`; `%G?` is `G` for good.
-     `gpg.ssh.allowedSignersFile` points at `~/.config/git/allowed_signers`,
-     without which git errors instead of verifying.
-   - PowerShell quoting, measured the same day: `ssh-keygen -N '""'` sets a
-     passphrase of the literal two characters `""`, and every later use then
-     prompts. Generate through `cmd`, where `""` really is empty:
-     `cmd /c 'ssh-keygen -t ed25519 -N "" -f <path>'`.
-   - **Not done:** existing history is unsigned, and re-signing rewrites every
-     SHA on `main`. The full measurement, the `unknown_key` transcript and a
-     retraction of mine are in `TODO.md`, *Commit signing* - same reason as
-     rule 1: a rule corrected in one file and not the other lies in the other.
+     keys*.** Measured 2026-10-02: a commit signed by a key GitHub did not know
+     came back `verified: false, reason: unknown_key` — while `git verify-commit`
+     still reported `Good signature`. **The local check cannot detect this class
+     of failure**; only GitHub's verdict on a pushed commit can.
+   - **Compare fingerprints, never eyeball the base64.** The key was registered
+     from a string copied out of earlier output instead of re-read from disk, so
+     GitHub held a key whose private half had been deleted — and it presented as
+     `unknown_key`. `ssh-keygen -lf <key>.pub` settles it in one command.
+   - `git verify-commit HEAD`; `%G?` is `G` for good. PowerShell gotcha:
+     `ssh-keygen -N '""'` sets a passphrase of the literal two characters `""`,
+     so generate through `cmd`, where `""` really is empty.
+   - **Not done:** history is unsigned; re-signing rewrites every SHA on `main`.
+     Full transcript and a retraction of mine: `TODO.md`, *Commit signing*.
 
 ## Gates
 

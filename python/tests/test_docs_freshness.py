@@ -1,31 +1,16 @@
 """Fail when hand-written documentation contradicts the generated contract.
 
-THE PROBLEM THIS EXISTS FOR
+Every threshold here is derived from `parity/tools.json`, so the *enforcement*
+cannot drift. The prose beside it did, three times: a total cap that survived a
+raise, and two different headroom figures in adjacent bullets that disagreed with
+each other and with the contract. Nothing failed, because nothing checked.
 
-Every gate in this repo derives its thresholds from `parity/tools.json`, so the
-*enforcement* cannot drift. The *documentation beside it* did, three times:
+So these assert the *rule* rather than the value - no cap-like figure in the
+normative section, and an index that matches the file it indexes. Neither test
+encodes a number, so neither can rot the way the prose did.
 
-  - the total cap in `AGENTS.md` survived a raise and kept naming the old value
-  - `TODO.md` quoted "7 characters" of headroom
-  - `TODO.md` quoted "8 characters" of headroom, **in the adjacent bullet**
-
-So a contributor reading `AGENTS.md` believed there was no room for another tool
-when there was room for roughly two. Nothing failed, because nothing checked.
-
-WHY IT ENCODES NO NUMBER
-
-The obvious gate - assert the prose quotes the live figure - has a flaw: it
-encodes the number, and would rot the same way on the next cap change. Worse, it
-contradicts the rule the section itself states, which is that no figure should be
-written there at all.
-
-So this asserts the *rule*, not the value: a cap-like figure must not appear in
-the normative section. That test cannot drift, because it contains no threshold
-of its own. The figures live in one place, `parity/tools.json`, which is
-generated.
-
-`TODO.md` is deliberately exempt. It is a dated evidence log; recording what a
-number *was* is its job, and rewriting history there would destroy the record.
+`TODO.md` is deliberately exempt: it is a dated evidence log, and recording what
+a number *was* is its job.
 """
 
 import re
@@ -127,14 +112,41 @@ class TestDocsFreshness(unittest.TestCase):
         self.assertEqual(HEADROOM_LIKE.findall(self.section), [])
 
 
-class TestParityTestReadsItsOwnCap(unittest.TestCase):
-    """The enforcement side of the same asymmetry, pinned.
+class TestEvidenceLogIsIndexed(unittest.TestCase):
+    """`TODO.md` has a generated contents list, and it must match the file.
 
-    `test_parity.py` must take its thresholds from the contract rather than
-    hardcoding them. That is why the drift above was documentation-only, and it
-    is worth a test because a hardcoded cap would move the failure into the gate,
-    where it is silent.
+    It went stale the moment a section was added, which is the drift the index
+    was built to stop. Three sections were missing for one commit.
     """
+
+    def setUp(self):
+        self.lines = (REPO / "TODO.md").read_text(encoding="utf-8").splitlines()
+        start = self.lines.index("## Contents")
+        end = next(i for i in range(start + 1, len(self.lines))
+                   if self.lines[i].startswith("> ##"))
+        self.entries = [l for l in self.lines[start:end] if l.startswith("- [`")]
+        # Compare the extracted title, not the line. Getting this wrong is how
+        # the index came to list itself: the filter read `## Contents` and
+        # compared it to `Contents`.
+        self.sections = [l[3:].strip() for l in self.lines
+                         if l.startswith("## ") and not l.startswith("### ")
+                         and l[3:].strip() != "Contents"]
+
+    def test_one_entry_per_section(self):
+        self.assertEqual(len(self.entries), len(self.sections),
+                         f"{len(self.entries)} entries vs {len(self.sections)} "
+                         "sections - regenerate the contents list")
+
+    def test_the_index_does_not_list_itself(self):
+        self.assertNotIn("Contents",
+                         [re.match(r"- \[`(.+?)`\]", e).group(1) for e in self.entries])
+
+    def test_every_entry_names_a_real_section(self):
+        named = [re.match(r"- \[`(.+?)`\]", e).group(1) for e in self.entries]
+        self.assertEqual(set(named), set(self.sections))
+
+
+class TestParityTestReadsItsOwnCap(unittest.TestCase):
 
     def test_parity_test_does_not_hardcode_a_cap(self):
         src = (REPO / "python" / "tests" / "test_parity.py").read_text(

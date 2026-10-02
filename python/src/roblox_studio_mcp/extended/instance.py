@@ -360,47 +360,21 @@ def find_studio_exe() -> str:
 # is what is built here.
 
 
-#: The complete, minimal, measured-working URI shape::
+#: The minimal, measured-working URI shape is four keys::
 #:
 #:     roblox-studio:1+task:EditPlace+placeId:<id>+universeId:0
 #:
-#: Four keys. ``universeId`` **must be present**; 0 is the default value to send,
-#: but it is no longer the only value that works - see the provenance below.
+#: Provenance, kept apart on purpose. **Key count of four** is measured here: an
+#: earlier eleven-key prefix failed with an ``Error`` dialog and never attached.
+#: The *key* being required is the user's own experience, not a measurement from
+#: this project.
 #:
-#: Provenance, deliberately not merged:
-#:
-#: * **Key count of four - measured here.** An earlier eleven-key prefix
-#:   (``launchtime``, ``avatar``, ``browsertrackerid``, locales, ``channel``,
-#:   ``browser``, ``distributorType``, ``baseUrl``, ``launchmode``) failed with
-#:   an ``Error`` dialog and never attached. Do not restore them.
-#: * **The key being required - the user's own experience**, not a measurement
-#:   from this project. An earlier comment here credited a local attempt that
-#:   left the Studio with ``name: null``; that attempt is retired as the
-#:   evidence, because a key that can be dropped fails in a way a process count
-#:   cannot see, and a half-remembered local failure is not a reason to keep a
-#:   flag on faith.
-#: * **Both values now measured working - 2026-10-02.** An earlier version of
-#:   this comment said the place's real universe id "failed 3 times in 16 with
-#:   ``Error fetching latest place version``", and that claim was repeated as
-#:   settled in `TODO.md` and in a commit message. It did not reproduce.
-#:   Re-tested with the real id for the same place (``28220420``, what the API
-#:   returns for ``95206881``): **8 of 8 launches opened on the first attempt**,
-#:   zero errors, zero retries. Control on ``universeId:0`` was 6 of 6. 14
-#:   launches, 14 successes, both values.
-#:
-#:   **What that does and does not establish.** It does not show the two values
-#:   are equivalent - 14 consecutive successes cannot prove that - but it does
-#:   show the failure did not recur, and the only counter-example is a 3-of-16
-#:   that could not be reproduced. Plausibly transient network, a Studio version
-#:   difference, or a period-specific condition. **The prior claim is withdrawn,
-#:   not the measurement**, and the honest summary is that both values open the
-#:   place.
-#:
-#:   0 stays the **default** for a reason that is no longer "the other value
-#:   fails". It needs no network call, it is what Studio's own *File > New*
-#:   emits, and for a template place 0 states something true - there is no
-#:   universe context to express. Pass the real id via
-#:   :func:`resolve_universe_id` when a universe is genuinely wanted.
+#: **Both universe values are measured to open the place** — ``0`` six times out
+#: of six, the place's real id eight out of eight, zero errors. An earlier claim
+#: here and in ``TODO.md`` that the real id "failed 3 times in 16" did not
+#: reproduce and is withdrawn. ``0`` remains the explicit value for "this place,
+#: no universe context" — what a template is, and what *File > New* emits.
+#: Evidence: ``TODO.md``, *The universe id is a function of the place id*.
 URI_UNIVERSE_ID = 0
 
 #: Public endpoint mapping a place to its universe. Unauthenticated.
@@ -410,32 +384,17 @@ UNIVERSE_API = "https://apis.roblox.com/universes/v1/places/{place_id}/universe"
 async def build_launch_uri(place_id: int, universe_id: Optional[int] = None) -> str:
     """Build the ``roblox-studio:`` URI for a place, deriving its universe.
 
-    **A place's universe is not an independent parameter - it is a function of
-    the place id.** So ``universe_id`` defaults to ``None``, which means *ask*,
-    and the answer comes from :func:`resolve_universe_id` rather than from the
-    caller. That is the point of the default: a caller cannot supply a universe id
-    that disagrees with the place, because the common case never supplies one.
+    ``universe_id`` defaults to ``None``, meaning *ask* :func:`resolve_universe_id`.
+    A place's universe is a function of its place id, so deriving it beats
+    requiring a value the caller has to already know. Pass ``0`` explicitly for
+    "this place, no universe context".
 
-    Pass ``universe_id`` explicitly only when you know a different universe is
-    wanted - notably :data:`URI_UNIVERSE_ID` (0) to say "this place, no universe
-    context", which is what a template is and what Studio's own *File > New*
-    emits. Both values are measured to open the place; see
-    :data:`URI_UNIVERSE_ID` for the numbers and for what the 14-launch
-    comparison does and does not establish.
-
-    **Async because the default performs I/O.** It used to be a required
-    argument, on the reasoning that a default is "a default in disguise" and would
-    let a caller inherit a failure by omission. That had the causality backwards,
-    and the deeper problem was structural: an independent ``universe_id`` argument
-    is a value the caller must already know, and what people supply by reflex is
-    whatever their last place's universe happened to be.
+    Async because the default performs I/O; a failed lookup raises
+    :class:`UniverseLookupError` rather than producing a malformed URI.
 
     Launch it with :func:`launch_via_uri`, or ``os.startfile`` directly. Note
     ``subprocess.Popen`` cannot dispatch a protocol handler and raises
     ``FileNotFoundError``.
-
-    Raises :class:`UniverseLookupError` when the default is used and the lookup
-    fails, so a network problem is never reported as a malformed URI.
     """
     if universe_id is None:
         universe_id = await resolve_universe_id(place_id)
@@ -469,24 +428,16 @@ async def resolve_universe_id(
     retries: int = 3,
     delay: float = 0.5,
 ) -> int:
-    """Ask Roblox which universe a place belongs to.
+    """Ask Roblox which universe a place belongs to. Unauthenticated ``GET`` of
+    :data:`UNIVERSE_API`, which returns ``{"universeId": N}``.
 
-    Unauthenticated: ``GET {UNIVERSE_API}`` returns ``{"universeId": N}``.
-    Measured for the baseplate template ``95206881``, which returns ``28220420``
-    - a value that opens the place, 8 launches out of 8.
+    Retries because a single fast call is the failure mode worth designing
+    against on a launch path: a network blip would otherwise surface as "could
+    not open the place" and send the caller looking at the URI. Each retry waits
+    ``delay``, doubling.
 
-    ``retries`` is 3 by default because a single fast call is the failure mode
-    worth designing against: this runs on a launch path, where a transient
-    network blip would otherwise surface as "could not open the place" and send
-    the caller looking at the URI rather than at the network. Each retry waits
-    ``delay`` seconds, doubling, so three attempts span roughly 1.5s.
-
-    **This is deliberately not the default for** :func:`build_launch_uri`. That
-    builder stays pure and offline; the default of 0 needs no network and is
-    measured to work. Call this when a caller genuinely wants the real universe.
-
-    Raises :class:`UniverseLookupError` when every attempt fails, including when
-    the endpoint answers but carries no ``universeId``.
+    Raises :class:`UniverseLookupError`, which carries ``attempts``. A response
+    with no ``universeId`` is a failure, never a silent ``0``.
     """
     import json
     import urllib.error
