@@ -56,6 +56,35 @@ export type {
 } from "./extensions.js";
 export { extendedScriptGrep } from "./grep.js";
 export type { GrepHit, GrepOptions } from "./grep.js";
+
+// Instance control and the place/universe derivation.
+//
+// These were unreachable from the published package: `package.json`'s `exports`
+// map allows only `.` and `./extended`, so a deep import of
+// `dist/extended/instance.js` is blocked, and nothing here re-exported it. That
+// made `resolveUniverseId` - the function you need to reach any universe-scoped
+// Roblox API - impossible to call without depending on the repo's source tree.
+// It is exported here for that reason, not for tidiness.
+export {
+  ROLE_EDIT,
+  ROLE_SERVER,
+  ROLE_CLIENT,
+  ROLE_UNKNOWN,
+  LAUNCH_WAIT,
+  URI_UNIVERSE_ID,
+  UNIVERSE_API,
+  UniverseLookupError,
+  resolveUniverseId,
+  buildLaunchUri,
+  launchViaUri,
+  templatePlaceId,
+  listPlaceCandidates,
+  findBaseplate,
+  listStudioProcesses,
+  stopProcess,
+  studioExeSafe,
+} from "./instance.js";
+export type { FetchLike, PlaceCandidate, StudioProcess, StopResult } from "./instance.js";
 export {
   REGISTRY_VERSION,
   STALE_AFTER_SECONDS,

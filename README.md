@@ -217,6 +217,52 @@ Each example exists on both sides with the same behavior:
 
 (Python commands run from `python/`; TypeScript commands run from `node/`.)
 
+## Place ids and universe ids
+
+A **place** is one file. A **universe** is the published game that owns a set of
+places. Almost every Roblox web API is keyed on the **universe**, not the place —
+badges, game passes, Marketplace, `/v1/games` — so if you are doing anything with
+a published game's services, the universe id is the id you need, and it is not
+something you can read off the `.rbxl` file.
+
+The useful property is the direction of the mapping:
+
+```
+place id  ──►  universe id      one place belongs to exactly one universe
+universe id ──►  place id      one universe owns MANY places - not invertible
+```
+
+So **derive the universe from the place, never the reverse.** Both clients do
+this, and neither asks you for a universe id you would have to look up anyway:
+
+```python
+from roblox_studio_mcp.extended.instance import resolve_universe_id
+
+universe = await resolve_universe_id(95206881)   # -> 28220420
+```
+
+```ts
+import { resolveUniverseId } from "roblox-studio-mcp/extended";
+
+const universe = await resolveUniverseId(95206881);   // -> 28220420
+```
+
+The endpoint is `GET https://apis.roblox.com/universes/v1/places/{place_id}/universe`
+and needs no authentication. It retries **3 times** by default, with a doubling
+delay: it sits on a launch path, where one fast call turns a network blip into
+"could not open the place" and sends you looking at the URI instead of at the
+network.
+
+`build_launch_uri(place_id)` uses the same lookup, so a URI launch carries the
+right universe without you passing one. Pass `universe_id` explicitly only when
+you want a *different* one — and **`0` is a real value, not a stand-in**: it
+means "this place, no universe context", which is what a template is and what
+Studio's own *File > New* emits.
+
+Both values are measured to open the place (8 of 8 launches on the real id, 6 of
+6 on `0`; see `TODO.md` for a claim about this that was withdrawn after being
+re-tested).
+
 ## Naming map
 
 | Concept | Python | TypeScript |

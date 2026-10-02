@@ -129,8 +129,19 @@ and on failure, `State: OpenPlaceFailure` with `ErrorType` and an
 never reached a terminal state because sign-in never completed - those spin on
 `status:403 Forbidden` and never log `Login got Standalone DM ready`.
 
+**That 2-in-25 did not reproduce.** Re-measured 2026-10-02 over 14 fresh
+launches - 6 on `universeId:0`, 8 on the place's real universe id - every one
+opened on the first attempt with zero errors. The distribution above is still the
+best record of the failure's *shape*, but not its *rate*: read it as "this
+happens sometimes", not "roughly 1 launch in 12". In particular, **do not
+attribute it to the universe id** - an earlier note here did, and that inference
+was withdrawn. See `rsx-targeting`.
+
 So a URI launch with no place name is usually a **failed fetch of the published
-place**. Retrying the transport cannot fix that; the launch has to be retried.
+place**. Retrying the transport cannot fix that; the launch has to be retried -
+which is why `resolve_universe_id` retries three times by default, and why
+`extended_manage_instance action=launch` is the layer that should retry rather
+than the transport.
 
 **Two traps, both of which gave wrong answers before being caught:**
 

@@ -327,6 +327,37 @@ describe("resolveUniverseId", () => {
   });
 });
 
+describe("the published entry point reaches the universe helpers", () => {
+  // Regression guard for a real gap: `package.json`'s `exports` map allows only
+  // "." and "./extended", so a deep import of `dist/extended/instance.js` is
+  // blocked. `resolveUniverseId` was therefore uncallable from the published
+  // package, which matters because it is the entry point to every
+  // universe-scoped Roblox API. This asserts the subpath exports it, so the
+  // surface cannot quietly disappear again.
+  it("exports resolveUniverseId from roblox-studio-mcp/extended", async () => {
+    const ext = await import("../src/extended/index.js");
+    expect(typeof ext.resolveUniverseId).toBe("function");
+    expect(typeof ext.buildLaunchUri).toBe("function");
+    expect(ext.URI_UNIVERSE_ID).toBe(0);
+  });
+
+  it("works through the re-export, not just the source module", async () => {
+    const { buildLaunchUri, resolveUniverseId } = await import(
+      "../src/extended/index.js"
+    );
+    const uri = await buildLaunchUri(95206881, null, {
+      delayMs: 0,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ universeId: 28220420 }),
+      }),
+    });
+    expect(uri).toContain("+universeId:28220420");
+    expect(typeof resolveUniverseId).toBe("function");
+  });
+});
+
 describe("templatePlaceId", () => {
   it("reads the id out of a template autosave name", () => {
     // Measured: the baseplate this machine discovers is

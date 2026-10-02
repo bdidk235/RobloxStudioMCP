@@ -132,6 +132,14 @@ name usually failed with "Error fetching latest place version" - a fetch of the
 published place, not a mesh fault, so retrying the transport cannot fix it. The
 state machine has two parsing traps; see `rsx-discovery`.
 
+**Do not attribute that failure to the universe id.** It was once recorded as
+caused by passing a place's real universe id rather than `0`, and that was
+re-tested on 2026-10-02 and did not reproduce: 8 launches on the real id, 6 on
+`0`, 14 successes, zero errors. `build_launch_uri` now derives the universe from
+the place id by default. So treat the failure as **unexplained but rare** - the
+advice that matters is unchanged, and it is the advice above: retry the launch,
+not the transport.
+
 The token join is now a last resort, and it is exact rather than approximate: it
 used to match the log's filename stamp against each process's `CreationDate`
 within 5s, which misfires precisely when two launches are seconds apart. It reads
