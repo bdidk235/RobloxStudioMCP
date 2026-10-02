@@ -6,7 +6,7 @@ tree. This one is the opposite — **I drove the tool for a full session and rec
 what actually went wrong.** Every finding below was reproduced at least twice unless
 marked otherwise, and none of them are visible from reading the source.
 
-**Test surface.** `stress-city` (a real 94-script Roblox game), one 19.6 MB `.rbxlx`,
+**Test surface.** a third party's 94-script Roblox game, one 19.6 MB `.rbxlx`,
 three live Studios, `execute_luau` in all three datamodels, `extended_wait_for`,
 `get_console_output`, `extended_manage_instance`, `extended_execute_luau_from_file`.
 

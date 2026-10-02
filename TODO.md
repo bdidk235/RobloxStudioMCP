@@ -1,4 +1,57 @@
-# TODO - port + lossless capture
+# Evidence log: measured versus inferred
+
+> **What this file is.** A measurement journal, not a task list. It records what
+> was *measured* on a running Studio, what is merely *inferred* from
+> documentation, what was tried and **retracted**, and what is still open — with
+> that separation kept deliberately, because the project's whole claim is that
+> its design decisions are backed by evidence rather than plausibility.
+>
+> Several plausible-sounding entries here are already marked retracted. The
+> reason is usually a measurement that contradicted the obvious reading. **Read
+> the retraction before acting on an entry**, and check whether a later section
+> supersedes it.
+>
+> **Provenance tags.** `MEASURED` / `DOCUMENTED` were executed or read here and
+> the output is quoted. `INFERRED` is reasoning from a source that was not read.
+> `UNVERIFIED` is a known unknown. Where a section supersedes an earlier one it
+> says so at the top; where an entry is retracted it says so in place.
+>
+> **The constraint below is a standing rule**, mirrored in `AGENTS.md` rule 1.
+> It is reproduced here because it governs any live-Studio work. Both files must
+> be updated together — a rule corrected in one and not the other is a rule that
+> lies in the other.
+
+## Contents
+
+- [`macOS: researched and implemented, still never executed`](#macos-researched-and-implemented-still-never-executed)
+- [`Identity: the console write is last, and counted`](#identity-the-console-write-is-last-and-counted)
+- [`Which skill answers a question — read this before writing a probe`](#which-skill-answers-a-question-read-this-before-writing-a-probe)
+- [`Built and proven`](#built-and-proven)
+- [`Settled by measurement`](#settled-by-measurement)
+- [`Corrections to earlier notes in this file`](#corrections-to-earlier-notes-in-this-file)
+- [`Studio identity: what is actually possible`](#studio-identity-what-is-actually-possible)
+- [`Type checking: mypy vs pyright, measured`](#type-checking-mypy-vs-pyright-measured)
+- [`Closed sets: what a foreign type system would and would not buy`](#closed-sets-what-a-foreign-type-system-would-and-would-not-buy)
+- [`Launch routes fail at different layers (measured by renaming the exe)`](#launch-routes-fail-at-different-layers-measured-by-renaming-the-exe)
+- [``extended_wait_for`'s probe only works in Edit mode`](#extended_wait_fors-probe-only-works-in-edit-mode)
+- [`Bugs found and fixed`](#bugs-found-and-fixed)
+- [`The performance finding that matters most`](#the-performance-finding-that-matters-most)
+- [`Session operations`](#session-operations)
+- [`The lock file, and a claim retracted`](#the-lock-file-and-a-claim-retracted)
+- [`A fourth launch route`](#a-fourth-launch-route)
+- [`macOS`](#macos)
+- [`Remaining`](#remaining)
+- [`Dropped from the build list`](#dropped-from-the-build-list)
+- [`Rejected`](#rejected)
+- [`Housekeeping`](#housekeeping)
+- [`To do (recorded 2026-09-30, not yet built)`](#to-do-recorded-2026-09-30-not-yet-built)
+- [`Skill review pass, 2026-10-01 — 8 parallel reviewers, one per skill`](#skill-review-pass-2026-10-01-8-parallel-reviewers-one-per-skill)
+- [`Built 2026-09-30, per user rulings`](#built-2026-09-30-per-user-rulings)
+- [`Budget raised to 3,200, and `manage_instance` taught its returns (2026-10-01)`](#budget-raised-to-3200-and-manage_instance-taught-its-returns-2026-10-01)
+- [`Review pass 2026-09-30 (two findings, both fixed with tests)`](#review-pass-2026-09-30-two-findings-both-fixed-with-tests)
+- [`Retired 2026-10-01: the live-Studio CI tooling, and how to bring it back`](#retired-2026-10-01-the-live-studio-ci-tooling-and-how-to-bring-it-back)
+- [`Saving a place: local vs cloud, researched 2026-10-02`](#saving-a-place-local-vs-cloud-researched-2026-10-02)
+- [`Commit signing: SSH, unattended, and one trap worth keeping`](#commit-signing-ssh-unattended-and-one-trap-worth-keeping)
 
 > ## STANDING CONSTRAINT - do not touch
 >
@@ -2122,6 +2175,12 @@ Measured the guard live with three Studios attached:
 | `{capture_id, studio_id: A}` | succeeds |
 | `{capture_id, studio_id: B}` | succeeds |
 
+> **SUPERSEDED 2026-10-02 — read the SETTLED section immediately below first.**
+> Everything in this block describes the state of knowledge *before* the
+> two-coloured-Places experiment settled it. It is kept because the reasoning is
+> still the reasoning, but **do not act on the bullets below**: the one that
+> mattered has already been answered, in both directions.
+
 **The schema requires `studio_id`.** So the hazard the whole of
 `rsx-capture.md` documents — *"takes an **optional** studio_id, and lands on
 whichever one the mesh returns first"* — **is not reproducible on the current
@@ -2131,10 +2190,17 @@ build.** Three consequences, stated carefully:
   validation runs before dispatch, so a call without `studio_id` never reaches
   it over MCP. It still earns its place on the path that does no validation at
   all, and this repo's own `client.py` does none — so that path is real.
-- `rsx-capture.md`'s wrong-Studio section describes behaviour that cannot be
-  reproduced against the current schema.
-- **The originating request's P0.1 premise needs re-checking** before anyone
-  treats the guard as the fix for a live hazard.
+- ~~`rsx-capture.md`'s wrong-Studio section describes behaviour that cannot be
+  reproduced against the current schema.~~ **RESOLVED — this bullet was itself
+  stale, and acting on it would have reverted a correct fix.** `rsx-capture.md`
+  was corrected in the same commit (`940c7b8`) that wrote this line; the skill
+  now carries the settled finding in its own words ("Settled 2026-10-01: this is
+  not a live hazard, and the evidence is now stronger than the warning used to
+  be"). The line and its correction were written together and never
+  reconciled. **The skill is right and this note was wrong.**
+- ~~**The originating request's P0.1 premise needs re-checking**~~ — **done**,
+  by the experiment below. The premise was a misreport: two identical empty
+  baseplates made "wrong place" and "nothing set up yet" the same picture.
 
 ### SETTLED 2026-10-01: the "captured the wrong Studio" failure was **misreported**
 

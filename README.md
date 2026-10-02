@@ -13,6 +13,10 @@ Both speak the same protocol to the same Studio MCP proxy, expose the same
 tool catalog, and ship the same extended helpers. Pick whichever language fits
 your tooling.
 
+Working *on* this rather than using it? Start at
+[CONTRIBUTING.md](CONTRIBUTING.md) — setup, the gates, and the conventions
+worth knowing before you touch either tree.
+
 Parity is enforced for the **tool surface** and is best-effort underneath. A
 generated contract (`parity/tools.json`, asserted by both test suites) fails
 either side if a tool, parameter, or required argument drifts, so neither can
@@ -82,9 +86,11 @@ python/                 Python client (original)
 docs/                   docs site, opens from disk (docs/index.html)
 parity/                 generated tool contract (tools.json) both suites assert
 skills/                 rsx-* transport skills, served by extended_skill
+CONTRIBUTING.md         how to work on this: setup, gates, conventions, evidence rules
 AGENTS.md               standing rules, gates, and where the two sides differ
 TODO.md                 measured-vs-inferred evidence log, with provenance
 README.md               this overview
+LICENSE                 MIT
 ```
 
 ## Prerequisites
@@ -92,11 +98,26 @@ README.md               this overview
 Roblox Studio open with a place loaded, and its MCP server enabled
 (Assistant → Manage MCP Servers → *Enable Studio as MCP server*).
 
-Windows and macOS are both supported. The macOS paths, process enumeration and
-log discovery are written from Roblox's own documentation and exercised against
-macOS-shaped fixtures, but the macOS branch has **never been run against a real
-macOS Studio** — see `TODO.md` for which parts are measured and which are
-inferred.
+**Windows is the tested platform; macOS is supported but unproven; Linux is not
+supported.** This matters more than a version range, so it is worth being
+specific about why.
+
+- **Windows** — everything here was measured against it.
+- **macOS** — the paths, process enumeration and log discovery are written from
+  Roblox's own documentation and exercised against macOS-shaped fixtures, but
+  **the macOS branch has never been run against a real macOS Studio**. See
+  `TODO.md` for which parts are measured and which are inferred, and treat a
+  macOS bug report as a genuine unknown rather than a regression.
+- **Linux** — **not supported, and not a missing feature.** There is no POSIX
+  branch: the transport launches the proxy as
+  `cmd.exe /c … %LOCALAPPDATA%\Roblox\mcp.bat` on Windows and as the
+  `StudioMCP` binary inside the app bundle on macOS, and process enumeration
+  and log discovery are built on `os.startfile`, `EnumWindows` and
+  `%LOCALAPPDATA%`. A Linux port means writing that layer, not fixing a bug.
+
+Every platform difference is confined to one file per implementation —
+`python/src/roblox_studio_mcp/extended/platform.py` and
+`node/src/extended/platform.ts` — so a port has a known shape and a known size.
 
 ## The extended tools (for agents)
 
@@ -169,7 +190,6 @@ mode this project exists to prevent. The rest live in the `rsx-*` skills.
   without one. It is JPEG, so it smears 1px edges; `extended_capture` is
   lossless PNG, names the `studio_id` it captured, and can save to a file
   instead of returning megabytes.
-  entirely — a correctly sized, correctly formatted image of the wrong Studio.
 - **`return` loses array-ness.** A Luau array comes back as an object with
   `"1"`, `"2"` keys, and `Vector2` as the single string `"3, 4"`. To return
   data, serialise at the source (`HttpService:JSONEncode`) — that survives
@@ -226,18 +246,55 @@ python -m roblox_studio_mcp.extended_server
 
 ## Development
 
+Two independent toolchains, each with its own working directory and its own
+gate. Run Python commands from `python/`, Node commands from `node/`.
+
 ```powershell
 # Node (run from node/)
 pnpm install
-pnpm typecheck
+pnpm typecheck      # NOT `tsc --noEmit` — see below
 pnpm test
 
 # Python (run from python/)
 pip install -e .[dev]
-python -m unittest discover -s tests
-# or, with the dev extras installed:
 python -m pytest tests
 ```
+
+`python -m unittest discover -s tests` also runs, but `pytest` is the gate:
+several tests are `pytest-asyncio` and `unittest discover` does not drive them,
+so it can report green while skipping the async coverage.
+
+### Use `pnpm typecheck`, never bare `tsc --noEmit`
+
+The `typecheck` script is `tsc --noEmit -p tsconfig.check.json` — a stricter
+project that **includes the tests**. Bare `tsc --noEmit` checks less and passes
+files the real gate rejects. That is not theoretical: measured 2026-10-01, the
+difference shipped to `main` and turned CI red.
+
+### The gates, and what each one catches
+
+| Gate | Command | Catches |
+| --- | --- | --- |
+| Python behaviour | `python -m pytest tests -q` | behaviour |
+| Python types | `pytest tests/test_typecheck.py` (runs pyright) | wrong key, `None` deref, wrong argument type |
+| Node types | `pnpm typecheck` | the same, at compile time |
+| Node behaviour | `npx vitest run` | behaviour |
+| **Parity** | `pytest tests/test_parity.py` + `npx vitest run tests/parity.test.ts` | either side's tool surface drifting |
+| Build freshness | included in vitest | `dist/` older than `src/` |
+
+**Parity is the one that is easy to miss**, because nothing fails until a tool
+is added or renamed. `parity/tools.json` is generated from the Python server by
+`parity/build_contract.py` and asserted by *both* suites, so a tool, a parameter
+or a required argument cannot change on one side unnoticed. Regenerate it
+after a deliberate surface change — `python parity/build_contract.py` — and the
+diff *is* the parity report.
+
+Two of these gates catch **silent** wrong answers, which is the failure class
+this project keeps paying for. Unknown parameters are refused before dispatch
+on both sides, because a silently-ignored argument produces a plausible wrong
+answer *and reports success* — three separate incidents here did exactly that.
+And `tests/test_closed_sets.py` checks exhaustiveness: every error code is
+producible and every advertised `action` is handled rather than merely accepted.
 
 ## Docs site
 
@@ -255,6 +312,13 @@ macOS — no Studio needed anywhere (fakes throughout):
 | `python-test` | `pytest` in `python/` |
 | `node-test` | typecheck + vitest + build in `node/` |
 
+`.github/workflows/studio-bundle-probe.yml` is separate and manual
+(`workflow_dispatch` only). It is read-only, takes no secret, and finishes in
+about twenty seconds: it checks the macOS Studio bundle for the properties that
+would decide whether macOS CI is even possible. It is retained because the
+conclusions it supports are recorded as *inferred*, and this keeps them
+reproducible rather than remembered.
+
 The live-Studio integration suites (`test_integration_studio`,
 `integration.test.ts`) run locally with `ROBLOX_STUDIO_MCP_INTEGRATION=1`
 once Studio is open with a place loaded and the MCP server enabled
@@ -269,4 +333,4 @@ python -m pytest tests/test_integration_studio.py
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

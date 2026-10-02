@@ -185,16 +185,26 @@ which adds **16** tools on top of the raw Studio MCP tools:
 
 ### The tool list is budgeted
 
-2,700 characters total across all extended descriptions, 450 per tool, enforced
-by `tests/test_parity.py`. The list is paid on every call of every session, so
-adding a tool is a deliberate decision about permanent cost, not a free addition.
+**The cap is 3,200 characters total** across all extended descriptions, 450 per
+tool, enforced by `tests/test_parity.py`. The list is paid on every call of
+every session, so adding a tool is a deliberate decision about permanent cost,
+not a free addition.
 
-**No headroom figure is quoted here**, and that is the fix rather than an
-omission. This line carried "7 characters on the Node side" while the real
-figure was different on each side — the same drift that hit the tool count in
-two other places, twice. Read the live number from `parity/tools.json`
-(`total_description_chars`), which is generated. New surface is funded by
-trimming existing descriptions, never by raising the cap.
+**No usage or headroom figure is quoted here**, and that is the fix rather than
+an omission. This line carried "2,700 characters total" after the cap had been
+raised, and elsewhere in the repo "7 characters" and "8 characters" of headroom
+appear in adjacent bullets — neither matched the generated contract, which had
+moved by hundreds. That is the same drift that hit the tool count in two other
+places, twice. Read the live figures from `parity/tools.json`
+(`total_description_chars` against `total_description_cap`), which are
+generated, and let `test_parity.py` read them from the same place rather than
+hardcoding a cap of its own. New surface is funded by trimming existing
+descriptions, never by raising the cap.
+
+**Corrected 2026-10-02.** The live contract reads 2,897 of a 3,200 cap — about
+303 characters spare, roughly two tools' worth — where the prose claimed 7. The
+prose was the only thing wrong: the test derives its cap from the contract, so
+the gate could not drift and the documentation did.
 
 ## MCP Tool Inventory (current session)
 
