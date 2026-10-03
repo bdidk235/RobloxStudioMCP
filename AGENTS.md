@@ -139,12 +139,12 @@ backstop and the `TypedDict` on `WatchResult` is the actual fix.
 ## Where the two implementations differ
 
 They are at parity on the tool surface (16 tools, identical schemas, enforced).
-They are **not** equivalent underneath: Python resolves `studio_id → PID` by
-reading the Studio's own log, and that chain (`logid.ts`'s Python original) is not
-ported to Node. So on a machine with two Studios open on one place — the normal
-case — Node's `action=stop` **refuses** rather than guessing, because it is
-irreversible. Read `node/src/extended/IDENTITY.md` before relying on Node for
-instance control.
+They are **not** equivalent underneath: `logid.ts` is ported and tested, but
+`instance.ts` does not import it, so Node derives role and place from the
+command line rather than from the Studio's own log. On a machine with two
+Studios open on one place — the normal case — Node's `action=stop` **refuses**
+rather than guessing, because it is irreversible. Read
+`node/src/extended/IDENTITY.md` before relying on Node for instance control.
 
 ## MCP Server
 

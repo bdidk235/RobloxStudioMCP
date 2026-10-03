@@ -75,9 +75,10 @@ from the contract so the gate cannot.
 
 Parity is closed at the **tool surface** on both sides. Behaviour underneath is
 best-effort, and one difference is deliberate and documented in
-`node/src/extended/IDENTITY.md`: Python resolves `studio_id → PID` by reading the
-Studio's own log, Node does not, so Node's `action=stop` **refuses** rather than
-guessing across two Studios it cannot tell apart.
+`node/src/extended/IDENTITY.md`: `logid.ts` is ported and tested, but
+`instance.ts` does not import it, so Node derives role and place from the
+command line rather than the Studio's own log, and its `action=stop` **refuses**
+rather than guessing across two Studios it cannot tell apart.
 
 Two rules follow, and they are not the same rule:
 

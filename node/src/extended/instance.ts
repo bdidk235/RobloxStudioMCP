@@ -3,13 +3,11 @@
  * `python/src/roblox_studio_mcp/extended/instance.py` (39 KB).
  *
  * **This is a partial port, and the gap is deliberate rather than an oversight.**
- * See `IDENTITY.md` beside this file. In short: Python resolves
- * `studio_id -> PID` by reading the PID out of that Studio's own log file
- * (`logid.py`, 33 KB - the most subtle code in the project, with a 256 KB prefix
- * read, a filename-stamp ordering rule and a session-GUID fallback). That chain
- * is **not** ported yet. Node's `action=list` therefore identifies by process
- * enumeration plus a time window, which is weaker: with two Studios open on the
- * same place it cannot say which is which.
+ * See `IDENTITY.md` beside this file. In short: `logid.ts` **is** ported and
+ * tested, but this file does not import it, so role and place come from the
+ * command line (`processRows`) rather than from the Studio's own log. With two
+ * Studios open on the same place that cannot say which is which, and
+ * `stopProcess` takes a PID this file cannot derive.
  *
  * What *is* ported is everything that does not depend on logid, and the launch
  * URI, whose shape is measured and load-bearing:
@@ -17,8 +15,9 @@
  * - The URI needs **exactly four keys**, and **both** ids. Dropping `universeId`
  *   looks like it works - the process starts and attaches - but Studio comes up
  *   with no place open, which only shows when you ask it for a name.
- * - `universeId:0` is the value that fetches. The real universe id is not
- *   required; 0 is what File > New sends.
+ * - `universeId:0` is accepted as an explicit value, but it is **not** a rule
+ *   that it is required: `resolveUniverseId` derives the real one from the
+ *   place id, and both forms were measured to open the place.
  * - The URI launch is dispatched to the registered protocol handler, never via
  *   `execFile`, which raises `FileNotFoundError` on a URI because a URI is not
  *   an executable path.

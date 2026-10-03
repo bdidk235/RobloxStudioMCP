@@ -952,9 +952,9 @@ function manageInstanceActions(): string[] {
  * Map a `studio_id` to a pid.
  *
  * The mesh row carries only `id` and `name`, so this joins on the name. With two
- * Studios open on one place both report `Place1` and the join is ambiguous -
- * Python resolves that with the log-based chain, which is not ported yet. The
- * ambiguity is reported rather than guessed.
+ * Studios open on one place both report `Place1` and the join is ambiguous.
+ * Python resolves that with the log-based chain in `logid.ts`, which is ported
+ * but not yet wired in here. The ambiguity is reported rather than guessed.
  */
 async function resolvePid(client: MCPClient, studioId: string): Promise<number> {
   const raw = await (client as unknown as {
@@ -977,8 +977,8 @@ async function resolvePid(client: MCPClient, studioId: string): Promise<number> 
   }
   throw new Error(
     `ambiguous: ${live.length} attached Studio processes are open, and the log-based ` +
-      `identity chain that would tell them apart is not ported to Node yet. ` +
-      `Use the Python server for action=stop on a multi-Studio machine.`,
+      `identity chain in logid.ts that would tell them apart is not wired into ` +
+      `instance.ts yet. Use the Python server for action=stop on a multi-Studio machine.`,
   );
 }
 

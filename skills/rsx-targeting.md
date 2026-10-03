@@ -52,9 +52,9 @@ not available in Edit mode".
 Peer role in the other implementation is the same axis, not a superset. The
 genuine gap is not per-client indexing, it is **identity**: the mesh row carries
 only `id` and `name`, so the peer needs a second record to turn a `studio_id`
-into a PID. Python reads that Studio's own log file; `logid.py` (33 KB) is
-**not ported**, so the peer resolves role and place from the command line and
-with two Studios on one place **cannot say which is which** - which is why its
+into a PID. `logid.ts` **is** ported and tested, but `instance.ts` does not
+import it, so the peer resolves role and place from the command line and with
+two Studios on one place **cannot say which is which** - which is why its
 `action=stop` refuses rather than terminating the wrong process. Read
 `node/src/extended/IDENTITY.md` before relying on it for instance control.
 

@@ -4,10 +4,10 @@
  *
  * Scoped deliberately: this carries what `extended_manage_instance` needs -
  * process enumeration, mesh attachment, termination, and the path helpers. It is
- * not yet a full port. The log-based identity chain (`logid.py`, 33 KB and the
- * most subtle code in the project) is **not** here, which is the one remaining
- * behavioural difference between the two servers. See `IDENTITY.md` in this
- * directory before relying on Node to resolve `studio_id` to a PID.
+ * not yet a full port. `logid.ts` **is** here and is tested, but `instance.ts`
+ * does not use it: role and place come from the command line, which is the one
+ * remaining behavioural difference between the two servers. See `IDENTITY.md`
+ * in this directory before relying on Node to resolve `studio_id` to a PID.
  *
  * Ported with the same Windows/macOS split and the same care, because the
  * mistakes worth avoiding here are all "it silently found nothing":
