@@ -54,6 +54,13 @@ _LINE_PREFIX_RE = re.compile(r"^\s*\d+\s*→")
 
 # Heuristic substrings indicating script_read failed because the script is missing
 # (vs. a connection/permission failure that must not be masked as "missing").
+#
+# Every entry must be a phrase that only appears in a *lookup* failure. Bare
+# "nil" and "unknown" used to be here and were measured misclassifying **5 of 7**
+# unrelated Studio errors as "missing" - including "attempt to index nil", which
+# is the single most common Luau error there is. Under `create_if_missing` that
+# turns a bug in the caller's own script into a silently created blank one,
+# reported "created", which is worse than the failure it replaced.
 _MISSING_HINTS = (
     "not found",
     "not exist",
@@ -62,9 +69,7 @@ _MISSING_HINTS = (
     "couldn't find",
     "does not exist",
     "doesn't exist",
-    "missing",
-    "unknown",
-    "nil",
+    "is missing",
 )
 
 _MAX_CHUNKED_RETRIES = 5

@@ -1,5 +1,11 @@
 # Evidence log: measured versus inferred
 
+> **Do not read this file whole.** It is ~242 KB, about 60k tokens — enough to
+> displace the work you were doing. Use the [contents](#contents) below and read
+> only the section you need; `extended_script_grep` on a single section is the
+> intended route. If you were told to consult this file, you were pointed at a
+> subject, not at a document.
+>
 > **What this file is.** A measurement journal, not a task list. It records what
 > was *measured* on a running Studio, what is merely *inferred* from
 > documentation, what was tried and **retracted**, and what is still open — with
