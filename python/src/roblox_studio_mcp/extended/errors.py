@@ -213,7 +213,12 @@ class ToolError(Exception):
 
     def __init__(self, code: str, message: str, **data: Any) -> None:
         if code not in ALL_CODES:
-            raise AssertionError(f"unknown error code {code!r}")
+            # Report the message as well: a bare "unknown error code" leaves the
+            # caller knowing only that something broke. The `INTERNAL_ERROR`
+            # capture case lost "the capture succeeded, the write failed" here.
+            raise AssertionError(
+                f"unknown error code {code!r}; the message was: {message}"
+            )
         super().__init__(message)
         self.code = code
         self.message = message

@@ -129,8 +129,8 @@ These are not conventions. Each one exists because the alternative was measured.
 
 | | command | what it catches |
 |---|---|---|
-| Python tests | `python -m pytest tests -q` | behaviour |
-| Python types | `pytest tests/test_typecheck.py` (runs pyright) | wrong key, `None` deref, wrong argument type |
+| Python tests | `python -m pytest tests -q` | behaviour. **Already includes the type gate** — `test_typecheck.py` runs pyright as a subprocess and is collected by this command. Running it separately is a second, redundant pass. |
+| Python types | covered above | wrong key, `None` deref, wrong argument type |
 | Node types | `pnpm --dir node typecheck` | the same, at compile time. **Use this, not bare `tsc --noEmit`** — the script is `tsc --noEmit -p tsconfig.check.json`, a stricter project that includes the tests. Measured 2026-10-01: the bare invocation passed a file the checked one rejected, and the difference shipped to `main` and turned CI red. |
 | Node tests | `npx vitest run` | behaviour |
 | Build freshness | included in vitest | `dist/` older than `src/` |

@@ -198,6 +198,35 @@ class EveryRaisedCodeIsDeclared(unittest.TestCase):
             % (offenders,),
         )
 
+    def test_an_unknown_code_still_reports_the_message(self):
+        """The guard must refuse the code without swallowing the error.
+
+        The message is the part a caller can act on, so it has to survive.
+        """
+        with self.assertRaises(AssertionError) as caught:
+            E.ToolError("NOT_A_CODE", "the pixels are fine, the write failed")
+        self.assertIn("NOT_A_CODE", str(caught.exception))
+        self.assertIn(
+            "the pixels are fine, the write failed",
+            str(caught.exception),
+            "the guard discarded the message; the caller learns only that "
+            "something was wrong",
+        )
+
+    def test_the_guard_still_fires_on_an_unknown_code(self):
+        """Negative control: the guard must still fire.
+
+        Without this, deleting the validation would pass the test above.
+        """
+        with self.assertRaises(AssertionError):
+            E.ToolError("NOT_A_CODE", "x")
+
+    def test_a_declared_code_is_unaffected(self):
+        for code in sorted(E.ALL_CODES):
+            err = E.ToolError(code, f"message for {code}")
+            self.assertEqual(err.code, code)
+            self.assertEqual(err.message, f"message for {code}")
+
     def test_the_scan_actually_finds_raise_sites(self):
         """A scan that matches nothing passes vacuously and looks like coverage.
 

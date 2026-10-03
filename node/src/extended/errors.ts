@@ -121,7 +121,12 @@ export class ToolError extends Error {
   constructor(code: string, message: string, data: Record<string, unknown> = {}) {
     super(message);
     if (!ALL_CODES.has(code)) {
-      throw new Error(`unknown error code ${JSON.stringify(code)}`);
+      // Report the message as well: a bare "unknown error code" leaves the
+      // caller knowing only that something broke. The `INTERNAL_ERROR`
+      // capture case lost "the capture succeeded, the write failed" here.
+      throw new Error(
+        `unknown error code ${JSON.stringify(code)}; the message was: ${message}`,
+      );
     }
     this.name = "ToolError";
     this.code = code;

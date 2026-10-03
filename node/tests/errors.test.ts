@@ -53,7 +53,26 @@ describe("ToolError", () => {
 
   it("rejects a code outside the vocabulary", () => {
     // A typo'd code would otherwise ship and never match a caller's switch.
+    // This is also the negative control for the test below: deleting the
+    // validation to stop it swallowing messages would fail here.
     expect(() => new ToolError("NOT_A_CODE", "x")).toThrow(/unknown error code/);
+  });
+
+  it("reports the message when the code is outside the vocabulary", () => {
+    // The guard must refuse the code without discarding the error: the
+    // message is the part a caller can act on, so it has to survive.
+    expect(() => new ToolError("NOT_A_CODE", "the pixels are fine, the write failed"))
+      .toThrow(/the pixels are fine, the write failed/);
+    expect(() => new ToolError("NOT_A_CODE", "the pixels are fine, the write failed"))
+      .toThrow(/NOT_A_CODE/);
+  });
+
+  it("leaves a declared code untouched", () => {
+    for (const code of ALL_CODES) {
+      const err = new ToolError(code, `message for ${code}`);
+      expect(err.code).toBe(code);
+      expect(err.message).toBe(`message for ${code}`);
+    }
   });
 
   it("survives instanceof after subclassing", () => {
