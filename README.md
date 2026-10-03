@@ -17,12 +17,17 @@ Working *on* this rather than using it? Start at
 [CONTRIBUTING.md](CONTRIBUTING.md) — setup, the gates, and the conventions
 worth knowing before you touch either tree.
 
+**Calling it from your own code?** See
+[Using it from your own code](#using-it-from-your-own-code) — six runnable
+examples, one per language, and the two mistakes that catch everyone.
+
 Parity is enforced for the **tool surface** and is best-effort underneath. A
 generated contract (`parity/tools.json`, asserted by both test suites) fails
 either side if a tool, parameter, or required argument drifts, so neither can
-change its surface unnoticed. Behaviour is not provably equal: Python resolves
-`studio_id → PID` by parsing the Studio's own log and Node does not, so Node's
-instance-stop **refuses** rather than guessing — see
+change its surface unnoticed. Behaviour is not provably equal: the log-parsing
+identity chain (`logid.ts`) is ported to Node and tested, but `instance.ts` does
+not import it, so Node derives Studio role and place from the command line and
+its instance-stop **refuses** rather than guess between two Studios — see
 `node/src/extended/IDENTITY.md`. Both suites cover the same ground without
 needing Studio.
 
@@ -124,26 +129,87 @@ extended/
 
 `node/src/extended/` mirrors that surface in TypeScript.
 
-### Using it from Python
+## Using it from your own code
 
-Every extended tool is also callable directly:
+Everything the MCP exposes is callable directly from Python or TypeScript — no
+MCP client, no subprocess, no JSON on a pipe. **Start from a runnable example
+rather than a snippet** — they are the same code with the error handling already
+in place.
+
+All of them need Roblox Studio open with a place loaded and its MCP server
+enabled; see [Prerequisites](#prerequisites).
+
+### Run an example
+
+```powershell
+cd python
+python -m examples.list_tools          # every tool the server exposes
+```
+
+```powershell
+cd node
+npx tsx examples/list_tools.ts         # the same example in TypeScript
+```
+
+| example | shows |
+|---|---|
+| `list_tools` | listing every tool and its required arguments |
+| `run_luau` | running a Luau snippet in Studio and printing the result |
+| `write_script` | writing a script, through a wrapper over `multi_edit` |
+| `singleton_usage` | one shared connection to one Studio, tools disabled |
+| `wait_for_studio` | waiting for a Studio to appear over MCP, then exiting |
+| `walk_jump` | starting play mode, driving the character, then leaving |
+
+Two take arguments:
+
+```powershell
+python -m examples.write_script game.ServerScriptService.MyScript --create
+python -m examples.wait_for_studio 600
+```
+
+`list_tools` and `singleton_usage` are the safe first two — the other four drive
+or read the open place. Each language guide lists the same scripts with their
+arguments: [`python/README.md`](python/README.md#examples),
+[`node/README.md`](node/README.md#examples).
+
+### Or write your own
 
 ```python
 import asyncio
-from roblox_studio_mcp.extended import RobloxStudio, write_script
+from roblox_studio_mcp import RobloxStudio
 
 async def main():
     async with await RobloxStudio.connect() as studio:
-        status = await write_script(
-            studio,
-            "game.ServerScriptService.MyScript",
-            "print('hello')",
-            create_if_missing=True,
-        )
-        # status is "created", "wrote", or "unchanged"
+        result = await studio.execute_luau("return 1 + 1")
+        print(result.text())
 
 asyncio.run(main())
 ```
+
+Two things worth knowing before you build on it:
+
+- **`connect()` needs `await`.** It is `async with await RobloxStudio.connect()`,
+  not `async with RobloxStudio.connect()` — the connect is itself a round trip.
+  This is the most common mistake, and the error names it.
+- **One Studio means no `studio_id`.** With a single Studio attached the id is
+  resolved on every call. With two or more, `connect(studio_id=...)` is required
+  and omitting it raises `AMBIGUOUS_STUDIO` rather than picking one — a silently
+  chosen Studio is how a probe ends up reading the wrong place.
+
+The extended helpers are importable from `roblox_studio_mcp.extended`:
+
+```python
+from roblox_studio_mcp.extended import write_script
+
+status = await write_script(
+    studio, "game.ServerScriptService.MyScript", "print('hello')",
+    create_if_missing=True,
+)
+# status is "created", "wrote", or "unchanged"
+```
+
+Each extended tool maps to one function there, and the tool descriptions name
+which.
 
 ## Prerequisites
 
