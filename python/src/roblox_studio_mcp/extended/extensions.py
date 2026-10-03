@@ -15,11 +15,18 @@ Usage (direct Python):
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, TypedDict
 
 from .writer import _GAME_TREE_PREFIX, _strip_line_prefixes, _pick_bracket_level, _lua_long_bracket
 from .updater import UpdateResult
-from .errors import INVALID_ARGUMENT, ToolError, describe
+from .errors import (
+    CAPABILITY_DENIED,
+    INVALID_ARGUMENT,
+    SIZE_LIMIT,
+    ToolError,
+    describe,
+)
 from ..roblox import RobloxStudio
 from ..types import CallToolResult
 
@@ -28,6 +35,116 @@ _SCRIPT_CLASSES = frozenset({"Script", "LocalScript", "ModuleScript"})
 
 #: Default per-source truncation for script_search_and_read (0 = full source).
 DEFAULT_MAX_CHARS_PER_SOURCE = 2000
+
+
+# --------------------------------------------------------------------------- #
+# Path confinement, shared by every tool that reads a caller-named file.
+#
+# These tools run at the caller's full user privilege and take a path straight
+# from the model. Without a root, any user-readable file is readable -- so the
+# root is the working directory, which still refuses `..` traversal and symlinks
+# that point out while leaving the tool useful on a file outside any fixed tree.
+#
+# `resolve()` rather than `os.path.abspath` is the load-bearing choice: resolve
+# follows symlinks to their real target, abspath only collapses `..`. A symlink
+# inside the root pointing at ~/.ssh/id_rsa passes an abspath check untouched.
+# That is the whole bug this replaces.
+# --------------------------------------------------------------------------- #
+
+#: Read a file named by the caller. Default root is the working directory.
+#:
+#: Sized from :data:`MEASURED_MAX_FILE_BYTES` below, with ~15% headroom --
+#: generous enough not to break a real call, tight enough that a runaway read
+#: fails instead of emptying memory.
+MAX_FILE_BYTES = 16 * 1024 * 1024
+
+#: The largest legitimate file measured on the machine that chose the cap above.
+#:
+#: Deliberately a separate constant rather than a literal inside the test that
+#: checks the cap clears it. With the number in the test, anyone tightening
+#: :data:`MAX_FILE_BYTES` could lower the literal in the same commit and satisfy
+#: the check -- the test could not fail, because the fact it asserted was
+#: editable from the same place as the thing it constrained. Here the two live
+#: side by side and one edit cannot move both.
+#:
+#: Measured 2026-10-04 over 18,508 ``.luau``/``.lua``/``.rbxm``/``.rbxmx`` files
+#: under this repo and its parent: the largest is 13,917,476 bytes
+#: (``DataModelPatch.rbxm``, shipped with Studio), and the largest a caller would
+#: realistically send is a 12,220,210-byte ``.luau``. Both are real inputs, so
+#: the cap must clear them.
+MEASURED_MAX_FILE_BYTES = 13_917_476
+
+
+def _confined(file_path: str, *, allow_outside: bool = False) -> Path:
+    """Resolve ``file_path`` and refuse anything outside the working directory.
+
+    Args:
+        file_path: The caller-supplied path. Not trusted.
+        allow_outside: Explicit opt-out. Default is confined; the escape hatch
+            exists so a deliberate whole-filesystem read is a choice rather than
+            a workaround, not so confinement can be skipped by accident.
+
+    Returns:
+        The resolved absolute path, guaranteed inside the root unless
+        ``allow_outside`` was passed.
+
+    Raises:
+        ToolError: ``CAPABILITY_DENIED`` when the resolved path is outside the
+            root, or when it does not exist. Deliberately the same code for
+            both: a caller learns the path is not usable, not whether it exists
+            outside the root, which would make this an existence oracle.
+    """
+    root = Path.cwd().resolve()
+    try:
+        resolved = Path(file_path).expanduser().resolve()
+    except (OSError, RuntimeError) as exc:
+        # RuntimeError: a symlink loop resolves forever otherwise.
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"file_path could not be resolved: {exc}. "
+            f"Check for a symlink loop or an unreadable parent directory.",
+        ) from exc
+
+    if allow_outside:
+        return resolved
+
+    if not resolved.is_relative_to(root):
+        raise ToolError(
+            CAPABILITY_DENIED,
+            f"file_path is outside the working directory. {describe(file_path)} "
+            f"resolves to {describe(str(resolved))}, which is outside "
+            f"{describe(str(root))}. Pass a path inside the working directory, or "
+            f"set allow_outside=true if you really mean to read it.",
+            path=str(resolved),
+            root=str(root),
+        )
+
+    if resolved.exists() and not resolved.is_file():
+        # Only once the path is known to exist, so a *missing* file still falls
+        # through to the caller's existence check as INVALID_ARGUMENT. Confinement
+        # answers "where may this point", not "is there anything there".
+        raise ToolError(
+            CAPABILITY_DENIED,
+            f"file_path is inside the working directory but is not a file: "
+            f"{describe(str(resolved))}. These tools read files; directories and "
+            f"special files are refused.",
+            path=str(resolved),
+        )
+
+    if not resolved.exists():
+        return resolved
+
+    size = resolved.stat().st_size
+    if size > MAX_FILE_BYTES:
+        raise ToolError(
+            SIZE_LIMIT,
+            f"file is {size:,} bytes, over the {MAX_FILE_BYTES:,}-byte limit for "
+            f"this tool. Split it, or narrow the path to part of it.",
+            size=size,
+            limit=MAX_FILE_BYTES,
+        )
+
+    return resolved
 
 
 async def _read_one_script(
@@ -136,8 +253,14 @@ async def insert_asset_from_file(
     asset_name: Optional[str] = None,
     parent_path: str = "game.Workspace",
     className: str = "Script",
+    allow_outside: bool = False,
 ) -> Dict[str, Any]:
     """Insert a local file into the game tree.
+
+    ``file_path`` is confined to the current working directory. A path outside it
+    -- by ``..`` or through a symlink pointing out -- is refused with
+    ``CAPABILITY_DENIED`` unless ``allow_outside`` is set. Files over
+    ``MAX_FILE_BYTES`` are refused with ``SIZE_LIMIT``.
 
     Args:
         file_type: One of "script" (luau/lua), "model" (rbxm/rbxmx), or
@@ -145,12 +268,20 @@ async def insert_asset_from_file(
         asset_name: Name to give the inserted instance (defaults to file basename).
         parent_path: Container path in the DataModel (e.g. game.ReplicatedStorage).
         className: Roblox class for script files (Script, LocalScript, ModuleScript).
+        allow_outside: Read a path outside the working directory. Off by default.
 
     Returns:
         Dict with "status" and relevant fields.
     """
     import os
     import re
+
+    # Rebind rather than keep a second name: every later read in this function
+    # uses `file_path`, and there is deliberately no `resolved` local left to
+    # disagree with it. The value is the confined one, so `isfile`, `basename`,
+    # `open` and the `store_image` call all see the same absolute path with no
+    # second expansion anywhere.
+    file_path = str(_confined(file_path, allow_outside=allow_outside))
 
     if not os.path.isfile(file_path):
         # INVALID_ARGUMENT, deliberately not NOT_FOUND and deliberately not a
@@ -513,6 +644,7 @@ async def execute_luau_from_file(
     file_path: str,
     datamodel_type: str = "Edit",
     encoding: str = "utf-8",
+    allow_outside: bool = False,
 ) -> CallToolResult:
     """Execute Luau source read from a local file.
 
@@ -520,24 +652,36 @@ async def execute_luau_from_file(
     ``.luau``/``.lua`` file on disk instead of an inline string — useful for
     long scripts kept under version control or generated by other tools.
 
+    ``file_path`` is confined to the current working directory. A path outside it
+    -- by ``..`` or through a symlink pointing out -- is refused with
+    ``CAPABILITY_DENIED`` unless ``allow_outside`` is set. Files over
+    ``MAX_FILE_BYTES`` are refused with ``SIZE_LIMIT``.
+
     Args:
         studio: A connected :class:`RobloxStudio` (use the singleton).
-        file_path: Local file to read. ``~`` is expanded.
+        file_path: Local file to read, inside the working directory. ``~`` is
+            expanded first, then the result must land back inside the root --
+            expanding ``~`` alone is not an escape hatch.
         datamodel_type: DataModel to run in (``"Edit"``, ``"Client"``,
             ``"Server"``).
         encoding: File encoding (default UTF-8).
+        allow_outside: Read a path outside the working directory. Off by default.
 
     Raises:
-        ToolError: ``INVALID_ARGUMENT`` if ``file_path`` does not exist, or
-            names an empty file. Both are the caller's argument rather than a
-            DataModel miss, so neither is ``NOT_FOUND``.
+        ToolError: ``CAPABILITY_DENIED`` if ``file_path`` resolves outside the
+            working directory or is not a regular file; ``SIZE_LIMIT`` if it is
+            over ``MAX_FILE_BYTES``; ``INVALID_ARGUMENT`` if it does not exist
+            inside the root, or names an empty file. The latter are the caller's
+            argument rather than a DataModel miss, so neither is ``NOT_FOUND``.
 
     Returns:
         The execution result from Studio.
     """
     import os
 
-    resolved = os.path.abspath(os.path.expanduser(file_path))
+    # Confine first, then check existence -- so a path outside the root is
+    # refused as outside rather than probed for existence.
+    resolved = str(_confined(file_path, allow_outside=allow_outside))
     if not os.path.isfile(resolved):
         # INVALID_ARGUMENT rather than NOT_FOUND: see the same decision in
         # `insert_asset_from_file`. The DataModel was never consulted here.

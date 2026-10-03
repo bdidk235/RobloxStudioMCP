@@ -589,6 +589,7 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
             result = await insert_asset_from_file(
                 studio,
                 file_path=path,
+                allow_outside=True,
                 file_type="model",
                 asset_name="TestModel",
                 parent_path="game.Workspace",
@@ -620,6 +621,7 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
             result = await insert_asset_from_file(
                 studio,
                 file_path=path,
+                allow_outside=True,
                 file_type="model",
                 asset_name="BadModel",
                 parent_path="game.Workspace",
@@ -640,6 +642,7 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
             result = await insert_asset_from_file(
                 studio,
                 file_path=path,
+                allow_outside=True,
                 file_type="txt",  # unsupported
                 asset_name="ShouldFail",
                 parent_path="game.Workspace",
@@ -759,7 +762,7 @@ class TestInsertValidation(unittest.IsolatedAsyncioTestCase):
         # DataModel was never consulted, so "re-list the DataModel" is not the
         # recovery. See the comment at the raise site.
         with self.assertRaises(ToolError) as caught:
-            await ext_mod.insert_asset_from_file(studio, "/nonexistent/xyz.lua")
+            await ext_mod.insert_asset_from_file(studio, "/nonexistent/xyz.lua", allow_outside=True)
         self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
 
     async def test_bad_parent_raises(self):
@@ -769,7 +772,7 @@ class TestInsertValidation(unittest.IsolatedAsyncioTestCase):
             path = f.name
         try:
             with self.assertRaises(ToolError) as caught:
-                await ext_mod.insert_asset_from_file(studio, path, parent_path="/tmp")
+                await ext_mod.insert_asset_from_file(studio, path, parent_path="/tmp", allow_outside=True)
             self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
         finally:
             os.unlink(path)
@@ -783,7 +786,7 @@ class TestExecuteFromFile(unittest.IsolatedAsyncioTestCase):
             path = f.name
         try:
             with self.assertRaises(ToolError) as caught:
-                await ext_mod.execute_luau_from_file(studio, path)
+                await ext_mod.execute_luau_from_file(studio, path, allow_outside=True)
             self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
         finally:
             os.unlink(path)
@@ -803,7 +806,7 @@ class TestExecuteFromFile(unittest.IsolatedAsyncioTestCase):
                 return _text_result("ok")
 
             studio.execute_luau = fake_execute
-            await ext_mod.execute_luau_from_file(studio, path)
+            await ext_mod.execute_luau_from_file(studio, path, allow_outside=True)
             self.assertEqual(captured["code"], "return 1\n")
         finally:
             os.unlink(path)
@@ -830,7 +833,7 @@ class TestInsertCrlf(unittest.IsolatedAsyncioTestCase):
                 wmod, "write_script", side_effect=fake_write
             ):
                 await ext_mod.insert_asset_from_file(
-                    studio, path, parent_path="game.Workspace"
+                    studio, path, parent_path="game.Workspace", allow_outside=True
                 )
             self.assertNotIn("\r", captured["content"])
             self.assertIn("print(1)\nprint(2)", captured["content"])

@@ -158,7 +158,13 @@ SITES = {
     "update: bad edit shape": lambda: up.update_script(
         FakeStudio({"game.S.A": "hi"}), "game.S.A", [42]
     ),
-    "insert: missing file": lambda: ext.insert_asset_from_file(FakeStudio(), r"C:\nope.luau"),
+    # `allow_outside=True` so this site tests the *missing file* fault rather
+    # than tripping confinement first -- the path is on C:\, outside the root, so
+    # without it the site would raise CAPABILITY_DENIED and assert the wrong
+    # thing. Confinement has its own file, test_path_confinement.py.
+    "insert: missing file": lambda: ext.insert_asset_from_file(
+        FakeStudio(), r"C:\nope.luau", allow_outside=True
+    ),
     "insert: bad parent": lambda: _insert_bad_parent(),
     "capture: rgba length mismatch": lambda: cap.encode_png(4, 4, bytes(10)),
     "capture: short header": lambda: cap._parse_header("only\ttwo\tfields"),
@@ -228,7 +234,9 @@ def _insert_bad_parent():
     if not os.path.exists(path):
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("print(1)")
-    return ext.insert_asset_from_file(FakeStudio(), path, parent_path="/tmp")
+    return ext.insert_asset_from_file(
+           FakeStudio(), path, parent_path="/tmp", allow_outside=True
+       )
 
 
 def setUpModule():

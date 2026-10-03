@@ -473,11 +473,22 @@ _EXTENDED_TOOLS.extend(
         ),
         Tool(
             name="extended_insert_asset_from_file",
-            description="Insert a local script, model, or image file into the game tree.",
+            description=(
+                "Insert a local script, model, or image file into the game tree. "
+                "Path is confined to the working directory unless allow_outside."
+            ),
             input_schema={
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "Local file path."},
+                    "file_path": {
+                        "type": "string",
+                        "description": "Local file path, inside the working directory.",
+                    },
+                    "allow_outside": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Read a path outside the working directory.",
+                    },
                     "file_type": {
                         "type": "string",
                         "enum": ["script", "model", "image"],
@@ -785,7 +796,8 @@ _EXTENDED_TOOLS.extend(
             name="extended_execute_luau_from_file",
             description=(
                 "execute_luau with the code read from a local .luau file, for "
-                "anything too long to inline in a tool call."
+                "anything too long to inline in a tool call. Path is confined "
+                "to the working directory unless allow_outside."
             ),
             input_schema={
                 "type": "object",
@@ -802,6 +814,11 @@ _EXTENDED_TOOLS.extend(
                     "studio_id": {
                         "type": "string",
                         "description": "Optional explicit studio_id to target.",
+                    },
+                    "allow_outside": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Read a path outside the working directory.",
                     },
                 },
                 "required": ["file_path"],
@@ -850,10 +867,12 @@ async def _call_insert_asset(
     parent_path: str = arguments.get("parent_path", "game.Workspace")
     className: str = arguments.get("className", "Script")
     studio_id: Optional[str] = arguments.get("studio_id")
+    allow_outside: bool = bool(arguments.get("allow_outside", False))
     studio = _RobloxStudio(client=client, studio_id=studio_id)
     result = await insert_asset_from_file(
         studio, file_path, file_type=file_type, asset_name=asset_name,
         parent_path=parent_path, className=className,
+        allow_outside=allow_outside,
     )
     return {
         "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
@@ -969,9 +988,11 @@ async def _call_execute_file(
     file_path: str = _require_str(arguments, "file_path")
     datamodel_type: str = arguments.get("datamodel_type", "Edit")
     studio_id: Optional[str] = arguments.get("studio_id")
+    allow_outside: bool = bool(arguments.get("allow_outside", False))
     studio = _RobloxStudio(client=client, studio_id=studio_id)
     result = await execute_luau_from_file(
-        studio, file_path, datamodel_type=datamodel_type
+        studio, file_path, datamodel_type=datamodel_type,
+        allow_outside=allow_outside,
     )
     return {"content": [{"type": "text", "text": result.text()}], "isError": False, "is_error": False}
 
