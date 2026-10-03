@@ -49,9 +49,14 @@ question, and the two have different fixes.
 there is no Server DataModel, and asking for one fails with "Server datamodel is
 not available in Edit mode".
 
-Peer role in the other implementation is the same axis, not a superset: it is
-just `RunService:IsEdit()` / `IsServer()` / else client. The only genuine gap is
-per-client indexing, which matters only in a multiplayer test.
+Peer role in the other implementation is the same axis, not a superset. The
+genuine gap is not per-client indexing, it is **identity**: the mesh row carries
+only `id` and `name`, so the peer needs a second record to turn a `studio_id`
+into a PID. Python reads that Studio's own log file; `logid.py` (33 KB) is
+**not ported**, so the peer resolves role and place from the command line and
+with two Studios on one place **cannot say which is which** - which is why its
+`action=stop` refuses rather than terminating the wrong process. Read
+`node/src/extended/IDENTITY.md` before relying on it for instance control.
 
 ## `GetDebugId` is session-scoped, not an identity
 
@@ -107,8 +112,13 @@ Three fields, all within the first 4 KB of the log:
 | command line | an untimestamped header: `...RobloxStudioBeta.exe --task EditFile --localPlaceFile <path>` |
 | role | the `-task` in that same command line |
 
-Measured over 47 logs: 47 of 47 carry the PID line, all PIDs distinct, none reused
-across two logs. The command line spells the place three different ways, and
+Measured over 66 logs: **64 of 66** carry the PID line. Not 47 of 47 - that was a
+partial count. The 2 without are a non-Studio installer log and a 1,335-byte
+Studio log from a process that lived 0.36 s, which died before the notifier line
+is written; `no_pid_reason` separates "no PID" from "a format I do not read", and
+the right answer for the first is "this process is gone". Among the 64: all PIDs
+distinct, none reused across two logs. Source: `docs/EVIDENCE.md` (identity
+table) and `node/src/extended/IDENTITY.md:36`. The command line spells the place three different ways, and
 missing any one of them loses a whole population:
 
 - `--localPlaceFile <path>` - the Edit task
@@ -118,13 +128,38 @@ missing any one of them loses a whole population:
 `-parentPid` links a play test's client to the server that started it, so a whole
 process tree is recoverable from the logs alone.
 
-**The mesh name and the command line only meet for the file route**, where the
-name is the temp file's basename and the command line contains it verbatim. The
-URI route does not join: its mesh name is
-`Template_<placeId>_AutoRecovery_<N>.rbxl` and `N` is a per-launch counter the
-log never records, so two URI launches of one place stay indistinguishable. That
-case, and a server or client reporting `name: null`, still need the old
-print-a-token join.
+**The file route joins exactly**: the mesh name is the temp file's basename and
+the command line contains that basename verbatim, so it is a string comparison
+between two things that already exist.
+
+**The URI route joins too**, in two stages, and not by giving up. Its mesh name
+is `Template_<placeId>_AutoRecovery_<N>.rbxl`, and the place id *is* in the log,
+so `match_mesh_name` falls back to narrowing the candidates by it
+(`_mesh_rows_for_place_id`). When one candidate remains that is the answer. When
+two or more URI launches of one place are open, `N` is separated by reading the
+path-suffixed `PlaceSessionId` line on that handful of logs and comparing
+basenames (`_refine_by_autorecovery_counter`) - a field the command line does
+not carry, which is why the earlier claim that the log never records the counter
+was wrong. **When that read cannot decide, the caller keeps the full candidate
+list** rather than narrowing to a guess, and `ambiguous_reason` returns a sentence
+saying which of the remaining situations it is: several logs reporting one place,
+or logs that could not be read. Only those, and a server or client reporting
+`name: null`, fall back to the old print-a-token join.
+
+## `action=list` returns both sides, deliberately unjoined
+
+`extended_manage_instance` with `action=list` (the default) returns **`processes`
+and `mesh` as two separate lists** - not one joined table. Each mesh row carries
+the `studio_id` every other tool takes, which is the point: `processes` are OS
+processes and carry no `studio_id`, so before this both halves had to be fetched
+separately and correlated by hand. The mesh is read unpinned, and a mesh read
+failure degrades to `mesh_error` rather than losing the process rows.
+
+They are **not** joined because the join is exactly what cannot be trusted here:
+two Studios on one place both report the name `Place1`, so pairing by name is a
+guess, and this tool has a documented history of reporting a confidently wrong
+Studio. Pair a process's `place_file` with a mesh name yourself, and treat the
+pair as unproven when two Studios share one place name.
 
 **A Studio that never opened its place says why in its log.** `State:
 OpenPlaceFailure` carries an `ErrorMessage`, and a URI launch that never gets a

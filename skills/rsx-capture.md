@@ -57,11 +57,30 @@ compressed in between. Verified on 1233x754:
 - **1.6-1.7 s**, down from 3.60 s
 
 The Python and Node implementations produce **identical pixels**, so either is
-safe to trust. Re-verified after a Studio version bump, and again after the
-base64 change below: sky `(149,199,219)`, ground `(86,96,118)`, alpha 255.
+safe to trust — but that agreement rests on two separate measurement sets, and
+the numbers are not shared between them. The byte-exactness list above and the
+chunk table below are Python's, recorded in `extended/capture.py`; Node carries
+its own in the Luau comment at `node/src/extended/capture.ts` L110-124, which
+states the same figures rather than deriving them from Python. Re-verify on the
+side you change instead of citing the other's numbers.
+
+Pixel checks, re-verified after a Studio version bump and again after the base64
+change: sky `(149,199,219)`, ground `(86,96,118)`, alpha 255.
 
 Prefer `save_path` over the inline base64 response. The base64 form is large
 enough to dominate a context window on its own.
+
+**When the `save_path` write fails, the image is gone.** The call raises
+`INVALID_ARGUMENT` with a `CAPTURE_OK_RECOVERY` message (`capture.py:377`,
+byte-identical at `capture.ts:308`): the capture succeeded and the scratch module
+was destroyed in a `finally` the moment the base64 was read back, and the RGBA
+buffer dies with the call. **Re-capture — do not retry the write**, there is
+nothing left to write. Either point `save_path` at a parent directory that exists
+and is writable, or omit it and take `png_base64` in the result, which has no
+filesystem dependency but rides this transport's return channel: it truncates at
+exactly 100,015 characters **with no error**, and a 1233x754 viewport needs about
+4,958,304 base64 characters, so that route is silently truncated garbage for any
+real capture. It is safe only while `png_bytes` stays under roughly 75,000.
 
 ## Two things that made it 2.1x slower than it needed to be
 
@@ -86,6 +105,13 @@ any chunk size. Appending more than once therefore only ever costs time:
 
 So: write it in one call, and if it does not fit, the answer is `downscale`, not a
 smaller slice.
+
+**Chunk size is not a caller knob.** The table above is a measurement of
+internals: `DEFAULT_CHUNK` on both sides, and an `opts.chunk` field the Luau
+reads, but not one the tool exposes. `extended_capture`'s schema has exactly two
+properties, `save_path` and `studio_id`, and unknown arguments are refused before
+dispatch rather than ignored. So there is no smaller slice to ask for at the tool
+level — do not reach for one, and do not read this table as a parameter to tune.
 
 ## Where the remaining 1.6 s goes, so you do not chase the wrong part
 
@@ -130,21 +156,29 @@ pathlib.Path("shot" + ext).write_bytes(blob)
 `content[0]` is a dict with `type`, `data` (base64) and `mimeType`. That detail
 is the whole reason this looks broken when it is working.
 
-## A host-side `PrintWindow` capture is 8-35x faster, and needs no engine
+## A host-side `PrintWindow` capture is 8-35x faster — measured, not built here
+
+**The measurement exists; the code does not.** No `PrintWindow` call is in
+`python/src` or `node/src`. The chain up to the PID is built (`logid.resolve`),
+but the window tail is not written, so adopting it is new code, not wiring. Every
+number and trap below comes from `verify_printwindow.ps1` and
+`verify_occlusion.ps1`, not from a shipped capture path.
 
 `CaptureService` costs **1,700 ms** end to end, of which **801 ms is the
-`CaptureScreenshot` callback wait** - an engine floor you cannot get under. The way
-past it is to not use the engine:
+`CaptureScreenshot` callback wait** - an engine floor you cannot get under. The
+way past it is to not use the engine, and the shape that was measured is:
 
 ```python
 # PS_RENDERFULLCONTENT, i.e. flag 2. Verified here at 48-205 ms, and it
-# captures a window that is behind other windows.
+# captures a window that is behind other windows. This is the call that
+# would be made; no tool here makes it.
 PrintWindow(hwnd, hdc, 2)
 ```
 
 `hwnd` comes from `GetWindowThreadProcessId` over `EnumWindows`, filtered to
-`RobloxStudioBeta` PIDs. Three traps, each of which produces a *plausible wrong
-image* rather than an error:
+`RobloxStudioBeta` PIDs - and those PIDs come from `logid.resolve`, so a caller
+today has to join the two by hand. Three traps, each of which produces a
+*plausible wrong image* rather than an error:
 
 - **Allocate the bitmap `Format24bppRgb`.** `PrintWindow` leaves alpha at 0 on
   composited surfaces and PNG keeps that as full transparency - a completely
@@ -224,6 +258,14 @@ baseplate looks the same whether it is the wrong place or merely has nothing in
 it.** Before concluding a capture went to the wrong Studio, put something visibly
 distinct in the viewport. Without that, "wrong place" and "nothing set up yet"
 are one picture, and the diagnosis is a guess.
+
+**`extended_capture` reports the `studio_id` it captured**, which
+`screen_capture` does only by echoing the required argument. The handler sets
+`studio_id` on the result from `studio_id or studio.studio_id` — the *resolved*
+id, so it also tells you which Studio an implicit call actually reached
+(`extended_server.py:1223`). That is the cheap post-hoc check for everything
+above, and it costs nothing: read the field on every capture instead of
+re-deriving the target from a name.
 
 Resolve the target by PID, not by name. See `rsx-targeting` for why name
 matching collides when two Studios share a place.

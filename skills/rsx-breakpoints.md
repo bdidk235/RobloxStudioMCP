@@ -47,9 +47,11 @@ The tool asks the registry whether that exact `script_path` + `line` already has
 a breakpoint, and sets or removes to match. That is deliberate: you say *where*,
 not *what*, and there is no enum that can disagree with the actual state. The
 cost is that the same call is not idempotent — **calling it twice in a row
-leaves you with no breakpoint**, and it reports success both times. If you are
-not sure whether one is set, set it and check `extended_watch_output` for hits
-rather than calling again.
+leaves you with no breakpoint**, and it reports success both times. You do not
+have to guess which happened: the result carries which, as **`added`** or
+**`removed`** — never both. `removed` is just `{script_path, line}`;
+`added` is the full set record, with `log_expression`, `verified` and
+`continue_execution`. Read the key before calling again.
 
 A breakpoint that set successfully and never appears in the console is the
 failure this skill's next section is about.
@@ -65,7 +67,7 @@ Pausing is genuinely useful, but it cannot be driven from a synchronous tool
 call. If you need to pause, use the `OnStopped` path in Roblox's `rbx-debug`
 skill.
 
-## `log_expression` must fail, or nothing is reported
+## A `log_expression` that fails is what gets reported
 
 `LogMessage` is a Luau expression evaluated on every hit. A **successful** log
 injection is not visible through `get_console_output`; it goes to Studio's own
@@ -79,6 +81,11 @@ Breakpoint ServerScriptService.BpTest:5 ignored: [string "logExpression"]:1: HIT
 So the default is `error("hit")` and the deliberate failure *is* the reporting
 channel. An expression that passes reports nothing at all, with no error, which
 reads exactly like "that line never ran".
+
+Nothing enforces this. An omitted or falsy `log_expression` is silently
+replaced with `error("hit")`; a supplied one is sent through untouched, and a
+passing one is accepted and returns normally. The failure is the reporting
+channel by convention, not by validation.
 
 Interpolate the locals you want:
 
@@ -94,6 +101,13 @@ defined by your own probe.
 `ScriptDebuggerService` exposes no way to enumerate breakpoints, so the registry
 is mirrored into a studio-only folder under `PluginGuiService`.
 
+The mirror is the **only** record. `list` walks the folder's children and never
+reads engine state, and the toggle decides set-or-remove by whether the folder
+has an entry for that `script_path` + `line`. So a breakpoint set Studio-side
+is invisible to the tool: the registry sees no entry, the next toggle at that
+location **adds a second** breakpoint rather than removing the first, and `list`
+reports only the ones this tool made.
+
 That folder must be **stable**, created once and reused. An early version made a
 fresh per-call folder, and the symptom was the internal registry op returning
 empty while the breakpoint itself worked perfectly. A confusing failure that
@@ -104,9 +118,17 @@ looks like the debugger is broken when it is fine.
 Hits are ordinary console lines, so `extended_watch_output` carries them in the
 same stream as everything else. Filter on the `Breakpoint ` prefix.
 
-The console arrives as one line with literal `\n` escapes, so **match the
-pattern, do not parse lines**. See `rsx-console` for why, and for the digit-scan
-failure that made 60 correct hits look like garbage.
+Match the pattern, do not parse lines — unconditionally. The console's newline
+shape is consumer-dependent: on some consumers it arrives as one line with
+literal `\n` escapes, and through the agent caller path it arrives with real
+newlines, so `splitlines()` is right on one shape and silently wrong on the
+other. Better to assume only that `extended_watch_output` splits lines for you,
+returns `{lines, returned, matched, total_seen, truncated}` rather than a bare
+string, and caps each poll at 200 lines with only the last 20 on the first
+poll — so a single poll showing 20 lines with no hit proves nothing.
+
+See `rsx-console` for the reasoning behind match-don't-parse, and for the
+digit-scan failure that made 60 correct hits look like garbage.
 
 ## Verified behaviour
 

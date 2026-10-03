@@ -16,8 +16,10 @@ for _, m in ipairs(RS:GetMethodsOfClass(cls)) do
   if type(m) == "string" and m:find("AddPlayer") then ... end
 end
 
--- RIGHT
-for _, m in ipairs(RS:GetMethodsOfClass(cls)) do
+-- RIGHT: GetMethodsOfClass returns nil for some classes (StudioService), and
+-- ipairs(nil) throws, which aborts the call and discards every prior print
+local ok, methods = pcall(function() return RS:GetMethodsOfClass(cls) end)
+for _, m in ipairs(ok and methods or {}) do
   if m.Name:find("AddPlayer") then ... end
 end
 ```
@@ -58,12 +60,16 @@ Always guard member reads in a loop over names you did not write yourself.
 
 | service | members worth knowing |
 |---|---|
-| `StudioTestService` | `ExecuteMultiplayerTestAsync`, `AddPlayers`, `EndTest`, `LeaveTest`, `CanLeaveTest`, `GetTestArgs`, `EditModeActive` |
+| `StudioTestService` | `AddPlayers`, `EndTest`, `LeaveTest`, `CanLeaveTest`, `GetTestArgs`, `EditModeActive`, and `ExecuteMultiplayerTestAsync` (**documented, unverified**) |
 | `ScriptDebuggerService` | `AddBreakpoint`, `RemoveBreakpoint`, `ClearBreakpoints`, `OnStopped` |
 | `StudioDeviceSimulatorService` | `GetDeviceListAsync` (45 devices), `SetDeviceAsync`, `SetResolutionAsync`, `SetOrientationAsync`, `GetPixelDensityAsync`, `StopSimulationAsync` |
 | `CaptureService` + `AssetService` | `CaptureScreenshot` then `CreateEditableImageAsync` |
 | `ScriptEditorService` | `UpdateSourceAsync` for chunked writes |
 | `SceneAnalysisService` | rendering, memory, instance composition |
+
+`ExecuteMultiplayerTestAsync` is the one member above not confirmed by use: an
+attempt to drive it blocked past the 120 s tool-call timeout. See `rsx-playtest`
+for why it is not a substitute for the `-task StartServer` route.
 
 ## Prefer the shipped skills to re-deriving this
 
@@ -103,14 +109,29 @@ and `Enum.CompressionFormat` / `ZstdCompressionLevel` do not exist in this build
 
 ## RunService needs a colon in raw Luau
 
-`RunService:IsEdit()` and `RunService:IsServer()`. `RunService.IsEdit()` is a
-parse error, not a nil call.
+`RunService:IsEdit()` and `RunService:IsServer()`. `RunService.IsEdit()` is valid
+Luau, so it parses, and then fails at the call with `attempt to call a nil value
+(field 'IsEdit')` — the engine's wording for a member that is not there.
+
+The codebase does not separate the two, so there is no earlier signal to catch it
+by: `extended/errors.py` maps `attempt to call`, `failed to parse` and
+`unexpected symbol` all to the single `LUA_ERROR`, so a wrong member and
+malformed source arrive as one code. Handle the code you get rather than looking
+for a distinction that does not exist.
 
 ## Capabilities cannot be introspected
 
 `getcapabilities` returns nil, and `SecurityCapabilities:GetCapabilities` is
 not a valid member. Required capabilities cannot be enumerated, so you cannot
 ask what a given call will be permitted to do. Attempt it and handle failure.
+
+One gate is measured, and it is worth carrying because the member looks
+ordinary: `game.UniqueId` is **unreadable** under `execute_luau` — "The current
+thread cannot read 'UniqueId'", the `RobloxScript` capability. `ReflectionService`
+does not list it either, because capability-gating removes it from the class
+registry, so neither a read nor a reflection probe answers it. That is what leaves
+`game:GetDebugId()` as the usable in-band identifier, alongside two dead ends
+(`game.JobId` empty outside a session, `game.Parent` `None`). See `rsx-targeting`.
 
 ## A place that did not open says why, in the log
 

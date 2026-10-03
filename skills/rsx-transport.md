@@ -64,6 +64,14 @@ the tail missing.
 This is a hard ceiling, not a soft warning, and nothing in the reply says it
 happened. So a large `return` is the single most dangerous thing you can write.
 
+**It cannot be marked, and that is a design constraint rather than an omission.**
+There is no length constant anywhere in this codebase: truncation happens on the
+return path above this project, so a truncated reply arrives indistinguishable
+from a complete one. Do not wait for a marker and do not treat its absence as
+evidence the payload was small. `extended_watch_output`'s `truncated` field is
+*not* one — that is per-source and `max_lines`, a different channel entirely.
+The only defence is to check the length yourself before returning.
+
 | payload | base64 chars | fits? |
 |---|---|---|
 | 1233x754 RGBA capture | 4,958,304 | no, 50x over |
@@ -97,8 +105,17 @@ Above that, the write fails with `bad allocation`. A 1233x754 capture is
 Check the size *before* writing and refuse the call rather than truncating. A
 partial image is worse than an error, because it looks like a valid one.
 
-Append in slices of roughly 120,000 characters. Lua silently drops a leading
-newline in long-bracket strings, so write each slice with a guard newline.
+**Do not slice to fit.** The per-append slice is a speed knob, not a capacity
+knob: every append rewrites the whole module, so N appends of a payload P write
+about P*N/2 bytes. Splitting never raises the ceiling — an over-ceiling payload
+fails at any slice size — so write in one call and let the code pick the slice.
+Measured on a 1233x754 viewport: 31 appends of 120,000 wrote 59.5 MB in 3.60 s
+against 1 append of 4,958,304 writing 5.0 MB in 1.70 s. `capture.py` sets its
+slice to the ceiling for exactly this reason, and `rsx-capture` carries the full
+table.
+
+Lua silently drops a leading newline in long-bracket strings, so write with a
+guard newline if the payload starts with one.
 
 ## Instance names addressed by `script_read` must be dot-free
 

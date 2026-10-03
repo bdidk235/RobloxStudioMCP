@@ -3,8 +3,9 @@
 This exists because the obvious join to a process -- print a token, then sweep
 every log for it -- turned out to be unnecessary. A Studio log already states
 its own PID, so ``log -> pid`` needs no Studio round trip and no console write.
-Measured over 44 log files: 44 of 44 carried the line, all 44 PIDs distinct, and
-none was reused across two files.
+Measured over 66 log files: 64 of 66 carried the line, all 64 PIDs distinct, and
+none was reused across two files. The two without are a non-Studio installer log
+and a 1,335-byte log from a process that lived 0.36 s; see :func:`no_pid_reason`.
 
 Three fields come out of one read, because reading the log twice to get two
 fields is how the two views drift apart:
@@ -28,14 +29,18 @@ fields is how the two views drift apart:
 What this cannot do
 -------------------
 It does not identify a ``studio_id``. The mesh names a place and the log records
-a command line, and those only meet for the file route, where the mesh name is
-the temp file's basename and the command line contains that basename verbatim.
+a command line, and those meet directly for the file route, where the mesh name
+is the temp file's basename and the command line contains that basename
+verbatim.
 
-The URI route does not join. Its mesh name is ``Template_<placeId>_AutoRecovery_<N>.rbxl``
-and ``N`` is a per-launch counter that the log never records, so two URI launches
-of one place are genuinely indistinguishable from log data alone. That case still
-needs the console token, and :func:`ambiguous_reason` says so rather than
-guessing.
+The URI route joins as well, in two stages rather than not at all. Its mesh name
+is ``Template_<placeId>_AutoRecovery_<N>.rbxl`` and the place id is in the log, so
+:func:`match_mesh_name` narrows the candidates by it. Two or more URI launches of
+one place are separated by ``N``, read from the path-suffixed ``PlaceSessionId``
+line that the command line does not carry --
+:func:`_refine_by_autorecovery_counter`. When that read cannot decide, the
+caller keeps the full candidate list rather than narrowing to a guess, and
+:func:`ambiguous_reason` names the remaining situation instead of guessing.
 
 The one case that is *not* a naming problem is a play test. A ``StartServer`` and
 its ``StartClient``s report ``name: null`` because a session member opens no
