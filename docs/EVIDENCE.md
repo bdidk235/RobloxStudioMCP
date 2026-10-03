@@ -1346,3 +1346,53 @@ fix - is a better way to prioritise this surface than severity labels alone.
 **Not done, and the reason:** §2's truncation half is a property of a tool this
 project relays and cannot extend. The rest are unbuilt because they are a
 surface change nobody has asked for, not because they are hard.
+
+## Why no gate can check a skill's claims (2026-10-03)
+
+Sixteen documentation defects were fixed on 2026-10-03, all one shape: a skill
+file asserting something the implementation contradicts. The obvious guard is a
+gate that greps skill bodies for figures absent from source. **Measured against
+the six defects fixed that day, it catches zero of them.**
+
+| defect | would a figures-vs-source gate catch it? |
+|---|---|
+| `rsx-targeting.md` "47 of 47" logs | **no** - `47` is present in source |
+| `logid.py` docstring "44 of 44" | **no** - `44` is present in source |
+| `rsx-transport.md` "slices of 120,000" | **no** - `120,000` is present in source |
+| `rsx-capture.md` "identical pixels, either is safe" | **not catchable** - attribution, not a number |
+| `rsx-discovery.md` "parse error, not a nil call" | **not catchable** - prose about engine behaviour |
+| `rsx-breakpoints.md` "`log_expression` must fail" | **not catchable** - a heading, not a figure |
+
+The three figure-level failures share one property, and it is the interesting
+part: **the skill and the code agreed with each other and were both wrong.**
+`logid.py`'s docstring carried the same bad count as the skill, which is exactly
+why the skill looked authoritative. A cross-file consistency check does not just
+fail to catch this class - it *rewards* it, since two files saying the same
+thing is the property it is looking for.
+
+The defect is a **shared false premise**, and no mechanical check can see a false
+premise. Catching it needs something that reads the sentence and the code and
+judges whether one supports the other, which is what the subagent verification
+pass did and what no test does.
+
+**The two checks that do work, and why neither was adopted.** Both pass clean and
+both fire on deliberately broken input, so they are real rather than trivially
+true:
+
+1. Every `file:line` reference in a skill body must name a file that exists and
+   a line within it. Negative control: `` `extended/nope.py:1` ``,
+   `` `capture.py:999999` `` and `` `ok.py:2` `` are all caught - missing file,
+   out-of-range line, and ambiguous basename respectively.
+2. Every `` `rsx-*` `` a skill names must be a real sibling. Currently zero
+   dangling.
+
+Rejected anyway: there are **4 `file:line` refs across 7 files**. A test file
+guarding four references is overhead that reads as safety, which is the same
+failure as a gate whose negative control is trivially true. Revisit if the count
+grows.
+
+**The blind spot that is real.** Both suites assert only *structure* over skills -
+name prefix, frontmatter parses, index smaller than bodies. `test_skills.py` loads
+the full text of `rsx-capture.md` and never inspects a word of it. So the gate
+surface over skill *content* is empty, deliberately: see above for why it cannot
+be filled mechanically.
