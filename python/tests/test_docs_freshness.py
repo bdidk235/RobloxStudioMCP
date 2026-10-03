@@ -1,6 +1,6 @@
 """Fail when hand-written documentation contradicts the generated contract.
 
-Every threshold here is derived from `parity/tools.json`, so the *enforcement*
+Every threshold here is derived from `contract/tools.json`, so the *enforcement*
 cannot drift. The prose beside it did, three times: a total cap that survived a
 raise, and two different headroom figures in adjacent bullets that disagreed with
 each other and with the contract. Nothing failed, because nothing checked.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 AGENTS = REPO / "AGENTS.md"
-CONTRACT = REPO / "parity" / "tools.json"
+CONTRACT = REPO / "contract" / "tools.json"
 
 SECTION_HEADING = "### The tool list is budgeted"
 
@@ -63,13 +63,13 @@ class TestDocsFreshness(unittest.TestCase):
         self.assertEqual(
             found, [],
             "AGENTS.md's budget section quotes %s. Figures belong in "
-            "parity/tools.json, which is generated - the prose is what drifted "
+            "contract/tools.json, which is generated - the prose is what drifted "
             "three times already. Point at the contract instead."
             % (found or ""),
         )
 
     def test_the_section_points_at_the_generated_contract(self):
-        self.assertIn("parity/tools.json", self.section)
+        self.assertIn("contract/tools.json", self.section)
 
     def test_the_contract_is_readable_and_carries_the_keys(self):
         # Guards the gate itself: if tools.json changes shape, the references
@@ -255,8 +255,8 @@ class TestEvidenceLogHasNotEatenItself(unittest.TestCase):
 
 class TestParityTestReadsItsOwnCap(unittest.TestCase):
 
-    def test_parity_test_does_not_hardcode_a_cap(self):
-        src = (REPO / "python" / "tests" / "test_parity.py").read_text(
+    def test_contract_test_does_not_hardcode_a_cap(self):
+        src = (REPO / "python" / "tests" / "test_contract.py").read_text(
             encoding="utf-8")
         body = "\n".join(
             line for line in src.splitlines()
@@ -264,12 +264,12 @@ class TestParityTestReadsItsOwnCap(unittest.TestCase):
         )
         self.assertNotRegex(
             body, r"\b[2-9]\d{3}\b",
-            "test_parity.py hardcodes a cap-like number; it should read "
+            "test_contract.py hardcodes a cap-like number; it should read "
             "CONTRACT['total_description_cap'] so the gate cannot drift.",
         )
 
-    def test_parity_test_reads_the_contract_for_its_caps(self):
-        src = (REPO / "python" / "tests" / "test_parity.py").read_text(
+    def test_contract_test_reads_the_contract_for_its_caps(self):
+        src = (REPO / "python" / "tests" / "test_contract.py").read_text(
             encoding="utf-8")
         self.assertIn("total_description_cap", src)
         self.assertIn("per_tool_description_cap", src)

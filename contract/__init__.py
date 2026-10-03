@@ -1,7 +1,7 @@
 """The tool contract for the Python implementation.
 
 See `build_contract.py` for why this is a generated file rather than a
-hand-written list, and `python/tests/test_parity.py` for the suite that
+hand-written list, and `python/tests/test_contract.py` for the suite that
 enforces it.
 
 An explicit `__init__.py` because pytest does not resolve the namespace package

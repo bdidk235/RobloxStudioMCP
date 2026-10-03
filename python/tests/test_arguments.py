@@ -14,7 +14,7 @@ reported success:
   was hit".
 * ``max_lines: 0`` became 200 through a falsy default.
 
-The contract in ``parity/tools.json`` pins the accepted arguments, so the
+The contract in ``contract/tools.json`` pins the accepted arguments, so the
 same call behaves the same however the server is configured.
 """
 

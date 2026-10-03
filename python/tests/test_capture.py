@@ -303,7 +303,7 @@ class TestSavePathFailure(_WriteFailure):
 
         The path is compared in its ``describe()`` form, not raw. The message
         renders arguments as JSON on purpose, because that is what keeps the
-        emitted error string stable (``parity/errors.json`` pins the result)
+        emitted error string stable (``contract/errors.json`` pins the result)
         - a Windows path therefore appears with doubled backslashes. Asserting
         the raw path would push someone to "fix" the rendering and break the
         contract, which is the more expensive mistake.

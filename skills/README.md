@@ -94,9 +94,9 @@ stay under a quarter of the bodies.
 
 Tool descriptions are capped per tool and in total, and both caps are enforced
 by tests in each implementation. The figures live in the generated contract,
-`parity/tools.json`: read `per_tool_description_cap`, `total_description_cap`
+`contract/tools.json`: read `per_tool_description_cap`, `total_description_cap`
 and `total_description_chars` there rather than here. That file is produced by
-`parity/build_contract.py`, so a regeneration is also the diff that explains any
+`contract/build_contract.py`, so a regeneration is also the diff that explains any
 change.
 
 The total was 2,700 until 2026-10-01, when it was raised to 3,200 by decision.

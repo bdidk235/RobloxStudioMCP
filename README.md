@@ -17,7 +17,7 @@ worth knowing before you touch the tree.
 [Using it from your own code](#using-it-from-your-own-code) — runnable
 examples, and the two mistakes that catch everyone.
 
-The tool surface is pinned by a generated contract (`parity/tools.json`,
+The tool surface is pinned by a generated contract (`contract/tools.json`,
 asserted by the test suite) that fails the build if a tool, parameter, or
 required argument drifts, so the surface cannot change unnoticed. The suite
 covers the same ground without needing Studio.
@@ -220,7 +220,7 @@ for deciding how to install the client. If you are an agent, start at
 
 There is no tool count quoted in this file — it is a generated contract, and a
 number in prose drifts. The live list is whatever `tools/list` returns; the
-enforced copy is `parity/tools.json`. Grouped by what you are trying to do,
+enforced copy is `contract/tools.json`. Grouped by what you are trying to do,
 with the one to reach for first.
 
 ### Find things
@@ -265,7 +265,7 @@ with the one to reach for first.
 | `extended_manage_instance` | `list`, `places`, `make_place`, `launch`, `stop`. `stop` terminates a process and is irreversible. |
 
 **Full detail for every tool** — inputs, outputs, and exact failure modes:
-`docs/index.html` has a catalog, `parity/tools.json` is the generated contract,
+`docs/index.html` has a catalog, `contract/tools.json` is the generated contract,
 and `extended_skill` serves the seven `rsx-*` skills covering this transport's
 traps. Roblox ships its own `rbx-*` skills through the relayed `skill` tool for
 **engine** questions; `skills/README.md` has the routing table for which wire a
@@ -389,13 +389,13 @@ so it can report green while skipping the async coverage.
 | --- | --- | --- |
 | Python behaviour | `python -m pytest tests -q` | behaviour |
 | Python types | `pytest tests/test_typecheck.py` (runs pyright) | wrong key, `None` deref, wrong argument type |
-| Contract | `pytest tests/test_parity.py` | generated contract still matches the server |
+| Contract | `pytest tests/test_contract.py` | generated contract still matches the server |
 
 **The contract row is the one that is easy to miss**, because nothing fails until a tool
-is added or renamed. `parity/tools.json` is generated from the Python server by
-`parity/build_contract.py` and asserted by the suite, so a tool, a parameter
+is added or renamed. `contract/tools.json` is generated from the Python server by
+`contract/build_contract.py` and asserted by the suite, so a tool, a parameter
 or a required argument cannot change unnoticed. Regenerate it
-after a deliberate surface change — `python parity/build_contract.py` — and the
+after a deliberate surface change — `python contract/build_contract.py` — and the
 diff *is* the contract report.
 
 Two of these gates catch **silent** wrong answers, which is the failure class

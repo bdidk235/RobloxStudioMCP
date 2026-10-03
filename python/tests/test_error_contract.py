@@ -1,6 +1,6 @@
 """The server must emit the contract error payload for the same request.
 
-Reads ``parity/errors.json`` as the authority: every probe goes through the
+Reads ``contract/errors.json`` as the authority: every probe goes through the
 **real code**, and each must produce the contract's code and message.
 
 **Why this file exists.** Three measured defects, none of which the server's
@@ -55,7 +55,7 @@ from roblox_studio_mcp.extended.errors import (  # noqa: E402
     classify,
 )
 
-with open(os.path.join(_ROOT, "parity", "errors.json"), encoding="utf-8") as handle:
+with open(os.path.join(_ROOT, "contract", "errors.json"), encoding="utf-8") as handle:
     CONTRACT = json.load(handle)
 
 

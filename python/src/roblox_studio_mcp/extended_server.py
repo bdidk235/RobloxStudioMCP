@@ -54,11 +54,11 @@ from .extended.updater import update_script as _update, UpdateResult
 
 
 #: Relayed tools that have a better `extended_*` equivalent, and the steer
-#: appended to each relayed description. Mirrored into `parity/tools.json` by
-#: `parity/build_contract.py` and asserted by the Python suite, because a
+#: appended to each relayed description. Mirrored into `contract/tools.json` by
+#: `contract/build_contract.py` and asserted by the Python suite, because a
 #: hand-written copy would drift - and the failure mode is a model
 #: quietly choosing the worse tool, which is invisible because the worse tool
-#: still works. See `parity/build_contract.py::_STEERS` for the measured reason
+#: still works. See `contract/build_contract.py::_STEERS` for the measured reason
 #: behind each entry.
 #:
 #: Why the relayed description rather than a skill: the model chooses a tool
@@ -651,7 +651,7 @@ _EXTENDED_TOOLS.extend(
                         # never apply - and advertising one tells the caller the
                         # argument is optional, which is the "default in
                         # disguise" this project rejects. Caught by
-                        # `test_parity.py::test_no_required_argument_is_shadowed_by_a_default`.
+                        # `test_contract.py::test_no_required_argument_is_shadowed_by_a_default`.
                         "description": "What to do.",
                     },
                     "studio_id": {
@@ -1175,7 +1175,7 @@ async def _call_manage_instance(
         # agent is guaranteed to hit at least once, and without it the caller
         # has to spend a whole extra turn reading the schema. It is read from
         # that schema rather than written out here, so the two cannot drift -
-        # the same drift `test_parity.py` exists to catch.
+        # the same drift `test_contract.py` exists to catch.
         accepted = sorted(_manage_instance_actions())
         raise ToolError(
             "INVALID_ARGUMENT",
@@ -1592,7 +1592,7 @@ async def _handle_message(
             return
         # Steer callers toward the extended tools: append a note to the relayed
         # tools that have a better equivalent, so the choice happens in the one
-        # place it is made. `_STEERS` is mirrored in `parity/tools.json` and both
+        # place it is made. `_STEERS` is mirrored in `contract/tools.json` and both
         # suites assert the two agree, because a drift here is a model using the
         # worse tool forever and nothing anywhere reports it.
         base_tools = base.get("tools") or []

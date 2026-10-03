@@ -43,7 +43,7 @@ import sys
 import unittest
 
 # Three dirnames: this file is python/tests/test_closed_sets.py, so two stop at
-# `python/`. Third time this has bitten in this repo - test_parity.py and
+# `python/`. Third time this has bitten in this repo - test_contract.py and
 # test_typecheck.py both failed the same way.
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_ROOT, "python", "src"))

@@ -536,7 +536,7 @@ class TestExtendedToolDescriptions(unittest.TestCase):
         self.assertIn("change on restart", by_name["extended_list_studios"])
 
     def test_descriptions_stay_inside_the_context_budget(self):
-        from parity.build_contract import PER_TOOL_CAP, TOTAL_CAP
+        from contract.build_contract import PER_TOOL_CAP, TOTAL_CAP
 
         from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
 

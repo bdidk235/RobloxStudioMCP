@@ -1,6 +1,6 @@
-"""Python must match `parity/tools.json`.
+"""Python must match `contract/tools.json`.
 
-This is the spec-conformance check: `parity/build_contract.py` generates the
+This is the spec-conformance check: `contract/build_contract.py` generates the
 contract from the Python server, and this test verifies the server still
 conforms to it. The contract is the authority; a deliberate surface change
 regenerates it, and anything else fails here.
@@ -27,17 +27,17 @@ import os
 import sys
 import unittest
 
-# Three dirnames, not two: this file is python/tests/test_parity.py, so two
+# Three dirnames, not two: this file is python/tests/test_contract.py, so two
 # would stop at `python/`. Getting this wrong made the import fail with a
 # "missing dependency" message that pointed nowhere near the real cause.
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_ROOT, "python", "src"))
-sys.path.insert(0, _ROOT)  # so `parity.build_contract` imports as a package
+sys.path.insert(0, _ROOT)  # so `contract.build_contract` imports as a package
 
-from parity.build_contract import _normalise_schema  # noqa: E402
+from contract.build_contract import _normalise_schema  # noqa: E402
 from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS  # noqa: E402
 
-CONTRACT_PATH = os.path.join(_ROOT, "parity", "tools.json")
+CONTRACT_PATH = os.path.join(_ROOT, "contract", "tools.json")
 
 with open(CONTRACT_PATH, encoding="utf-8") as _handle:
     CONTRACT = json.load(_handle)
@@ -48,7 +48,7 @@ BY_NAME = {tool.name: tool for tool in _EXTENDED_TOOLS}
 class SteersMatchTheGeneratedContract(unittest.TestCase):
     """The relay-to-extended steering table exists in two places.
 
-    `parity/build_contract.py::_STEERS` is the source, and the server keeps a
+    `contract/build_contract.py::_STEERS` is the source, and the server keeps a
     copy to apply. This asserts both are identical - byte for byte, not
     "roughly equivalent". The failure mode it guards is specific and invisible:
     if the server copy drifts, a model is silently steered toward the worse
@@ -87,7 +87,7 @@ class SteersMatchTheGeneratedContract(unittest.TestCase):
 
 class ContractIsCurrent(unittest.TestCase):
     def test_the_contract_matches_the_python_tools(self):
-        """Regenerate with `python parity/build_contract.py` after a deliberate
+        """Regenerate with `python contract/build_contract.py` after a deliberate
         change; a failing test here means the surface moved without the contract
         following, which is exactly how drift goes unnoticed."""
         expected = sorted(entry["name"] for entry in CONTRACT["tools"])
@@ -118,7 +118,7 @@ class DescriptionBudget(unittest.TestCase):
         )
 
 
-class SchemaParity(unittest.TestCase):
+class SchemaContract(unittest.TestCase):
     def _entry(self, name):
         for entry in CONTRACT["tools"]:
             if entry["name"] == name:

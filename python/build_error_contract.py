@@ -1,4 +1,4 @@
-"""Fold the measured library-layer probes into parity/errors.json.
+"""Fold the measured library-layer probes into contract/errors.json.
 
 One-off generator. Kept out of the test suite: the contract is the artefact, and
 regenerating it from a probe would let a divergence be written *into* the
@@ -12,7 +12,7 @@ from a direct measurement instead.
 import json
 import os
 
-P = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "parity", "errors.json")
+P = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "contract", "errors.json")
 
 PINNED = [
     "breakpoints: line 0",

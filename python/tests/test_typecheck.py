@@ -32,7 +32,7 @@ import sys
 import unittest
 
 # Three dirnames: this file is python/tests/test_typecheck.py, so two would stop
-# at `python/`. Same trap as in test_parity.py, and it failed the same way.
+# at `python/`. Same trap as in test_contract.py, and it failed the same way.
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _PACKAGE = os.path.join(_ROOT, "python", "src", "roblox_studio_mcp")
 _CONFIG = os.path.join(_ROOT, "python", "pyrightconfig.json")

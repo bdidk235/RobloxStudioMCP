@@ -35,7 +35,7 @@ Studio — the tests use fakes throughout.
 | --- | --- | --- |
 | Python behaviour | `python -m pytest tests -q` | `python/` |
 | Python types | `pytest tests/test_typecheck.py` (runs pyright) | `python/` |
-| Contract | `pytest tests/test_parity.py` | `python/` |
+| Contract | `pytest tests/test_contract.py` | `python/` |
 
 **`python -m unittest discover -s tests` is not the gate.** Several tests are
 `pytest-asyncio`, and `unittest discover` does not drive them — it can report
@@ -43,20 +43,20 @@ green while skipping the async coverage. Use `pytest`.
 
 ### The contract is enforced, not aspirational
 
-`parity/tools.json` is generated from the Python server by
-`parity/build_contract.py` and asserted by the suite. A tool, a parameter
+`contract/tools.json` is generated from the Python server by
+`contract/build_contract.py` and asserted by the suite. A tool, a parameter
 or a required argument cannot change unnoticed. After a deliberate
 surface change, regenerate it — the diff *is* the parity report:
 
 ```
-python parity/build_contract.py
+python contract/build_contract.py
 ```
 
 This also charges a **description budget**: a per-tool cap and a total cap, both
 in the generated contract. The total list is paid on every call of every
 session, so new surface is funded by trimming descriptions rather than raising
-the cap. Read the live figures from `parity/tools.json` rather than from prose —
-prose figures here have drifted before, and `test_parity.py` derives its own cap
+the cap. Read the live figures from `contract/tools.json` rather than from prose —
+prose figures here have drifted before, and `test_contract.py` derives its own cap
 from the contract so the gate cannot.
 
 ## Evidence discipline

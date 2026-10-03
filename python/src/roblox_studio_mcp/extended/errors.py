@@ -247,7 +247,7 @@ def describe(value: Any) -> str:
     repr writes ``None``, ``True`` and ``'x'`` where the TypeScript side writes
     ``null``, ``true`` and ``"x"``. Same request, two different error strings,
     and a caller that string-matches - which is exactly what an agent does -
-    has to handle both. ``parity/errors.json`` pins the result.
+    has to handle both. ``contract/errors.json`` pins the result.
     """
     try:
         # The separators match JSON.stringify exactly: no space after a comma or

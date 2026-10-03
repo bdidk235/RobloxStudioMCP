@@ -128,7 +128,7 @@
 
 - [x] **RETRACTED 2026-10-03 — moot: the repo is Python-only and the Node client is gone, so there is no second implementation left to wire up.** ~~The one real difference: identity resolution — and the code is already written.** `logid.ts` (86 KB) and `locks.ts` are ported and tested; `logid.test.ts` has 60-odd references. What is missing is the **call site**: `instance.ts` never imports `logid.ts`, so `listStudioProcesses` derives role and place from the command line (`processRows`, `roleFromCommandLine`, `placeFromCommandLine`) and `stopProcess(pid)` has no PID to be given. With two Studios on one place — the current state on this machine, both named `Place1` — Node **cannot say which is which**, so `action=stop` refuses rather than terminating the wrong process. **Closing it is now a wiring change, not a port: import `logid.ts` where `processRows` supplies role and place, and decide what a log with no PID does — it must be an error, never a silent "no identity".** Corrected 2026-10-03; this item previously said the module was unported and put the figure at 1,012 lines, which was wrong.~~
 
-- [ ] **The budget is still the binding constraint**: 2,897 of 3,200 (live figures in `parity/tools.json`). A 17th tool is a decision for the user, not an accident.
+- [ ] **The budget is still the binding constraint**: 2,897 of 3,200 (live figures in `contract/tools.json`). A 17th tool is a decision for the user, not an accident.
 
 - [ ] **The description budget is effectively full, 16 tools.** Re-measured 2026-09-30 after the Block 1 and Block 2 edits, which moved it. This is a hard blocker on adding a 17th tool and it is worth knowing *before* designing one:
 
