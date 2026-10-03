@@ -826,6 +826,22 @@ describe("runTests", () => {
     expect(studio.stopped).toBe(1);
   });
 
+  it("returns the key the tool description advertises", async () => {
+    // The wire contract is `console_lines`, and `extendedServer.ts` serialises
+    // this object verbatim. It was `consoleLines`, so a caller branching on the
+    // documented key got `undefined` - and no test caught it, because every
+    // other `consoleLines` in this file is the *fake studio's* accumulated
+    // output, which is a different field that still uses that name.
+    //
+    // Mirrors `python/tests/test_parity.py`'s intent; parity/tools.json only
+    // covers schemas, so a response-body key is invisible to it.
+    const studio = new FakeStudio();
+    studio.consoleLines = ["info: ok"];
+    const out = await runTests(studio.asStudio(), { waitSeconds: 0.01 });
+    expect(Object.keys(out).sort()).toEqual(["console_lines", "errors", "passed"]);
+    expect(out.console_lines).toEqual(["info: ok"]);
+  });
+
   it("detects errors case-insensitively", async () => {
     const studio = new FakeStudio();
     studio.consoleLines = ["SCRIPT ERROR: boom", "done"];

@@ -530,12 +530,18 @@ function sleep(ms: number): Promise<void> {
 /**
  * Run play testing and collect output as a test summary.
  *
- * Returns `{ passed, consoleLines, errors }`.
+ * Returns `{ passed, console_lines, errors }`. The snake_case key is the wire
+ * contract: the tool description promises `console_lines`, the Python side
+ * emits it, and `extendedServer.ts` serialises this object verbatim. It was
+ * `consoleLines` here, so a caller branching on the documented key got
+ * `undefined` and no test noticed, because every `consoleLines` in the suite
+ * is the *studio's* accumulated output - a different field that keeps this
+ * name.
  */
 export async function runTests(
   studio: RobloxStudio,
   options: RunTestsOptions = {},
-): Promise<{ passed: boolean; consoleLines: string[]; errors: string[] }> {
+): Promise<{ passed: boolean; console_lines: string[]; errors: string[] }> {
   const { testPaths = null, waitSeconds = 2.0, maxLines = 30 } = options;
   const missing: string[] = [];
   if (testPaths) {
@@ -571,7 +577,7 @@ export async function runTests(
     const passed = errors.length === 0 && missing.length === 0;
     return {
       passed,
-      consoleLines: lines.length > 0 ? lines.slice(-maxLines) : [],
+      console_lines: lines.length > 0 ? lines.slice(-maxLines) : [],
       errors: [...errors, ...missing.map((m) => `Missing test script: ${m}`)],
     };
   } finally {

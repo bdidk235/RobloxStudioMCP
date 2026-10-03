@@ -44,6 +44,13 @@ const LINE_PREFIX_RE = /^\s*\d+\s*→/;
 
 // Heuristic substrings indicating script_read failed because the script is
 // missing (vs. a connection/permission failure that must not be masked).
+//
+// Bare `nil` and `unknown` were here and are removed. They are ordinary words
+// in a Luau fault - "attempt to index nil (field 'X')" is a caller's own bug -
+// so under `create_if_missing` they made this report `created` for a script
+// that was never missing, silently. Measured on the Python side: 5 of 7
+// unrelated errors matched. `is missing` keeps the intent without the overlap;
+// `python/tests/test_missing_heuristic.py` pins the negative list.
 const MISSING_HINTS = [
   "not found",
   "not exist",
@@ -52,9 +59,7 @@ const MISSING_HINTS = [
   "couldn't find",
   "does not exist",
   "doesn't exist",
-  "missing",
-  "unknown",
-  "nil",
+  "is missing",
 ];
 
 export const MAX_CHUNKED_RETRIES = 5;
