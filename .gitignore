@@ -12,3 +12,6 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# node/ was removed on Python-only main (see branch parity); never re-add it here.
+node/
