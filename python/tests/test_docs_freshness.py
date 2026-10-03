@@ -146,6 +146,118 @@ class TestEvidenceLogIsIndexed(unittest.TestCase):
         self.assertEqual(set(named), set(self.sections))
 
 
+class TestEvidenceLogHasNotEatenItself(unittest.TestCase):
+    """Stop the log growing by default placement rather than by decision.
+
+    The failure this exists for is one commit old. `TODO.md` held a 1,290-line
+    dated review - **31% of the file** - for days, and in the session that finally
+    removed it, five more sections were added *and* a banner was written warning
+    that the file was too big to read. Documenting a known problem is not
+    addressing it, and this repo already has a section cataloguing that failure
+    class in a different costume.
+
+    Two ceilings, because the two ways it fails are different:
+
+    - **One section dominating.** Share-based, so it scales with the file and
+      fires on *concentration* rather than on size. A log with fifty short
+      sections is large and fine; a log where one dated report is a third of it is
+      neither.
+    - **Total size.** The backstop for growth spread thinly across many sections,
+      which the share check would not see.
+
+    Both report **extract, do not delete**: every section cut today held open
+    items recorded nowhere else.
+    """
+
+    MAX_SECTION_SHARE = 0.15
+    MAX_TOTAL_BYTES = 250 * 1024
+
+    def setUp(self):
+        self.path = REPO / "TODO.md"
+        self.text = self.path.read_text(encoding="utf-8")
+        self.lines = self.text.splitlines()
+
+    def _sections(self):
+        heads = [i for i, l in enumerate(self.lines)
+                 if l.startswith("## ") and not l.startswith("### ")]
+        out = []
+        for k, start in enumerate(heads):
+            end = heads[k + 1] if k + 1 < len(heads) else len(self.lines)
+            out.append((self.lines[start][3:].strip(), end - start))
+        return out
+
+    def test_no_single_section_dominates_the_file(self):
+        total = len(self.lines)
+        ceiling = total * self.MAX_SECTION_SHARE
+        offenders = [(n, c) for n, c in self._sections() if not self._share_ok(
+            [(n, c)], total)]
+        self.assertEqual(
+            offenders, [],
+            "section(s) over {:.0%} of TODO.md: {}. A dated section that swallows "
+            "the log is the shape that grew it to 242 KB unnoticed. **Extract its "
+            "open items into their own section, then delete the narrative** - do "
+            "not delete the items, which are recorded nowhere else."
+            .format(self.MAX_SECTION_SHARE,
+                    ", ".join(f"{n!r} ({c} lines)" for n, c in offenders)),
+        )
+
+    def test_total_size_is_under_the_ceiling(self):
+        size = self.path.stat().st_size
+        self.assertTrue(
+            self._size_ok(size),
+            f"TODO.md is {size // 1024} KB, over the {self.MAX_TOTAL_BYTES // 1024} KB "
+            f"TODO.md is {size // 1024} KB, over the {self.MAX_TOTAL_BYTES // 1024} KB "
+            "ceiling. Roughly 60k tokens is enough to displace the work in "
+            "context. Split by subject, or move a dated report out and carry its "
+            "open items forward.",
+        )
+
+    def test_the_ceilings_can_actually_fail(self):
+        """Negative control.
+
+        A gate that cannot fail is indistinguishable from one that passes, which
+        is the mistake this file was written about. An earlier draft of this
+        control asserted ``MAX * 2 > MAX`` for the byte ceiling - trivially true,
+        proving nothing - and crashed on a list/int mix for the share ceiling.
+        Both now breach the *real* predicate and assert it rejects the breach.
+
+        The predicates are extracted rather than restated so the control cannot
+        pass against a copy of the logic rather than the logic itself.
+        """
+        share_ok = self._share_ok
+        size_ok = self._size_ok
+
+        # Share: a section deliberately over the ceiling.
+        ceiling = len(self.lines) * self.MAX_SECTION_SHARE
+        bloated = ["## A dated report nobody split", *["filler"] * (int(ceiling) + 50)]
+        self.assertFalse(
+            share_ok([("A dated report nobody split", len(bloated) - 1)], len(bloated)),
+            "the share ceiling accepted a section over its limit",
+        )
+
+        # And it accepts the real thing, so it is discriminating rather than
+        # simply always-false.
+        self.assertTrue(
+            share_ok(self._sections(), len(self.lines)),
+            "the share ceiling rejected the current file",
+        )
+
+        # Bytes: a payload over the limit, and one under it.
+        self.assertFalse(
+            size_ok(self.MAX_TOTAL_BYTES + 1),
+            "the byte ceiling accepted a file over its limit",
+        )
+        self.assertTrue(size_ok(self.MAX_TOTAL_BYTES - 1),
+                        "the byte ceiling rejected a file under its limit")
+
+    def _share_ok(self, sections, total) -> bool:
+        ceiling = total * self.MAX_SECTION_SHARE
+        return all(count <= ceiling for _, count in sections)
+
+    def _size_ok(self, size: int) -> bool:
+        return size <= self.MAX_TOTAL_BYTES
+
+
 class TestParityTestReadsItsOwnCap(unittest.TestCase):
 
     def test_parity_test_does_not_hardcode_a_cap(self):
