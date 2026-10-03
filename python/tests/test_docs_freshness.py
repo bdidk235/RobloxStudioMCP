@@ -113,64 +113,78 @@ class TestDocsFreshness(unittest.TestCase):
 
 
 class TestEvidenceLogIsIndexed(unittest.TestCase):
-    """`TODO.md` has a generated contents list, and it must match the file.
+    """A long evidence log must carry a contents list, and it must match.
 
-    It went stale the moment a section was added, which is the drift the index
-    was built to stop. Three sections were missing for one commit.
+    This caught real drift: three sections were added without refreshing the
+    index, and the index came to list itself because the filter compared the
+    whole line `## Contents` against `Contents`.
+
+    Below `NEEDS_INDEX_AT` sections an index is noise, and its absence is
+    correct - asserting one there would be a rule about layout rather than about
+    being able to find things.
     """
+
+    NEEDS_INDEX_AT = 6
 
     def setUp(self):
         self.lines = (REPO / "TODO.md").read_text(encoding="utf-8").splitlines()
-        start = self.lines.index("## Contents")
-        end = next(i for i in range(start + 1, len(self.lines))
-                   if self.lines[i].startswith("> ##"))
-        self.entries = [l for l in self.lines[start:end] if l.startswith("- [`")]
-        # Compare the extracted title, not the line. Getting this wrong is how
-        # the index came to list itself: the filter read `## Contents` and
-        # compared it to `Contents`.
         self.sections = [l[3:].strip() for l in self.lines
                          if l.startswith("## ") and not l.startswith("### ")
                          and l[3:].strip() != "Contents"]
+        self.has_index = "## Contents" in self.lines
 
-    def test_one_entry_per_section(self):
-        self.assertEqual(len(self.entries), len(self.sections),
-                         f"{len(self.entries)} entries vs {len(self.sections)} "
-                         "sections - regenerate the contents list")
+    def test_an_index_is_present_when_the_file_needs_one(self):
+        if len(self.sections) >= self.NEEDS_INDEX_AT:
+            self.assertTrue(
+                self.has_index,
+                f"TODO.md has {len(self.sections)} sections and no contents list. "
+                "Anyone opening it has to read it to find out whether there is "
+                "work to do.",
+            )
 
-    def test_the_index_does_not_list_itself(self):
-        self.assertNotIn("Contents",
-                         [re.match(r"- \[`(.+?)`\]", e).group(1) for e in self.entries])
-
-    def test_every_entry_names_a_real_section(self):
-        named = [re.match(r"- \[`(.+?)`\]", e).group(1) for e in self.entries]
-        self.assertEqual(set(named), set(self.sections))
+    def test_when_present_the_index_matches_the_file(self):
+        if not self.has_index:
+            self.skipTest(f"only {len(self.sections)} sections; no index needed")
+        start = self.lines.index("## Contents")
+        end = next((i for i in range(start + 1, len(self.lines))
+                    if self.lines[i].startswith("> ##")), len(self.lines))
+        entries = [l for l in self.lines[start:end] if l.startswith("- [`")]
+        named = [re.match(r"- \[`(.+?)`\]", e).group(1) for e in entries]
+        self.assertEqual(
+            len(entries), len(self.sections),
+            f"{len(entries)} index entries vs {len(self.sections)} sections - "
+            "regenerate the contents list",
+        )
+        self.assertNotIn("Contents", named, "the index lists itself")
+        self.assertEqual(sorted(named), sorted(self.sections))
 
 
 class TestEvidenceLogHasNotEatenItself(unittest.TestCase):
     """Stop the log growing by default placement rather than by decision.
 
     The failure this exists for is one commit old. `TODO.md` held a 1,290-line
-    dated review - **31% of the file** - for days, and in the session that finally
-    removed it, five more sections were added *and* a banner was written warning
-    that the file was too big to read. Documenting a known problem is not
-    addressing it, and this repo already has a section cataloguing that failure
-    class in a different costume.
+    dated review for days, and in the session that removed it, five more sections
+    were added *and* a banner was written warning that the file was too big to
+    read. Documenting a known problem is not addressing it.
 
-    Two ceilings, because the two ways it fails are different:
+    **An earlier version of this gate used a *share* ceiling - no section over
+    15% of the file - and was wrong.** It was read off the one failure above and
+    then applied as a general rule, so it rejected the correct structure: in a
+    file that is a backlog, the backlog legitimately *is* most of the file. The
+    over-generalisation this repo keeps making, caught here by the gate failing
+    on a file it should have passed.
 
-    - **One section dominating.** Share-based, so it scales with the file and
-      fires on *concentration* rather than on size. A log with fifty short
-      sections is large and fine; a log where one dated report is a third of it is
-      neither.
-    - **Total size.** The backstop for growth spread thinly across many sections,
-      which the share check would not see.
+    So the rule is **absolute**, which is what the failure actually was: no single
+    section may exceed `MAX_SECTION_LINES`, however big the file is. A 1,290-line
+    narrative section fails it; a 142-line open-items list does not.
 
-    Both report **extract, do not delete**: every section cut today held open
-    items recorded nowhere else.
+    Two ceilings, because the two ways this fails differ:
+      - **one section**, absolute, so narrative cannot swallow a backlog
+      - **total bytes**, the context budget, which is the constraint that matters
     """
 
-    MAX_SECTION_SHARE = 0.15
-    MAX_TOTAL_BYTES = 250 * 1024
+    MAX_SECTION_LINES = 400
+    MAX_TOTAL_BYTES = 120 * 1024
 
     def setUp(self):
         self.path = REPO / "TODO.md"
@@ -186,73 +200,54 @@ class TestEvidenceLogHasNotEatenItself(unittest.TestCase):
             out.append((self.lines[start][3:].strip(), end - start))
         return out
 
-    def test_no_single_section_dominates_the_file(self):
-        total = len(self.lines)
-        ceiling = total * self.MAX_SECTION_SHARE
-        offenders = [(n, c) for n, c in self._sections() if not self._share_ok(
-            [(n, c)], total)]
+    def test_no_section_is_long_enough_to_be_a_dated_report(self):
+        offenders = [(n, c) for n, c in self._sections() if not self._len_ok(c)]
         self.assertEqual(
             offenders, [],
-            "section(s) over {:.0%} of TODO.md: {}. A dated section that swallows "
-            "the log is the shape that grew it to 242 KB unnoticed. **Extract its "
-            "open items into their own section, then delete the narrative** - do "
-            "not delete the items, which are recorded nowhere else."
-            .format(self.MAX_SECTION_SHARE,
+            "section(s) over {} lines: {}. A section that long is a dated report "
+            "wearing a section heading - that is the shape that grew this file to "
+            "242 KB unnoticed. **Move it to docs/EVIDENCE.md and keep its open "
+            "items**, which are recorded nowhere else."
+            .format(self.MAX_SECTION_LINES,
                     ", ".join(f"{n!r} ({c} lines)" for n, c in offenders)),
         )
 
-    def test_total_size_is_under_the_ceiling(self):
+    def test_total_size_is_under_the_context_budget(self):
         size = self.path.stat().st_size
         self.assertTrue(
             self._size_ok(size),
-            f"TODO.md is {size // 1024} KB, over the {self.MAX_TOTAL_BYTES // 1024} KB "
-            f"TODO.md is {size // 1024} KB, over the {self.MAX_TOTAL_BYTES // 1024} KB "
-            "ceiling. Roughly 60k tokens is enough to displace the work in "
-            "context. Split by subject, or move a dated report out and carry its "
-            "open items forward.",
+            f"TODO.md is {size // 1024} KB, over the "
+            f"{self.MAX_TOTAL_BYTES // 1024} KB ceiling. Roughly 60k tokens is "
+            "enough to displace the work in context. Move closed research to "
+            "docs/EVIDENCE.md; only open work and withdrawals belong here.",
         )
 
     def test_the_ceilings_can_actually_fail(self):
         """Negative control.
 
         A gate that cannot fail is indistinguishable from one that passes, which
-        is the mistake this file was written about. An earlier draft of this
-        control asserted ``MAX * 2 > MAX`` for the byte ceiling - trivially true,
-        proving nothing - and crashed on a list/int mix for the share ceiling.
-        Both now breach the *real* predicate and assert it rejects the breach.
-
-        The predicates are extracted rather than restated so the control cannot
-        pass against a copy of the logic rather than the logic itself.
+        is the mistake this file was written about. An earlier draft asserted
+        ``MAX * 2 > MAX`` for the byte ceiling - trivially true, proving nothing
+        - and crashed on a list/int mix for the other. Both now breach the *real*
+        extracted predicate and assert it rejects the breach, each with a passing
+        counterpart so neither can be simply always-false.
         """
-        share_ok = self._share_ok
-        size_ok = self._size_ok
+        self.assertFalse(self._len_ok(self.MAX_SECTION_LINES + 1),
+                         "the section ceiling accepted a section over its limit")
+        self.assertTrue(self._len_ok(self.MAX_SECTION_LINES - 1),
+                        "the section ceiling rejected a section under its limit")
 
-        # Share: a section deliberately over the ceiling.
-        ceiling = len(self.lines) * self.MAX_SECTION_SHARE
-        bloated = ["## A dated report nobody split", *["filler"] * (int(ceiling) + 50)]
-        self.assertFalse(
-            share_ok([("A dated report nobody split", len(bloated) - 1)], len(bloated)),
-            "the share ceiling accepted a section over its limit",
-        )
-
-        # And it accepts the real thing, so it is discriminating rather than
-        # simply always-false.
-        self.assertTrue(
-            share_ok(self._sections(), len(self.lines)),
-            "the share ceiling rejected the current file",
-        )
-
-        # Bytes: a payload over the limit, and one under it.
-        self.assertFalse(
-            size_ok(self.MAX_TOTAL_BYTES + 1),
-            "the byte ceiling accepted a file over its limit",
-        )
-        self.assertTrue(size_ok(self.MAX_TOTAL_BYTES - 1),
+        self.assertFalse(self._size_ok(self.MAX_TOTAL_BYTES + 1),
+                         "the byte ceiling accepted a file over its limit")
+        self.assertTrue(self._size_ok(self.MAX_TOTAL_BYTES - 1),
                         "the byte ceiling rejected a file under its limit")
 
-    def _share_ok(self, sections, total) -> bool:
-        ceiling = total * self.MAX_SECTION_SHARE
-        return all(count <= ceiling for _, count in sections)
+        # And the real file satisfies both, so the gate discriminates.
+        self.assertTrue(self._size_ok(self.path.stat().st_size))
+        self.assertTrue(all(self._len_ok(c) for _, c in self._sections()))
+
+    def _len_ok(self, count: int) -> bool:
+        return count <= self.MAX_SECTION_LINES
 
     def _size_ok(self, size: int) -> bool:
         return size <= self.MAX_TOTAL_BYTES
