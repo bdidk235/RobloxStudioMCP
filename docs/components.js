@@ -54,9 +54,9 @@ class ArchDiagram extends HTMLElement {
 class PerfTable extends HTMLElement {
   connectedCallback() {
     const rows = JSON.parse(this.getAttribute("rows") || "[]");
-    let html = `<table class="perf"><tr><th>Op</th><th>Python 3.12</th><th>Node 26</th><th>Read</th></tr>`;
+    let html = `<table class="perf"><tr><th>Op</th><th>Python 3.12</th><th>Read</th></tr>`;
     for (const r of rows) {
-      html += `<tr><td><code>${r[0]}</code></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`;
+      html += `<tr><td><code>${r[0]}</code></td><td>${r[1]}</td><td>${r[2]}</td></tr>`;
     }
     this.innerHTML = html + "</table>";
   }

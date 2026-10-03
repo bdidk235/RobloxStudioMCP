@@ -4,7 +4,7 @@ on:
   push:
   pull_request:
 
-# Two jobs: unit tests per language on Windows and macOS.
+# One job: Python unit tests on Windows and macOS.
 # No Studio needed anywhere here (fakes throughout). Live-Studio
 # integration (wait_for_studio + test_integration_studio) runs locally
 # with ROBLOX_STUDIO_MCP_INTEGRATION=1 — see the repo README.
@@ -33,40 +33,3 @@ jobs:
 
       - name: Python tests
         run: python -m pytest tests
-
-  node-test:
-    name: Node tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Set up pnpm
-        run: npm install -g pnpm@10
-
-      - name: Install Node deps
-        run: pnpm --dir node install --frozen-lockfile
-
-      - name: Node typecheck
-        run: pnpm --dir node typecheck
-
-      # BEFORE the tests, not after. `build-freshness.test.ts` asserts that
-      # `dist/` exists and is newer than `src/`, and `dist/` is gitignored, so a
-      # fresh CI checkout has none. Running the suite first made that gate
-      # unsatisfiable - it failed on every run of every commit, and it only ever
-      # passed locally because a developer's working copy already had a build.
-      # Building first is also what makes the test mean something here: it checks
-      # the build CI just produced rather than skipping for want of one.
-      - name: Node build
-        run: pnpm --dir node build
-
-      - name: Node tests
-        run: pnpm --dir node test

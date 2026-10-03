@@ -1,9 +1,3 @@
-# Node client (node/)
-node/node_modules/
-node/dist/
-node/coverage/
-*.tsbuildinfo
-
 # Python client (python/)
 __pycache__/
 *.py[cod]

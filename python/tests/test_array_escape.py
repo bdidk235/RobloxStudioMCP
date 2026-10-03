@@ -64,8 +64,7 @@ class FlagsTheMeasuredShapes(unittest.TestCase):
 
     def test_an_array_inside_a_single_keyed_object_reports_the_indexed_path(self):
         # `(root)` applies only when the dense object IS the root. Here the
-        # root has a single key "1", so the path starts at that key - and Node
-        # must name it the same way (see `agrees with Python` over there).
+        # root has a single key "1", so the path starts at that key.
         self.assertEqual(
             _array_escape_paths({1: [{1: 1, 2: 2}]}),
             ["1[0]"],

@@ -1,11 +1,11 @@
-"""The shared Python/Node tool contract, generated from the Python side.
+"""The Python tool contract, generated from the Python side.
 
 Why a generated file rather than a hand-written list
 ---------------------------------------------------
-Parity between two implementations is the kind of thing that is *believed*
-rather than enforced. Both sides had drifted - Node was missing three tools, and
-six schemas differed - with nothing to notice, because each side's tests only
-checked its own tools.
+The tool surface is the kind of thing that is *believed*
+rather than enforced. It once drifted - three tools missing, and
+six schemas differing - with nothing to notice, because the tests only
+checked the tools loosely.
 
 So the contract is a file, both test suites read it, and neither can drift
 without a test failing. Regenerating it is a deliberate act:
@@ -95,7 +95,7 @@ _STEERS: Tuple[Tuple[str, str], ...] = (
 )
 
 
-#: Per-tool and total description caps. Enforced on both sides; see the
+#: Per-tool and total description caps. Enforced by the suite; see the
 #: "Remaining" section of TODO.md for why the total is the binding one.
 PER_TOOL_CAP = 450
 #: Raised from 2,700 on 2026-10-01. The old cap forced a choice between saying
@@ -112,8 +112,8 @@ TOTAL_CAP = 3200
 def steers() -> List[Dict[str, str]]:
     """The relay-to-extended steering table, in the contract.
 
-    Lives here rather than in either implementation so it is generated once and
-    asserted by both suites, exactly like the tool surface. Two hand-written
+    Lives here rather than in the implementation so it is generated once and
+    asserted by the suite, exactly like the tool surface. Two hand-written
     copies of this table would drift, and the failure mode is a model quietly
     choosing the worse tool - invisible, because the worse tool still works.
     """
@@ -129,14 +129,14 @@ def _normalise_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     defaults are recorded but not compared, because one side may legitimately
     spell a default differently while behaving the same.
 
-    `read_only` was added after measuring that Python marked 7 tools read-only and
-    Node marked **none**, with nothing able to notice. The hint is what tells a
+    `read_only` was added after measuring that 7 tools were marked read-only
+    while a past variant marked **none**, with nothing able to notice. The hint is what tells a
     client a tool only observes, so it may run those in parallel; unmarked is read
     as "may mutate", so omitting it is *safe* but needlessly serial. A client that
     grants parallel execution from the hint is the reason it has to match.
 
     What this deliberately does **not** do is compare implementation internals.
-    The point is that a caller can use either server, not that the code matches.
+    The point is that a caller gets a stable surface, not that the code matches.
     """
     properties = {}
     for name, spec in (schema.get("properties") or {}).items():

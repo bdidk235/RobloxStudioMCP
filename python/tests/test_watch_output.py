@@ -168,8 +168,7 @@ class PlacePathSpaces(unittest.TestCase):
     Harmless for this machine's own paths (they live under `%TEMP%`, no spaces)
     and silently wrong for any place in a directory that has one. A truncated path
     still yields a basename - a fragment - so it simply never matched a mesh name
-    rather than raising. Found while porting the function to Node, where the
-    mirrored test caught the port immediately.
+    rather than raising.
     """
 
     def test_a_path_under_temp_still_parses(self):
@@ -216,12 +215,13 @@ class PlacePathSpaces(unittest.TestCase):
 
 
 class SurfaceParity(unittest.TestCase):
-    """The Node schema must accept what the Python schema accepts.
+    """The contract schema must accept what the Python schema accepts.
 
-    Found by measurement: Node's `extended_watch_output` had only `studio_id`, so
-    the filter and the cap existed on one side alone. Because unknown parameters
-    are silently ignored (request P0.2a), passing `pattern` on the Node side did
-    not fail - it returned the whole buffer, which reads exactly like "no hits".
+    Found by measurement: a past `extended_watch_output` variant had only
+    `studio_id`, so the filter and the cap existed in the contract alone.
+    Because unknown parameters are silently ignored (request P0.2a), passing
+    `pattern` then did not fail - it returned the whole buffer, which reads
+    exactly like "no hits".
     """
 
     def _props(self, tool_name):

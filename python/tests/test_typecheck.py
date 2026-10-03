@@ -5,7 +5,7 @@ key: `extended_watch_output` read `result["text"]` on a dict keyed `new_lines`,
 returned `{"returned": 0}` on every call, and reported `isError: false`. It
 shipped because the only test on that tool asserted its *description*.
 
-Node has had `tsc` as its build step the whole time, and `tsc --noEmit` caught
+A prior single-language history note: a compile-time check once caught
 four real errors in code written during one session. Python had **no type
 checker at all** - 171 of 233 defs carried annotations that nothing validated.
 That asymmetry is the thing this file closes.

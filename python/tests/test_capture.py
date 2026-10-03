@@ -302,12 +302,11 @@ class TestSavePathFailure(_WriteFailure):
         """The part the bug actually destroyed: the prose, not just the fields.
 
         The path is compared in its ``describe()`` form, not raw. The message
-        renders arguments as JSON on purpose, because that is what makes the
-        Python and TypeScript servers emit byte-identical error strings
-        (``parity/errors.json`` pins the result) - a Windows path therefore
-        appears with doubled backslashes. Asserting the raw path would push
-        someone to "fix" the rendering and break cross-implementation parity,
-        which is the more expensive mistake.
+        renders arguments as JSON on purpose, because that is what keeps the
+        emitted error string stable (``parity/errors.json`` pins the result)
+        - a Windows path therefore appears with doubled backslashes. Asserting
+        the raw path would push someone to "fix" the rendering and break the
+        contract, which is the more expensive mistake.
         """
         from roblox_studio_mcp.extended.errors import describe
 
@@ -339,7 +338,7 @@ class TestSavePathFailure(_WriteFailure):
         self.assertIn("75,000", err.message)
 
     async def test_the_errno_is_a_name_not_a_number(self):
-        """So it is a branch key, and so both servers agree on the spelling."""
+        """So it is a branch key, with the spelling the contract pins."""
         err = await self._fails(self.missing)
         self.assertEqual(err.data["errno"], "ENOENT")
         self.assertIsInstance(err.data["errno"], str)

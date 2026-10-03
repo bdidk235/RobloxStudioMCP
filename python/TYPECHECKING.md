@@ -15,8 +15,9 @@ returned `{"returned": 0}` on **every** call, and it reported `isError: false`.
 It shipped because the only test on that tool asserted its *description*. The
 surface was correct; nothing looked at the payload.
 
-Node had `tsc` as its build step the whole time, and `tsc --noEmit` caught four
-real errors in code written during a single session. Python had **no type checker
+A previous single-language setup kept a compile-time checker as its build step,
+and it caught four real errors in code written during a single session. Python
+had **no type checker
 at all** - 171 of 233 defs carried annotations that nothing validated. That
 asymmetry was the thing worth closing.
 

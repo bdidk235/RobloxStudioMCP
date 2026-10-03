@@ -1,8 +1,8 @@
-"""Shared contract between the Python and Node implementations.
+"""The tool contract for the Python implementation.
 
 See `build_contract.py` for why this is a generated file rather than a
-hand-written list, and `python/tests/test_parity.py` and
-`node/tests/parity.test.ts` for the two suites that enforce it.
+hand-written list, and `python/tests/test_parity.py` for the suite that
+enforces it.
 
 An explicit `__init__.py` because pytest does not resolve the namespace package
 reliably here, and a parity check that fails to import is worse than none -

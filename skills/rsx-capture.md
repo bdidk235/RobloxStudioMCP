@@ -56,13 +56,8 @@ compressed in between. Verified on 1233x754:
 - scratch module destroyed afterwards
 - **1.6-1.7 s**, down from 3.60 s
 
-The Python and Node implementations produce **identical pixels**, so either is
-safe to trust — but that agreement rests on two separate measurement sets, and
-the numbers are not shared between them. The byte-exactness list above and the
-chunk table below are Python's, recorded in `extended/capture.py`; Node carries
-its own in the Luau comment at `node/src/extended/capture.ts` L110-124, which
-states the same figures rather than deriving them from Python. Re-verify on the
-side you change instead of citing the other's numbers.
+The byte-exactness list above and the chunk table below are Python's, recorded
+in `extended/capture.py`.
 
 Pixel checks, re-verified after a Studio version bump and again after the base64
 change: sky `(149,199,219)`, ground `(86,96,118)`, alpha 255.
@@ -71,8 +66,7 @@ Prefer `save_path` over the inline base64 response. The base64 form is large
 enough to dominate a context window on its own.
 
 **When the `save_path` write fails, the image is gone.** The call raises
-`INVALID_ARGUMENT` with a `CAPTURE_OK_RECOVERY` message (`capture.py:377`,
-byte-identical at `capture.ts:308`): the capture succeeded and the scratch module
+`INVALID_ARGUMENT` with a `CAPTURE_OK_RECOVERY` message (`capture.py:377`): the capture succeeded and the scratch module
 was destroyed in a `finally` the moment the base64 was read back, and the RGBA
 buffer dies with the call. **Re-capture — do not retry the write**, there is
 nothing left to write. Either point `save_path` at a parent directory that exists
@@ -95,9 +89,7 @@ per-3-byte Luau loop because of it: 527 ms against the service's 7.5 ms for a
 **2. A chunk size that was a speed bug wearing a capacity costume.** Each append
 rewrites the whole module, so N appends write about `P*N/2` bytes - and splitting
 one module **never raises the 6,291,456 ceiling**, so a payload over it fails at
-any chunk size. Appending more than once therefore only ever costs time:
-
-| chunk | appends | approx written | elapsed |
+any chunk size. Appending more than once therefore only ever costs time:| chunk | appends | approx written | elapsed |
 |---|---|---|---|
 | 120,000 | 31 | 59.5 MB | 3.60 s |
 | 1,000,000 | 4 | 10.0 MB | 1.85 s |
@@ -107,7 +99,7 @@ So: write it in one call, and if it does not fit, the answer is `downscale`, not
 smaller slice.
 
 **Chunk size is not a caller knob.** The table above is a measurement of
-internals: `DEFAULT_CHUNK` on both sides, and an `opts.chunk` field the Luau
+internals: `DEFAULT_CHUNK` and an `opts.chunk` field the Luau
 reads, but not one the tool exposes. `extended_capture`'s schema has exactly two
 properties, `save_path` and `studio_id`, and unknown arguments are refused before
 dispatch rather than ignored. So there is no smaller slice to ask for at the tool
@@ -159,7 +151,7 @@ is the whole reason this looks broken when it is working.
 ## A host-side `PrintWindow` capture is 8-35x faster — measured, not built here
 
 **The measurement exists; the code does not.** No `PrintWindow` call is in
-`python/src` or `node/src`. The chain up to the PID is built (`logid.resolve`),
+`python/src`. The chain up to the PID is built (`logid.resolve`),
 but the window tail is not written, so adopting it is new code, not wiring. Every
 number and trap below comes from `verify_printwindow.ps1` and
 `verify_occlusion.ps1`, not from a shipped capture path.

@@ -1,13 +1,13 @@
-"""Closed sets must be fully connected. Replaces `exhaustiveness_probe.py`.
+"""Closed sets must be fully connected.
 
-The idea under test was: *keep Node as a stronger type checker* - express the
-project's closed sets as TypeScript discriminated unions and let `tsc` prove the
-Python conforms. A union can say "handle every case or fail to compile"; Python
-cannot, and neither can pyright.
+The idea under test was: *express the project's closed sets as a foreign
+discriminated union and let that compiler prove Python conforms*. A union can
+say "handle every case or fail to compile"; Python cannot, and neither can
+pyright.
 
 **The idea is sound and the vehicle is wrong**, and this file is the proof. An
 exhaustiveness check found a real defect in about twenty minutes of Python. A
-TypeScript spec would have found the same defect and then needed maintaining
+foreign spec would have found the same defect and then needed maintaining
 forever.
 
 The defect it found, on first run:
@@ -31,8 +31,8 @@ The defect it found, on first run:
   claimed by `STALE_STUDIO_ID`. Whether that is right is an API decision, so it
   is recorded as an open question rather than changed here.
 
-**What no type checker on either side would have caught:** `ToolError("LAUNCH_FAILED",
-...)` type-checks perfectly in both languages. Only "is this closed set fully
+**What no type checker would have caught:** `ToolError("LAUNCH_FAILED",
+...)` type-checks perfectly. Only "is this closed set fully
 connected?" finds it. That is the one capability a foreign type system genuinely
 adds, and it is worth having - just not at the price of a second implementation.
 """

@@ -85,7 +85,7 @@ class TestDocsFreshness(unittest.TestCase):
         """Negative control.
 
         A freshness check that cannot fail is indistinguishable from one that
-        passes. `build-freshness.test.ts` sets the precedent in this repo, and
+        passes. A prior freshness check sets the precedent in this repo, and
         the cost of skipping it is a green gate that watches nothing - which is
         the failure this whole file is about.
 

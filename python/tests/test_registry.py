@@ -247,9 +247,7 @@ class TestRecord(RegistryTestCase):
     def test_non_dict_entries_are_dropped_not_crashed_on(self):
         """_load explicitly contemplates hand edits and foreign versions, and
         record() runs on every refreshing list - so a truthy non-dict value
-        must not raise. Found by code review: `(old_entry or {}).get` raises
-        AttributeError on a list or string, which Node already handled by
-        treating any non-object shape as infinitely old."""
+        must not raise: any non-object shape reads as infinitely old."""
         with open(self.path, "w", encoding="utf-8") as handle:
             json.dump(
                 {"version": 1, "instances": {"junk": [1, 2], "junk2": "x"}},

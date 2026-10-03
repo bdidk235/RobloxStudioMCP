@@ -1,22 +1,18 @@
-"""Python must match `parity/tools.json`, and so must Node.
+"""Python must match `parity/tools.json`.
 
-This is the mechanism behind "strong parity". The alternative - checking the two
-implementations agree by reading both - is how they drifted in the first place:
-Node was missing three tools and six schemas differed, and nothing noticed,
-because each side's tests only ever looked at its own tools.
-
-Both suites now read one generated file. Neither implementation can change its
-surface without a failure here or in `node/tests/parity.test.ts`.
+This is the spec-conformance check: `parity/build_contract.py` generates the
+contract from the Python server, and this test verifies the server still
+conforms to it. The contract is the authority; a deliberate surface change
+regenerates it, and anything else fails here.
 
 What is compared, and why only this
 ----------------------------------
-* **Tool names.** A caller switching servers must find the same tools.
-* **Schema property names and types.** A parameter that exists on one side and
-  not the other is the worst kind of drift, because unknown parameters are
-  **silently ignored** (request P0.2a) - so the call appears to work and returns
-  something other than what was asked for. `pattern` on Node's `watch_output`
-  was exactly that.
-* **Required parameters.** A required argument missing on one side turns a
+* **Tool names.** A caller must find the tools the contract promises.
+* **Schema property names and types.** A parameter that exists in the contract
+  and not in the server (or vice versa) is the worst kind of drift, because
+  unknown parameters are **silently ignored** (request P0.2a) - so the call
+  appears to work and returns something other than what was asked for.
+* **Required parameters.** A required argument missing from the server turns a
   working call into a runtime failure.
 * **Description length**, against both caps. The tool list is paid on every call
   of every session, so an unnoticed 400-character description is a real cost.
@@ -50,14 +46,14 @@ BY_NAME = {tool.name: tool for tool in _EXTENDED_TOOLS}
 
 
 class SteersMatchTheGeneratedContract(unittest.TestCase):
-    """The relay-to-extended steering table exists in three places.
+    """The relay-to-extended steering table exists in two places.
 
-    `parity/build_contract.py::_STEERS` is the source, and both servers keep a
-    copy to apply. This asserts all three are identical - byte for byte, not
+    `parity/build_contract.py::_STEERS` is the source, and the server keeps a
+    copy to apply. This asserts both are identical - byte for byte, not
     "roughly equivalent". The failure mode it guards is specific and invisible:
-    if one side drifts, a model is silently steered toward the worse tool on
-    that server only, and every call still succeeds. Nothing else in either
-    suite would notice, because the tools themselves are fine.
+    if the server copy drifts, a model is silently steered toward the worse
+    tool, and every call still succeeds. Nothing else in the suite would
+    notice, because the tools themselves are fine.
     """
 
     def _contract(self) -> dict:
@@ -93,7 +89,7 @@ class ContractIsCurrent(unittest.TestCase):
     def test_the_contract_matches_the_python_tools(self):
         """Regenerate with `python parity/build_contract.py` after a deliberate
         change; a failing test here means the surface moved without the contract
-        following, which is exactly how Node fell behind."""
+        following, which is exactly how drift goes unnoticed."""
         expected = sorted(entry["name"] for entry in CONTRACT["tools"])
         self.assertEqual(sorted(BY_NAME), expected)
 
@@ -173,13 +169,13 @@ class SchemaParity(unittest.TestCase):
                 )
 
     def test_read_only_hints_match_the_contract(self):
-        """Checked from both ends, because it drifted in one direction only.
+        """Checked from both ends, because it once drifted in one direction only.
 
         The hint tells a client a tool only observes, so it may run those in
         parallel. Unmarked reads as "may mutate", so a missing hint is *safe* -
-        which is exactly why nothing noticed that Node marked **none** of the 7
-        tools Python marks. Adding it to the contract is what turned that from an
-        unremarked difference into a failing assertion.
+        which is exactly why an unmarked set went unnoticed in the past.
+        Recording it in the contract turned that from an unremarked difference
+        into a failing assertion.
         """
         for entry in CONTRACT["tools"]:
             self.assertEqual(

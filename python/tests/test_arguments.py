@@ -9,12 +9,13 @@ reported success:
 
 * ``screen_capture`` accepted ``format: "png"`` and returned JPEG. Eight
   parameter names were tried before anyone noticed, because none of them errored.
-* Node's ``extended_watch_output`` had no ``pattern``, so passing it returned the
-  whole console buffer - which reads identically to "no breakpoint was hit".
+* A past ``extended_watch_output`` variant had no ``pattern``, so passing it
+  returned the whole console buffer - which reads identically to "no breakpoint
+  was hit".
 * ``max_lines: 0`` became 200 through a falsy default.
 
-The mirrored suite is ``node/tests/arguments.test.ts``. Both must agree, or the
-same call behaves differently depending on which server is configured.
+The contract in ``parity/tools.json`` pins the accepted arguments, so the
+same call behaves the same however the server is configured.
 """
 
 import asyncio

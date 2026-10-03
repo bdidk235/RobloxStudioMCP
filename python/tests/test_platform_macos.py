@@ -56,8 +56,6 @@ class Unproven(unittest.TestCase):
         retire it - the live integration suite running. Point that at a real
         Studio and this fails, forcing the claim to be revisited deliberately
         rather than quietly outliving its own refutation.
-
-        Mirrors ``node/tests/platform.test.ts::unproven``.
         """
         live = os.environ.get("ROBLOX_STUDIO_MCP_INTEGRATION") == "1"
         self.assertFalse(

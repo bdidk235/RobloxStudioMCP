@@ -1,63 +1,51 @@
 # Contributing
 
-Two clients for the same protocol — a Python original in `python/` and a
-TypeScript port in `node/` — plus the evidence that justifies their design.
+A Python client for the Studio MCP protocol in `python/`, plus the evidence
+that justifies its design.
 `README.md` covers what the project is and how to drive it. This file covers
 working *on* it.
 
 ## The one-paragraph version
 
 Every path goes through a platform layer. Every design decision is supposed to
-be traceable to a measurement. The tool surface is identical on both sides and
-enforced by a generated contract. Most of what looks like incidental complexity
+be traceable to a measurement. The tool surface is pinned by a generated
+contract. Most of what looks like incidental complexity
 here is load-bearing for one of those three facts, so read `TODO.md` before
 "simplifying" anything.
 
 ## Setup
 
-Two independent toolchains, each with its own working directory. Commands must
-be run from the tree they belong to — they do not share a root.
+Commands must be run from `python/` — there is a single toolchain with a
+single working directory.
 
 ```powershell
 # Python (from python/)
 pip install -e .[dev]
-
-# Node (from node/)
-pnpm install
 ```
 
-Both are dependency-free at runtime: Python is stdlib-only on 3.9+, Node uses
-built-ins only on 18+. The dev extras exist only for tests.
+It is dependency-free at runtime: stdlib-only on 3.9+. The dev extras exist
+only for tests.
 
 ## Run the gates
 
-A gate that has not been run is not a gate. Both suites run without Roblox
+A gate that has not been run is not a gate. The suite runs without Roblox
 Studio — the tests use fakes throughout.
 
 | Gate | Command | From |
 | --- | --- | --- |
 | Python behaviour | `python -m pytest tests -q` | `python/` |
 | Python types | `pytest tests/test_typecheck.py` (runs pyright) | `python/` |
-| Node types | `pnpm typecheck` | `node/` |
-| Node behaviour | `npx vitest run` | `node/` |
-| **Parity** | `pytest tests/test_parity.py` + `npx vitest run tests/parity.test.ts` | `python/`, `node/` |
-
-### Two traps that will cost you a red build
-
-**Never run bare `tsc --noEmit`.** The `typecheck` script is
-`tsc --noEmit -p tsconfig.check.json` — a stricter project that *includes the
-tests*. The bare invocation passes files the real gate rejects. Measured
-2026-10-01: the difference shipped to `main` and turned CI red.
+| Contract | `pytest tests/test_parity.py` | `python/` |
 
 **`python -m unittest discover -s tests` is not the gate.** Several tests are
 `pytest-asyncio`, and `unittest discover` does not drive them — it can report
 green while skipping the async coverage. Use `pytest`.
 
-### Parity is enforced, not aspirational
+### The contract is enforced, not aspirational
 
 `parity/tools.json` is generated from the Python server by
-`parity/build_contract.py` and asserted by **both** suites. A tool, a parameter
-or a required argument cannot change on one side unnoticed. After a deliberate
+`parity/build_contract.py` and asserted by the suite. A tool, a parameter
+or a required argument cannot change unnoticed. After a deliberate
 surface change, regenerate it — the diff *is* the parity report:
 
 ```
@@ -70,23 +58,6 @@ session, so new surface is funded by trimming descriptions rather than raising
 the cap. Read the live figures from `parity/tools.json` rather than from prose —
 prose figures here have drifted before, and `test_parity.py` derives its own cap
 from the contract so the gate cannot.
-
-## Python and Node: same pass, no catch-up
-
-Parity is closed at the **tool surface** on both sides. Behaviour underneath is
-best-effort, and one difference is deliberate and documented in
-`node/src/extended/IDENTITY.md`: `logid.ts` is ported and tested, but
-`instance.ts` does not import it, so Node derives role and place from the
-command line rather than the Studio's own log, and its `action=stop` **refuses**
-rather than guessing across two Studios it cannot tell apart.
-
-Two rules follow, and they are not the same rule:
-
-- **Cheap, and the default:** a fix or feature lands on Python and Node in the
-  same pass. This has cost almost nothing and it is how the parity work actually
-  happened.
-- **Expensive, and forbidden:** porting a Python-only module that Node lacks. The
-  gap is a documented, frozen boundary, not debt to amortise.
 
 ## Evidence discipline
 
@@ -113,25 +84,21 @@ decisions are traceable to evidence rather than plausibility.
 Several gates exist specifically to catch **silent** wrong answers, which is the
 failure class this project keeps paying for:
 
-- **Unknown parameters are refused before dispatch**, on both sides. A silently
+- **Unknown parameters are refused before dispatch**. A silently
   ignored argument produces a plausible wrong answer *and reports success* —
   three separate incidents here did exactly that. Relayed Studio tools are
   deliberately exempt, because this project cannot add parameters to them.
 - **`test_closed_sets.py`** checks exhaustiveness over the closed sets: every
   error code is producible, every advertised `action` is handled rather than
   merely accepted. This is what found an error code that was unreachable, which
-  no type checker on either side would have caught.
-- **Build freshness is a test**, not a habit. `dist/` older than `src/` runs the
-  old code with no error anywhere, so it has a negative control proving the check
-  can fail.
+  no type checker would have caught.
 
 ## Platform support
 
 **Windows is the tested platform. macOS is supported but unproven. Linux is not
 supported** — there is no POSIX branch, and that is a missing layer rather than
 a bug. All platform differences are confined to
-`python/src/roblox_studio_mcp/extended/platform.py` and
-`node/src/extended/platform.ts`, so a port has a known shape and a known size.
+`python/src/roblox_studio_mcp/extended/platform.py`.
 
 The macOS branch has never been run against a real macOS Studio. Treat a macOS
 bug report as a genuine unknown, and check `TODO.md` before concluding anything

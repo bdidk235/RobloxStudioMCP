@@ -43,15 +43,15 @@ window.DOC = {
       blocks: [
         {
           type: "p",
-          html: "<code>node node/dist/server.js</code> (from the repo root) is a transparent proxy: same tools, same raw responses as " +
+          html: "<code>python -m roblox_studio_mcp.server</code> (from <code>python/</code>) is a transparent proxy: same tools, same raw responses as " +
             "StudioMCP, one upstream process reused for the server's lifetime. " +
-            "<code>node node/dist/extendedServer.js</code> layers 8 convenience tools on top and is what opencode " +
+            "<code>python -m roblox_studio_mcp.extended_server</code> layers 8 convenience tools on top and is what opencode " +
             "actually runs (<code>Roblox_Studio</code> in <code>opencode.jsonc</code>). Measured " +
             "<code>tools/list</code> through it: <strong>36 tools</strong> — 28 relayed, 8 extended.",
         },
         {
           type: "code",
-          text: '{\n  "Roblox_Studio": {\n    "type": "local",\n    "command": ["node", "node/dist/extendedServer.js"],\n    "enabled": true\n  }\n}',
+          text: '{\n  "Roblox_Studio": {\n    "type": "local",\n    "command": ["python", "-m", "roblox_studio_mcp.extended_server"],\n    "enabled": true\n  }\n}',
         },
       ],
     },
@@ -64,12 +64,12 @@ window.DOC = {
           html: "Spawning the proxy and finishing the MCP handshake takes ~80–130&nbsp;ms. But a fresh proxy's " +
             "Studio uplink needs another beat: calls landing in the first milliseconds fail with " +
             "<code>Unable to reach Roblox Studio</code> even though Studio is attached. Measured spawn-to-first-live-answer: " +
-            "<strong>~204 ms, identical in Python and Node</strong> — it is proxy-side, not language.",
+            "<strong>~204 ms</strong> — proxy-side, not client code.",
         },
         {
           type: "p",
-          html: "Both clients ride through this: <code>resolve_studio_id()</code> / <code>resolveStudioId()</code> " +
-            "retry <em>only</em> that transient symptom (up to 10 s, every 200 ms). Any other error — including a " +
+          html: "The client rides through this: <code>resolve_studio_id()</code> " +
+            "retries <em>only</em> that transient symptom (up to 10 s, every 200 ms). Any other error — including a " +
             "genuinely empty Studio list — still raises immediately. So the first tool call through a new " +
             "connection, singleton included, just works.",
         },
@@ -122,7 +122,7 @@ window.DOC = {
         {
           type: "p",
           html: "Studio rejects direct <code>Script.Source</code> assignment over ~200K. " +
-            "<code>write_script</code> / <code>writeScript</code> therefore split large bodies " +
+            "<code>write_script</code> therefore splits large bodies " +
             "into 200K slices embedded as raw Lua long-bracket strings, then loop " +
             "<code>ScriptEditorService:UpdateSourceAsync(target, function(old) return old .. slice end)</code> " +
             "inside Studio. Proven live: a <strong>12.2 MB module rewritten byte-exact</strong> (12,220,210 chars).",
@@ -151,9 +151,8 @@ window.DOC = {
       blocks: [
         {
           type: "p",
-          html: "Python 3.12 vs Node 26, same Studio, same targets, 20 iterations per op, sequential runs. " +
-            "Verdict across three rounds: <strong>no meaningful difference</strong> — both clients are thin " +
-            "pipes over the same proxy; the Studio roundtrip dominates.",
+          html: "Python 3.12, same Studio, same targets, 20 iterations per op, sequential runs. " +
+            "The client is a thin pipe over the proxy; the Studio roundtrip dominates.",
         },
         { type: "perf" },
       ],
@@ -164,15 +163,13 @@ window.DOC = {
       blocks: [
         {
           type: "code",
-          text: "node/\n  src/              public API (MCPClient, RobloxStudio, …), servers, extended/\n  tests/            vitest suites (core, improvements, live-Studio integration)\n  examples/         runnable TS examples (incl. wait_for_studio for CI)\npython/               original Python client (same API, snake_case)\n  src/roblox_studio_mcp/\n  tests/            unittest suites (test_core, test_improvements, live-Studio integration)\n  examples/         runnable Python examples\ndocs/               this site (opens from disk)\n",
+          text: "python/               Python client\n  src/roblox_studio_mcp/\n  tests/            unittest suites (test_core, test_improvements, live-Studio integration)\n  examples/         runnable Python examples\ndocs/               this site (opens from disk)\n",
         },
         {
           type: "list",
           items: [
-            "<code>pnpm --dir node install</code> (if pnpm demands a TTY purge: <code>CI=true pnpm --dir node install</code>)",
-            "<code>pnpm --dir node typecheck</code> — strict tsc over src, tests, examples",
-            "<code>pnpm --dir node test</code> — vitest, no Studio needed (fakes throughout)",
-            "<code>pnpm --dir node build</code> — wipes and rebuilds <code>node/dist/</code> to mirror package entry points",
+            "<code>pip install -e \".[dev]\"</code> (from <code>python/</code>)",
+            "<code>python -m pytest tests -q</code> (from <code>python/</code>) — includes the pyright type gate via <code>test_typecheck.py</code>",
           ],
         },
         {
@@ -186,13 +183,13 @@ window.DOC = {
     },
   ],
   perf: [
-    ["cold connect (×5)", "100.6 ms", "127.8 ms", "Python spawns ~25 ms quicker"],
-    ["time-to-ready", "203.9 ms", "205.0 ms", "identical — proxy-side"],
-    ["resolve (cached)", "1.0 ms", "1.3 ms", "noise"],
-    ["list_tools", "2.1 ms", "1.9 ms", "client floor, identical"],
-    ["execute_luau", "37.2 ms", "46.1 ms", "overlapping (sd ~20)"],
-    ["script_read 85KB", "40.3 ms", "63.3 ms", "overlapping (sd ~25)"],
-    ["get_studio_state", "25.4 ms", "25.8 ms", "identical"],
-    ["get_console_output", "24.7 ms", "36.4 ms", "overlapping"],
+    ["cold connect (×5)", "100.6 ms", "spawn + handshake"],
+    ["time-to-ready", "203.9 ms", "proxy-side"],
+    ["resolve (cached)", "1.0 ms", "noise"],
+    ["list_tools", "2.1 ms", "client floor"],
+    ["execute_luau", "37.2 ms", "sd ~20"],
+    ["script_read 85KB", "40.3 ms", "sd ~25"],
+    ["get_studio_state", "25.4 ms", "—"],
+    ["get_console_output", "24.7 ms", "—"],
   ],
 };

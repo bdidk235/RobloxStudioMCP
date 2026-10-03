@@ -1,28 +1,28 @@
-"""The two servers must emit the same error payload for the same request.
+"""The server must emit the contract error payload for the same request.
 
-Mirrors ``node/tests/error-parity.test.ts``. Both read ``parity/errors.json``.
+Reads ``parity/errors.json`` as the authority: every probe goes through the
+**real code**, and each must produce the contract's code and message.
 
-**Why this file exists.** Three measured defects, none of which either side's
+**Why this file exists.** Three measured defects, none of which the server's
 own tests could have seen, because each only ever looked at its own output.
 
-*Shape.* Python nested the tool-specific keys under ``data.details`` while Node
-spread them flat, and Node's ``reject_unknown_arguments`` attached no ``data`` at
-all. A caller branching on ``data.unknown`` worked on Node and read
-``undefined`` on Python - silently, and on exactly the branch the caller wrote
-in order to *handle* the error.
+*Shape.* The tool-specific keys once nested under ``data.details`` instead of
+spreading flat, and ``reject_unknown_arguments`` once attached no ``data`` at
+all. A caller branching on ``data.unknown`` then read ``undefined`` - silently,
+and on exactly the branch the caller wrote in order to *handle* the error.
 
-*Value rendering.* Python's ``repr`` writes ``None``/``True``/``'x'`` where
-TypeScript writes ``null``/``true``/``"x"``, and ``json.dumps``'s default
-separators differ from ``JSON.stringify``'s. Same request, two different error
-strings; an agent that string-matches - which is what an agent does - has to
-handle both. Both sides now render through a shared ``describe``.
+*Value rendering.* ``repr`` writes ``None``/``True``/``'x'`` where the wire
+format wants ``null``/``true``/``"x"``, and ``json.dumps``'s default
+separators differ from the canonical compact form. Same request, two different
+error strings; an agent that string-matches - which is what an agent does -
+has to handle both. The server now renders through a shared ``describe``.
 
-*Accept/reject.* Node's ``updateScript`` cast a malformed edit to a ``Record``
-and read ``undefined`` out of it, so ``[42]`` was rejected here and silently
-accepted there.
+*Accept/reject.* A malformed edit was once cast to a mapping and ``undefined``
+read out of it, so ``[42]`` was rejected at one layer and silently accepted
+at another.
 
-So the assertions are behavioural: every probe goes through the **real code** on
-both sides, and both must produce the same code and the same message. Reading a
+So the assertions are behavioural: every probe goes through the **real code**,
+and each must produce the contract's code and message. Reading a
 code off ``classify()`` for a hand-written string would test the classifier
 rather than the raise site, which is exactly what the ``ToolError`` raise sites
 exist to stop depending on.
@@ -247,7 +247,7 @@ def tearDownModule():
 
 
 class UnknownArgumentPayloads(unittest.TestCase):
-    """The same ``data`` object, key for key, on both servers."""
+    """The same ``data`` object, key for key, as the contract pins it."""
 
     def test_the_contract_is_not_empty(self):
         self.assertGreaterEqual(len(CONTRACT["unknown_arguments"]), 4)
@@ -286,8 +286,6 @@ class UnknownArgumentPayloads(unittest.TestCase):
 
         ``ToolError.to_error()`` keeps the code at the top level; the relay
         builder adds it to ``data`` too, so a caller reading either gets it.
-        Node's ``toJsonRpcError`` does the same, and the mirrored test asserts
-        it there.
         """
         data = es._error_payload(  # noqa: SLF001
             self._reject("extended_capture", {"format": "png"})
@@ -322,10 +320,11 @@ class HandlerFaults(unittest.TestCase):
                 self.assertEqual(code, case["code"])
 
     def test_each_fault_says_the_declared_words(self):
-        """Not a wording preference: the two sides used to say different things.
+        """Not a wording preference: divergent wording once shipped here.
 
-        An agent branches on the code and *reads* the message. Divergent wording
-        means the agent has to handle both, and the parity claim is false.
+        An agent branches on the code and *reads* the message. Wording that
+        drifts from the contract means the agent has to handle both, and the
+        spec claim is false.
         """
         for case in CONTRACT["handlers"]:
             with self.subTest(case=case["name"]):

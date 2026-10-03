@@ -86,9 +86,9 @@ python -c "import sys;sys.path.insert(0,'python/src');from roblox_studio_mcp.ext
 Get-ChildItem skills\rsx-*.md | Measure-Object -Property Length -Sum
 ```
 
-Neither suite asserts those totals, because they move for uninteresting
-reasons. Both assert the ratio, which is the claim that matters: the index must
-stay under a quarter of the bodies (`test_skills.py`, `skills.test.ts`).
+No test asserts those totals, because they move for uninteresting
+reasons. `test_skills.py` asserts the ratio, which is the claim that matters: the index must
+stay under a quarter of the bodies.
 
 ## The description budget
 
@@ -137,13 +137,12 @@ checked rather than trusted: both suites fail a skill that breaks either.
 
 1. Create `skills/rsx-<name>.md` with frontmatter whose `name` matches the
    filename.
-2. Run the Python tests (`python -m pytest tests -q` from `python/`) and the
-   Node tests (`npx vitest run` from `node/`). Both parse the real files, so a
-   malformed one fails on both sides.
+2. Run the Python tests (`python -m pytest tests -q` from `python/`).
+   They parse the real files, so a malformed one fails the suite.
 3. The index is rebuilt from the files, so there is nothing to register.
 
 ## Sharing between implementations
 
-The skills live once, here at the repository root, and both the Python and Node
-loaders find them by walking up from their own source file. There is no second
+The skills live once, here at the repository root, and the Python
+loader finds them by walking up from its own source file. There is no second
 copy to keep in sync.

@@ -294,8 +294,7 @@ async def wait_for(
     than burning the budget one dead poll at a time.
 
     ``clock`` and ``sleep`` are injectable because the alternative is a test
-    suite that spends seconds of wall time proving a timeout works. The Node
-    implementation already had this seam; see ``waiting.ts``.
+    suite that spends seconds of wall time proving a timeout works.
     """
     if not condition or not condition.strip():
         raise ToolError("INVALID_ARGUMENT", "condition must be a non-empty expression")

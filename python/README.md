@@ -297,10 +297,6 @@ python -m examples.write_script game.ServerScriptService.MyScript --create
 python -m examples.wait_for_studio 600
 ```
 
-Each mirrors a script in `../node/examples/` — same behavior, same output
-shape, only the language idioms differ (see the repo-root README for the
-Python ↔ TypeScript naming map).
-
 ## API overview
 
 | Class / function | Purpose |

@@ -105,8 +105,8 @@ class CallToolResult:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CallToolResult":
-        # Accept both the MCP-spec `isError` and the `is_error` alias kept
-        # for interop with the TypeScript server (which sends both).
+        # Accept both the MCP-spec `isError` and the `is_error` alias: some
+        # servers send both, and dropping either silently changes meaning.
         return cls(
             content=data.get("content", []) or [],
             is_error=bool(data.get("isError", data.get("is_error", False))),

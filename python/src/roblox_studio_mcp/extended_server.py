@@ -55,8 +55,8 @@ from .extended.updater import update_script as _update, UpdateResult
 
 #: Relayed tools that have a better `extended_*` equivalent, and the steer
 #: appended to each relayed description. Mirrored into `parity/tools.json` by
-#: `parity/build_contract.py` and asserted by both suites, because a
-#: hand-written copy on each side would drift - and the failure mode is a model
+#: `parity/build_contract.py` and asserted by the Python suite, because a
+#: hand-written copy would drift - and the failure mode is a model
 #: quietly choosing the worse tool, which is invisible because the worse tool
 #: still works. See `parity/build_contract.py::_STEERS` for the measured reason
 #: behind each entry.
@@ -312,12 +312,10 @@ def _error_payload(exc: BaseException) -> Dict[str, Any]:
     return {
         "code": -32000,
         "message": err.message,
-        # Flat, and deliberately identical to Node's `toJsonRpcError`. Python
-        # used to nest the tool-specific keys under `data.details` while Node
-        # spread them, so a caller branching on `data.unknown` worked on Node
-        # and read `undefined` on Python. A payload that is flat on one side and
-        # nested on the other is the worst kind of divergence: it fails silently
-        # on exactly the branch a caller wrote.
+        # Flat: the tool-specific keys sit beside `code`, not nested under it.
+        # They used to nest under `data.details`, so a caller branching on
+        # `data.unknown` read nothing. A nested payload fails silently on
+        # exactly the branch a caller wrote.
         "data": {"code": err.code, **err.data},
     }
 
@@ -986,9 +984,8 @@ async def _call_breakpoints(
 
     script_path = _require_str(arguments, "script_path")
     # Parsed here, once, with the received value in the error. `int("x")` used
-    # to raise a bare ValueError that classified as UNKNOWN, and Node's
-    # `Math.trunc(Number("x"))` produced NaN which reached Studio - the same
-    # request behaved differently per server.
+    # to raise a bare ValueError that classified as UNKNOWN, hiding the value
+    # the caller actually sent.
     raw_line = arguments.get("line")
     try:
         line = 0 if raw_line is None else int(raw_line)
@@ -1295,9 +1292,8 @@ async def _call_script_grep(
     root_path = arguments.get("root_path")
     # Passed through unconverted. `int("x")` used to raise a bare ValueError
     # that classified as UNKNOWN, and `int("5")` quietly accepted a string the
-    # schema declares an integer - Node's `Number("x")` is NaN, which then
-    # slipped past the range check entirely. Both languages now hand the raw
-    # value to the grep layer, which validates it once and identically.
+    # schema declares an integer. The raw value goes to the grep layer, which
+    # validates it once.
     context_lines = arguments.get("context_lines", 3)
     regex = bool(arguments.get("regex", False))
     instance_type = arguments.get("instance_type")
@@ -1477,9 +1473,6 @@ def _reject_unknown_arguments(name: str, arguments: Dict[str, Any]) -> None:
     * ``screen_capture`` accepted ``format: "png"`` and returned JPEG. Eight
       parameter names were tried before that was noticed, because none of them
       errored.
-    * Node's ``extended_watch_output`` had no ``pattern``, so passing it returned
-      the **whole** console buffer with no error - which reads identically to
-      "no breakpoint was hit".
     * ``max_lines: 0`` became 200 through a falsy-``or`` default, so a caller
       asking for no lines got 200.
 

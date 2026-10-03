@@ -77,7 +77,7 @@ window.CATALOG = [
         req: [], opt: ["studio_id"],
         ret: "Status text, with how many were cleared." },
       { n: "extended_manage_instance", o: "ext",
-        d: "Studio instances and places. action=list enumerates attached Studios; action=places lists local place candidates with their place ids; action=make_place creates a throwaway place; action=launch opens one (a Studio only joins the mesh with a place open, so you choose what to launch); action=stop TERMINATES A PROCESS and is irreversible. Node REFUSES to stop when it cannot prove which process is which — see node/src/extended/IDENTITY.md.",
+        d: "Studio instances and places. action=list enumerates attached Studios; action=places lists local place candidates with their place ids; action=make_place creates a throwaway place; action=launch opens one (a Studio only joins the mesh with a place open, so you choose what to launch); action=stop TERMINATES A PROCESS and is irreversible. It requires studio_id and resolves the PID via the Studio log join before terminating.",
         req: ["action"], opt: ["studio_id", "place_path"],
         ret: "Per action: instance rows, place candidates, a created path, or a launch/stop result with resolved_by." },
     ],

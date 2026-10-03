@@ -1,37 +1,28 @@
 # roblox-studio-mcp
 
-Two **dependency-free** clients for
+A **dependency-free** Python client for
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers, with
-built-in convenience for the **Roblox Studio MCP**:
+built-in convenience for the **Roblox Studio MCP**
+(stdlib only, Python 3.9+).
+Full guide: `python/README.md`.
 
-- `python/` — the **original** Python client (stdlib only, Python 3.9+).
-  Full guide: `python/README.md`.
-- `node/` — the TypeScript/Node port (Node.js built-ins only, Node 18+).
-  Full guide: `node/README.md`.
-
-Both speak the same protocol to the same Studio MCP proxy, expose the same
-tool catalog, and ship the same extended helpers. Pick whichever language fits
-your tooling.
+It speaks the protocol to the Studio MCP proxy, exposes the tool catalog,
+and ships the extended helpers.
 
 Working *on* this rather than using it? Start at
 [CONTRIBUTING.md](CONTRIBUTING.md) — setup, the gates, and the conventions
-worth knowing before you touch either tree.
+worth knowing before you touch the tree.
 
 **Calling it from your own code?** See
-[Using it from your own code](#using-it-from-your-own-code) — six runnable
-examples, one per language, and the two mistakes that catch everyone.
+[Using it from your own code](#using-it-from-your-own-code) — runnable
+examples, and the two mistakes that catch everyone.
 
-Parity is enforced for the **tool surface** and is best-effort underneath. A
-generated contract (`parity/tools.json`, asserted by both test suites) fails
-either side if a tool, parameter, or required argument drifts, so neither can
-change its surface unnoticed. Behaviour is not provably equal: the log-parsing
-identity chain (`logid.ts`) is ported to Node and tested, but `instance.ts` does
-not import it, so Node derives Studio role and place from the command line and
-its instance-stop **refuses** rather than guess between two Studios — see
-`node/src/extended/IDENTITY.md`. Both suites cover the same ground without
-needing Studio.
+The tool surface is pinned by a generated contract (`parity/tools.json`,
+asserted by the test suite) that fails the build if a tool, parameter, or
+required argument drifts, so the surface cannot change unnoticed. The suite
+covers the same ground without needing Studio.
 
-## How both work
+## How it works
 
 Roblox Studio exposes its MCP server through a local proxy process: on
 Windows it is launched as
@@ -41,7 +32,7 @@ Either way it speaks newline-delimited JSON-RPC 2.0 over stdio: one JSON
 object per line, with an `initialize` handshake followed by `tools/list` and
 `tools/call`.
 
-Both clients follow the same shape around that protocol:
+The client follows this shape around that protocol:
 
 - `MCPClient` — a generic stdio MCP client (works with any MCP server):
   connect + handshake, list tools, call tools.
@@ -52,14 +43,12 @@ Both clients follow the same shape around that protocol:
   rather than guessing, because list order is the proxy mesh's and carries no
   intent. Pass `studio_id=` to pin one.
 - Singleton connection — `connect()` returns a process-wide shared
-  connection by default; close it explicitly (`close_singleton()` /
-  `closeSingleton()`).
+  connection by default; close it explicitly (`close_singleton()`).
 - Readiness retry — a fresh proxy answers `list_roblox_studios` with
-  "Unable to reach Roblox Studio" for a beat after its handshake; both
-  clients ride through exactly that transient symptom (up to ~10 s) and let
+  "Unable to reach Roblox Studio" for a beat after its handshake; the
+  client rides through exactly that transient symptom (up to ~10 s) and lets
   every other error throw immediately.
-- Extended helpers — full-file writes (`write_script` / `writeScript`), batch
-  edits with graceful skipping (`update_script` / `updateScript`), script
+- Extended helpers — full-file writes (`write_script`), batch
   search, search-and-read, insert-from-file, lossless viewport capture,
   non-halting breakpoints, console watch, host-side waiting, play-test
   summaries, execute-from-file, Studio identity, and instance control. Also
@@ -73,18 +62,13 @@ Both clients follow the same shape around that protocol:
   only, never written into the DataModel, so it cannot reach the place file, a
   published place, or a team create. Read in Edit mode: a play session reports a
   different value for the same Studio.
-- Wire format is identical on both sides (`studio_id`, `datamodel_type`,
-  `target_path`, …); only the local naming differs (Python `snake_case`,
-  TypeScript `camelCase`).
+- Wire format (`studio_id`, `datamodel_type`,
+  `target_path`, …); local naming is Python `snake_case`.
 
 ## Layout
 
 ```text
-node/                   TypeScript/Node client (port)
-  src/                    MCPClient, RobloxStudio, servers, extended/
-  tests/                  vitest suites (no Studio needed)
-  examples/               runnable TS examples (npx tsx examples/<name>.ts)
-python/                 Python client (original)
+python/                 Python client
   src/roblox_studio_mcp/  MCPClient, RobloxStudio, servers, extended/
   tests/                  unittest suites (no Studio needed)
   examples/               runnable Python examples (python -m examples.<name>)
@@ -93,7 +77,7 @@ docs/                   docs site, opens from disk (docs/index.html)
 parity/                 generated tool contract (tools.json) both suites assert
 skills/                 rsx-* transport skills, served by extended_skill
 CONTRIBUTING.md         how to work on this: setup, gates, conventions, evidence rules
-AGENTS.md               standing rules, gates, and where the two sides differ
+AGENTS.md               standing rules and gates
 TODO.md                 open work and withdrawn claims — and nothing else
 README.md               this overview
 LICENSE                 MIT
@@ -127,11 +111,9 @@ extended/
   skills.py         the rsx-* transport skills
 ```
 
-`node/src/extended/` mirrors that surface in TypeScript.
-
 ## Using it from your own code
 
-Everything the MCP exposes is callable directly from Python or TypeScript — no
+Everything the MCP exposes is callable directly from Python — no
 MCP client, no subprocess, no JSON on a pipe. **Start from a runnable example
 rather than a snippet** — they are the same code with the error handling already
 in place.
@@ -144,11 +126,6 @@ enabled; see [Prerequisites](#prerequisites).
 ```powershell
 cd python
 python -m examples.list_tools          # every tool the server exposes
-```
-
-```powershell
-cd node
-npx tsx examples/list_tools.ts         # the same example in TypeScript
 ```
 
 | example | shows |
@@ -168,9 +145,8 @@ python -m examples.wait_for_studio 600
 ```
 
 `list_tools` and `singleton_usage` are the safe first two — the other four drive
-or read the open place. Each language guide lists the same scripts with their
-arguments: [`python/README.md`](python/README.md#examples),
-[`node/README.md`](node/README.md#examples).
+or read the open place. The language guide lists the same scripts with their
+arguments: [`python/README.md`](python/README.md#examples).
 
 ### Or write your own
 
@@ -233,14 +209,13 @@ specific about why.
   and log discovery are built on `os.startfile`, `EnumWindows` and
   `%LOCALAPPDATA%`. A Linux port means writing that layer, not fixing a bug.
 
-Every platform difference is confined to one file per implementation —
-`python/src/roblox_studio_mcp/extended/platform.py` and
-`node/src/extended/platform.ts` — so a port has a known shape and a known size.
+Every platform difference is confined to one file —
+`python/src/roblox_studio_mcp/extended/platform.py`.
 
 ## The extended tools (for agents)
 
 This section and the traps below are for driving the tools; everything above is
-for deciding which client to install. If you are an agent, start at
+for deciding how to install the client. If you are an agent, start at
 `extended_skill` rather than here.
 
 There is no tool count quoted in this file — it is a generated contract, and a
@@ -322,18 +297,16 @@ mode this project exists to prevent. The rest live in the `rsx-*` skills.
 
 ## Examples
 
-Each example exists on both sides with the same behavior:
+| What it shows | Python |
+| --- | --- |
+| List every tool | `python -m examples.list_tools` |
+| Run Luau, print result | `python -m examples.run_luau` |
+| Shared connection + disabled tools | `python -m examples.singleton_usage` |
+| Play, walk, jump, leave | `python -m examples.walk_jump` |
+| Full-file write helper | `python -m examples.write_script <target> [--create]` |
+| Wait for Studio over MCP | `python -m examples.wait_for_studio [timeout_seconds]` |
 
-| What it shows | Python | TypeScript |
-| --- | --- | --- |
-| List every tool | `python -m examples.list_tools` | `npx tsx examples/list_tools.ts` |
-| Run Luau, print result | `python -m examples.run_luau` | `npx tsx examples/run_luau.ts` |
-| Shared connection + disabled tools | `python -m examples.singleton_usage` | `npx tsx examples/singleton_usage.ts` |
-| Play, walk, jump, leave | `python -m examples.walk_jump` | `npx tsx examples/walk_jump.ts` |
-| Full-file write helper | `python -m examples.write_script <target> [--create]` | `npx tsx examples/write_script.ts <target> [--create]` |
-| Wait for Studio over MCP | `python -m examples.wait_for_studio [timeout_seconds]` | `npx tsx examples/wait_for_studio.ts [timeoutSeconds]` |
-
-(Python commands run from `python/`; TypeScript commands run from `node/`.)
+(Python commands run from `python/`.)
 
 ## Place ids and universe ids
 
@@ -350,19 +323,13 @@ place id  ──►  universe id      one place belongs to exactly one universe
 universe id ──►  place id      one universe owns MANY places - not invertible
 ```
 
-So **derive the universe from the place, never the reverse.** Both clients do
-this, and neither asks you for a universe id you would have to look up anyway:
+So **derive the universe from the place, never the reverse.** The client does
+this, and never asks you for a universe id you would have to look up anyway:
 
 ```python
 from roblox_studio_mcp.extended.instance import resolve_universe_id
 
 universe = await resolve_universe_id(95206881)   # -> 28220420
-```
-
-```ts
-import { resolveUniverseId } from "roblox-studio-mcp/extended";
-
-const universe = await resolveUniverseId(95206881);   // -> 28220420
 ```
 
 The endpoint is `GET https://apis.roblox.com/universes/v1/places/{place_id}/universe`
@@ -383,26 +350,22 @@ re-tested).
 
 ## Naming map
 
-| Concept | Python | TypeScript |
-| --- | --- | --- |
-| Connect | `RobloxStudio.connect(studio_id=…)` | `RobloxStudio.connect({ studioId: … })` |
-| List tools | `studio.list_tools()` | `studio.listTools()` |
-| Call a tool | `studio.call(name, args)` | `studio.call(name, args)` |
-| Run Luau | `studio.execute_luau(code)` | `studio.executeLuau(code)` |
-| Shared connection | `get_singleton()` / `close_singleton()` | `getSingleton()` / `closeSingleton()` |
-| Full-file write | `write_script(…, create_if_missing=…)` | `writeScript(…, { createIfMissing: … })` |
-| Batch edits | `update_script(…, skip_missing=…)` | `updateScript(…, { skipMissing: … })` |
+| Concept | Python |
+| --- | --- |
+| Connect | `RobloxStudio.connect(studio_id=…)` |
+| List tools | `studio.list_tools()` |
+| Call a tool | `studio.call(name, args)` |
+| Run Luau | `studio.execute_luau(code)` |
+| Shared connection | `get_singleton()` / `close_singleton()` |
+| Full-file write | `write_script(…, create_if_missing=…)` |
+| Batch edits | `update_script(…, skip_missing=…)` |
 
 ## Stdio servers
 
-Each side ships a transparent proxy (same tools as StudioMCP) and an
+The client ships a transparent proxy (same tools as StudioMCP) and an
 extended proxy (adds the `extended_*` tools):
 
 ```powershell
-# Node (run from node/)
-node ./dist/server.js
-node ./dist/extendedServer.js
-
 # Python (run from python/)
 python -m roblox_studio_mcp.server
 python -m roblox_studio_mcp.extended_server
@@ -410,15 +373,7 @@ python -m roblox_studio_mcp.extended_server
 
 ## Development
 
-Two independent toolchains, each with its own working directory and its own
-gate. Run Python commands from `python/`, Node commands from `node/`.
-
 ```powershell
-# Node (run from node/)
-pnpm install
-pnpm typecheck      # NOT `tsc --noEmit` — see below
-pnpm test
-
 # Python (run from python/)
 pip install -e .[dev]
 python -m pytest tests
@@ -428,34 +383,24 @@ python -m pytest tests
 several tests are `pytest-asyncio` and `unittest discover` does not drive them,
 so it can report green while skipping the async coverage.
 
-### Use `pnpm typecheck`, never bare `tsc --noEmit`
-
-The `typecheck` script is `tsc --noEmit -p tsconfig.check.json` — a stricter
-project that **includes the tests**. Bare `tsc --noEmit` checks less and passes
-files the real gate rejects. That is not theoretical: measured 2026-10-01, the
-difference shipped to `main` and turned CI red.
-
 ### The gates, and what each one catches
 
 | Gate | Command | Catches |
 | --- | --- | --- |
 | Python behaviour | `python -m pytest tests -q` | behaviour |
 | Python types | `pytest tests/test_typecheck.py` (runs pyright) | wrong key, `None` deref, wrong argument type |
-| Node types | `pnpm typecheck` | the same, at compile time |
-| Node behaviour | `npx vitest run` | behaviour |
-| **Parity** | `pytest tests/test_parity.py` + `npx vitest run tests/parity.test.ts` | either side's tool surface drifting |
-| Build freshness | included in vitest | `dist/` older than `src/` |
+| Contract | `pytest tests/test_parity.py` | generated contract still matches the server |
 
-**Parity is the one that is easy to miss**, because nothing fails until a tool
+**The contract row is the one that is easy to miss**, because nothing fails until a tool
 is added or renamed. `parity/tools.json` is generated from the Python server by
-`parity/build_contract.py` and asserted by *both* suites, so a tool, a parameter
-or a required argument cannot change on one side unnoticed. Regenerate it
+`parity/build_contract.py` and asserted by the suite, so a tool, a parameter
+or a required argument cannot change unnoticed. Regenerate it
 after a deliberate surface change — `python parity/build_contract.py` — and the
-diff *is* the parity report.
+diff *is* the contract report.
 
 Two of these gates catch **silent** wrong answers, which is the failure class
-this project keeps paying for. Unknown parameters are refused before dispatch
-on both sides, because a silently-ignored argument produces a plausible wrong
+this project keeps paying for. Unknown parameters are refused before dispatch,
+because a silently-ignored argument produces a plausible wrong
 answer *and reports success* — three separate incidents here did exactly that.
 And `tests/test_closed_sets.py` checks exhaustiveness: every error code is
 producible and every advertised `action` is handled rather than merely accepted.
@@ -468,13 +413,12 @@ and measured performance numbers.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs unit tests per language on Windows and
+`.github/workflows/ci.yml` runs the Python unit tests on Windows and
 macOS — no Studio needed anywhere (fakes throughout):
 
 | Job | What it runs |
 | --- | --- |
 | `python-test` | `pytest` in `python/` |
-| `node-test` | typecheck + vitest + build in `node/` |
 
 `.github/workflows/studio-bundle-probe.yml` is separate and manual
 (`workflow_dispatch` only). It is read-only, takes no secret, and finishes in
@@ -483,8 +427,8 @@ would decide whether macOS CI is even possible. It is retained because the
 conclusions it supports are recorded as *inferred*, and this keeps them
 reproducible rather than remembered.
 
-The live-Studio integration suites (`test_integration_studio`,
-`integration.test.ts`) run locally with `ROBLOX_STUDIO_MCP_INTEGRATION=1`
+The live-Studio integration suite (`test_integration_studio`)
+runs locally with `ROBLOX_STUDIO_MCP_INTEGRATION=1`
 once Studio is open with a place loaded and the MCP server enabled
 (Assistant → Manage MCP Servers):
 

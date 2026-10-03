@@ -49,14 +49,9 @@ question, and the two have different fixes.
 there is no Server DataModel, and asking for one fails with "Server datamodel is
 not available in Edit mode".
 
-Peer role in the other implementation is the same axis, not a superset. The
-genuine gap is not per-client indexing, it is **identity**: the mesh row carries
-only `id` and `name`, so the peer needs a second record to turn a `studio_id`
-into a PID. `logid.ts` **is** ported and tested, but `instance.ts` does not
-import it, so the peer resolves role and place from the command line and with
-two Studios on one place **cannot say which is which** - which is why its
-`action=stop` refuses rather than terminating the wrong process. Read
-`node/src/extended/IDENTITY.md` before relying on it for instance control.
+The mesh row carries only `id` and `name`, so turning a `studio_id` into a PID
+needs a second record: Python resolves role and place from the Studio log's
+command line (see below).
 
 ## `GetDebugId` is session-scoped, not an identity
 
@@ -118,7 +113,7 @@ Studio log from a process that lived 0.36 s, which died before the notifier line
 is written; `no_pid_reason` separates "no PID" from "a format I do not read", and
 the right answer for the first is "this process is gone". Among the 64: all PIDs
 distinct, none reused across two logs. Source: `docs/EVIDENCE.md` (identity
-table) and `node/src/extended/IDENTITY.md:36`. The command line spells the place three different ways, and
+table). The command line spells the place three different ways, and
 missing any one of them loses a whole population:
 
 - `--localPlaceFile <path>` - the Edit task
