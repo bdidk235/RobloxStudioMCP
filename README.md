@@ -94,6 +94,57 @@ README.md               this overview
 LICENSE                 MIT
 ```
 
+### Inside `python/src/roblox_studio_mcp/`
+
+```text
+client.py           generic MCP JSON-RPC client
+roblox.py           RobloxStudio convenience wrapper
+server.py           stdio MCP server (base, passes through to Studio MCP)
+extended.py         RobloxStudio re-export for subpackage imports
+extended_server.py  stdio MCP server with the 16 extended tools
+types.py
+errors.py           error codes
+extended/
+  writer.py         write_script + chunked _chunked_write
+  updater.py        update_script + UpdateResult
+  extensions.py     search_and_read, insert_asset, watch_output,
+                    run_tests, execute_luau_from_file, WatchResult
+  errors.py         ToolError, classify, the 15 codes
+  waiting.py        extended_wait_for: host-side polling + probe wrapper
+  platform.py       every platform difference (PowerShell, paths, ps)
+  instance.py       launch / list / stop Studio
+  logid.py          studio_id -> PID, from the Studio's own log
+  locks.py          .lock file PID join
+  capture.py        lossless RGBA -> PNG
+  breakpoints.py    non-halting logpoints
+  grep.py
+  registry.py       host-side identity state (never in the place)
+  skills.py         the rsx-* transport skills
+```
+
+`node/src/extended/` mirrors that surface in TypeScript.
+
+### Using it from Python
+
+Every extended tool is also callable directly:
+
+```python
+import asyncio
+from roblox_studio_mcp.extended import RobloxStudio, write_script
+
+async def main():
+    async with await RobloxStudio.connect() as studio:
+        status = await write_script(
+            studio,
+            "game.ServerScriptService.MyScript",
+            "print('hello')",
+            create_if_missing=True,
+        )
+        # status is "created", "wrote", or "unchanged"
+
+asyncio.run(main())
+```
+
 ## Prerequisites
 
 Roblox Studio open with a place loaded, and its MCP server enabled

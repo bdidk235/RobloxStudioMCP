@@ -3,6 +3,8 @@
 ## STANDING RULES
 
 These are not conventions. Each one exists because the alternative was measured.
+Bulk-data, agent-runtime sleep and commit-signing rules moved to the global
+AGENTS.md on 2026-10-03 - they are not specific to this repository.
 
 1. **Touch only a Studio instance you launched yourself, or one the user has
    explicitly put in scope.** Stated by the user 2026-10-02, replacing the rule
@@ -22,12 +24,7 @@ These are not conventions. Each one exists because the alternative was measured.
    - Before any call needing an explicit `studio_id`, resolve it with
      `extended_list_studios`. An omitted `studio_id` is a guess whenever more
      than one Studio is attached.
-2. **Never print bulk data.** A ~5 MB `print` permanently wedged
-   `get_console_output` for a Studio. Report measurements through
-   `inspect_instance` attributes instead.
-3. **Never sleep in the agent's runtime.** It has no timer, so the call hangs to
-   timeout. Use `extended_wait_for`, or issue a wait as its own shell command.
-4. **Mirror a change to Node in the same pass — but never do catch-up ports.**
+2. **Mirror a change to Node in the same pass — but never do catch-up ports.**
    Parity is a *property of each change*, not a workstream. When you touch
    `extended/foo.py`, touch `extended/foo.ts` before you finish. What you must
    **not** do is go back and port what is already behind: that is how this
@@ -39,7 +36,7 @@ These are not conventions. Each one exists because the alternative was measured.
    The surface invariant is still enforced — `parity/tools.json` fails the build
    if either side's tool list drifts. Behavioural parity is best-effort and
    documented.
-5. **A `.py` edit needs an MCP restart, and the command is
+3. **A `.py` edit needs an MCP restart, and the command is
    `opencode service restart`.** The process holds the module in memory: a
    config change restarts it, a code fix does not. Without a restart you are
    measuring the old code and will conclude the fix did not work. It is
@@ -52,7 +49,7 @@ These are not conventions. Each one exists because the alternative was measured.
      gone. Restarting is not yours alone — another agent restarting the same
      MCP mid-session drops the namespace out from under you too, and it
      changes *which* code you are measuring without announcing it.
-6. **Saving a place: ask the user for local, `SavePlaceAsync` for cloud. These are
+4. **Saving a place: ask the user for local, `SavePlaceAsync` for cloud. These are
    different operations and conflating them wastes a session.**
    - **Local (`.rbxl` on disk) — there is no API. Ask the user to save.** Not a
      preference: the feature request for a local-save API is still open, and
@@ -102,29 +99,8 @@ These are not conventions. Each one exists because the alternative was measured.
    - **No MCP exposes any of this.** Not the official `Roblox/studio-rust-mcp-server`
      (6 tools), not the built-in Studio MCP (34 documented tools), and not the
      four community servers checked. Source and method in `TODO.md`.
-7. **Run the gates before claiming anything works.** `pytest`, `tsc --noEmit`,
+5. **Run the gates before claiming anything works.** `pytest`, `tsc --noEmit`,
    and both suites. A gate that has not been run is not a gate.
-8. **Commits are SSH-signed. Do not pass `--no-gpg-sign`** — that instruction
-   was a workaround for a key that did not exist, and outlived its cause.
-   `commit.gpgsign` and `tag.gpgsign` are both `true`, so a plain `git commit`
-   is already signed. The key carries **no passphrase**, deliberately: an
-   unattended agent cannot answer a pinentry prompt. The cost is that anything
-   running as this user can sign as them; `ssh-agent` is the fix if wanted.
-   - **GitHub needs the public key under *Signing keys*, not *Authentication
-     keys*.** Measured 2026-10-02: a commit signed by a key GitHub did not know
-     came back `verified: false, reason: unknown_key` — while `git verify-commit`
-     still reported `Good signature`. **The local check cannot detect this class
-     of failure**; only GitHub's verdict on a pushed commit can.
-   - **Compare fingerprints, never eyeball the base64.** The key was registered
-     from a string copied out of earlier output instead of re-read from disk, so
-     GitHub held a key whose private half had been deleted — and it presented as
-     `unknown_key`. `ssh-keygen -lf <key>.pub` settles it in one command.
-   - `git verify-commit HEAD`; `%G?` is `G` for good. PowerShell gotcha:
-     `ssh-keygen -N '""'` sets a passphrase of the literal two characters `""`,
-     so generate through `cmd`, where `""` really is empty.
-   - **Not done:** history is unsigned; re-signing rewrites every SHA on `main`.
-     Full transcript and a retraction of mine: `TODO.md`, *Commit signing*.
-
 ## Gates
 
 | | command | what it catches |
@@ -221,135 +197,10 @@ New surface is funded by trimming existing descriptions, never by raising the
 cap. The tool list is paid on every call, every session: a cap raise is a real
 cost, so it is a decision for the user, not a silent change.
 
-## MCP Tool Inventory (current session)
-
-### Scripts & Search
-- `mcp__Roblox_Studio__script_read`
-- `mcp__Roblox_Studio__script_search`
-- `mcp__Roblox_Studio__script_grep`
-- `mcp__Roblox_Studio__extended_script_grep`
-- `mcp__Roblox_Studio__search_game_tree`
-- `mcp__Roblox_Studio__inspect_instance`
-- `mcp__Roblox_Studio__extended_script_search_and_read`
-
-### Editing
-- `mcp__Roblox_Studio__multi_edit` (raw string replacement)
-- `mcp__Roblox_Studio__extended_write_script` (full-body replace)
-- `mcp__Roblox_Studio__extended_update_script` (batch, graceful skip)
-- `mcp__Roblox_Studio__extended_insert_asset_from_file` (local file → asset insert)
-
-### Extended Conveniences
-- `mcp__Roblox_Studio__extended_watch_output` (live-tail console output)
-- `mcp__Roblox_Studio__extended_run_tests` (play testing + console summary)
-
-### Code Execution
-- `mcp__Roblox_Studio__execute_luau`
-- `mcp__Roblox_Studio__extended_execute_luau_from_file` (local file → execute)
-
-### Assets
-- `mcp__Roblox_Studio__search_asset`
-- `mcp__Roblox_Studio__insert_asset`
-- `mcp__Roblox_Studio__store_image`
-
-### Studio Control
-- `mcp__Roblox_Studio__list_roblox_studios`
-- `mcp__Roblox_Studio__get_studio_state`
-- `mcp__Roblox_Studio__start_stop_play`
-- `mcp__Roblox_Studio__get_console_output`
-
-### Generation
-- `mcp__Roblox_Studio__generate_procedural_model`
-- `mcp__Roblox_Studio__generate_texture`
-- `mcp__Roblox_Studio__run_as_job`
-- `mcp__Roblox_Studio__skill`
-
-### Interaction (Client dataModel only)
-- `mcp__Roblox_Studio__character_navigation`
-- `mcp__Roblox_Studio__user_keyboard_input`
-- `mcp__Roblox_Studio__user_mouse_input`
-- `mcp__Roblox_Studio__screen_capture`
-
-### Permissions
-Per user settings.json, the following are **denied**:
-- `Bash`
-- `mcp__Roblox_Studio__generate_mesh`
-- `mcp__Roblox_Studio__segment_mesh`
-- `mcp__Roblox_Studio__generate_material`
-- `mcp__Roblox_Studio__subagent`
-- `mcp__Roblox_Studio__upload_image`
-
-## Programmatic Use
-
-All extended tools can also be used directly from Python:
-
-```python
-import asyncio
-from roblox_studio_mcp.extended import RobloxStudio, write_script
-
-async def main():
-    async with await RobloxStudio.connect() as studio:
-        status = await write_script(
-            studio,
-            "game.ServerScriptService.MyScript",
-            "print('hello')",
-            create_if_missing=True,
-        )
-        # status is "created", "wrote", or "unchanged"
-
-asyncio.run(main())
-```
-
-## Project Structure
-
-```
-src/roblox_studio_mcp/
-├── __init__.py
-├── client.py        ← generic MCP JSON-RPC client
-├── roblox.py        ← RobloxStudio convenience wrapper
-├── server.py        ← stdio MCP server (base, passes through to Studio MCP)
-├── extended.py      ← RobloxStudio re-export for subpackage imports
-├── extended_server.py ← stdio MCP server with the 16 extended tools
-├── types.py
-├── errors.py        ← error codes
-└── extended/
-    ├── writer.py       ← write_script + chunked _chunked_write
-    ├── updater.py      ← update_script + UpdateResult
-    ├── extensions.py   ← search_and_read, insert_asset, watch_output,
-    │                     run_tests, execute_luau_from_file, WatchResult
-    ├── errors.py       ← ToolError, classify, the 15 codes
-    ├── waiting.py      ← extended_wait_for: host-side polling + probe wrapper
-    ├── platform.py     ← EVERY platform difference (PowerShell, paths, ps)
-    ├── instance.py     ← launch / list / stop Studio
-    ├── logid.py        ← studio_id -> PID, from the Studio's own log
-    ├── locks.py        ← .lock file PID join
-    ├── capture.py      ← lossless RGBA -> PNG
-    ├── breakpoints.py  ← non-halting logpoints
-    ├── grep.py
-    ├── registry.py     ← host-side identity state (never in the place)
-    └── skills.py       ← the rsx-* transport skills
-
-parity/
-├── build_contract.py  ← generates tools.json from the Python server
-├── tools.json         ← the shared contract BOTH suites assert
-└── compare_implementations.py ← what differs between the two, with numbers
-
-node/src/extended/      ← the same surface in TypeScript
-node/src/extended/IDENTITY.md ← the one place they are NOT equivalent
-
-skills/rsx-*.md         ← transport skills, surfaced through extended_skill
-```
-
-### Evidence lives in `TODO.md`
+## Evidence lives in TODO.md
 
 That file is the record of what was **measured** versus **inferred**, with
 provenance kept separate on purpose. Read it before proposing anything that
 depends on a prior finding — several plausible-sounding ideas in it are already
 marked retracted, and the reason is usually a measurement that contradicted the
 obvious reading.
-
-### Chunked Write (>200K content)
-
-`_chunked_write` uses multiple `execute_luau` calls to pass more than 200K lines
-as Lua long-bracket strings (`[==========[..]==========]`),
-iterates with `UpdateSourceAsync(target, function(old) return old .. slice end)`.
-Studio handles the >200K accumulation internally, bypassing the `Script.Source` limit.
