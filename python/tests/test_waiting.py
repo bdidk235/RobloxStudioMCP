@@ -23,9 +23,33 @@ from roblox_studio_mcp.extended.errors import (
 )
 from roblox_studio_mcp.extended.waiting import (
     BACKOFF, MAX_HUNG_POLLS, MAX_POLL, MAX_WAIT, MIN_POLL, POLL_TIMEOUT,
-    SETTLED_AFTER, _luau_string, build_probe, parse_probe, wait_for,
+    SETTLED_AFTER, VirtualClock, _luau_string, build_probe, parse_probe,
+    wait_for,
 )
 from roblox_studio_mcp.types import CallToolResult
+
+
+def fast_wait(studio, **kw):
+    """`wait_for` on a virtual clock, so these tests cost no wall time.
+
+    The wait's deadline and backoff are driven by the injected clock rather
+    than by real elapsed time, which is the behaviour under test anyway -
+    these tests assert *how many polls happened*, not how long they took.
+    `poll_timeout` still has to be real: it bounds an await that never
+    resolves, and cancelling that is `asyncio.wait_for`'s job.
+    """
+    clock = VirtualClock()
+    kw.setdefault("poll_timeout", 0.01)
+    return asyncio.run(
+        wait_for(studio, "1 +", 90, clock=clock, sleep=clock.sleep, **kw)
+    )
+
+
+def fast_wait_raises(studio, **kw):
+    try:
+        return fast_wait(studio, **kw)
+    except ToolError as exc:
+        return exc
 
 
 class TestProbeWrapper(unittest.TestCase):
@@ -299,9 +323,7 @@ class TestHungPolls(unittest.TestCase):
 
     def test_consecutive_hangs_abort_with_the_restart(self):
         studio = _ScriptedStudio(["hang"])
-        with self.assertRaises(ToolError) as caught:
-            asyncio.run(wait_for(studio, "1 +", 90, poll_timeout=0.1))
-        err = caught.exception
+        err = fast_wait_raises(studio)
         self.assertEqual(err.code, TIMEOUT)
         self.assertIn("never executed", err.message)
         self.assertIn("Restart the Studio", err.message)
@@ -312,19 +334,32 @@ class TestHungPolls(unittest.TestCase):
         # Studio executed something, so the count restarts and the abort comes
         # three hangs later - six polls total, not three.
         studio = _ScriptedStudio(["hang", "hang", "false", "hang", "hang", "hang"])
-        with self.assertRaises(ToolError) as caught:
-            asyncio.run(wait_for(studio, "1 +", 90, poll_timeout=0.1))
-        self.assertEqual(caught.exception.code, TIMEOUT)
+        self.assertEqual(fast_wait_raises(studio).code, TIMEOUT)
         self.assertEqual(studio.calls, 6)
 
     def test_a_single_hang_does_not_abort_a_healthy_wait(self):
         # One hang could be a slow Studio. The wait absorbs it as a poll error
         # and a healthy verdict still lands.
         studio = _ScriptedStudio(["hang", "false", "true"])
-        verdict = asyncio.run(wait_for(studio, "1 +", 90, poll_timeout=0.1))
+        verdict = fast_wait(studio)
         self.assertTrue(verdict["satisfied"])
         self.assertEqual(verdict["polls"], 3)
         self.assertEqual(len(verdict["poll_errors"]), 1)
+
+    def test_the_injected_clock_still_honours_the_budget(self):
+        """The seam must not become a way to skip the deadline.
+
+        A virtual clock that does not advance, or a wait that ignores it, would
+        let this pass while the real 90-second budget stopped being enforced.
+        """
+        clock = VirtualClock()
+        studio = _ScriptedStudio(["false"])
+        verdict = asyncio.run(
+            wait_for(studio, "1 +", MAX_WAIT, clock=clock, sleep=clock.sleep)
+        )
+        self.assertFalse(verdict["satisfied"])
+        self.assertGreaterEqual(clock.now, MAX_WAIT)
+        self.assertLess(clock.now, MAX_WAIT + MAX_POLL)
 
 
 if __name__ == "__main__":

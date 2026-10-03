@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import List, Literal, Optional, TypedDict
+from typing import Awaitable, Callable, List, Literal, Optional, TypedDict
 from ..roblox import RobloxStudio
 from ..types import CallToolResult
 from .errors import ToolError, classify
@@ -87,6 +87,36 @@ MAX_HUNG_POLLS = 3
 #: Number of identical consecutive results after which the wait is treated as
 #: settled and the interval is widened aggressively.
 SETTLED_AFTER = 3
+
+#: Monotonic clock, injectable so tests need not wait in real time.
+Clock = Callable[[], float]
+
+#: Sleep in seconds, injectable for the same reason.
+Sleeper = Callable[[float], Awaitable[None]]
+
+
+class VirtualClock:
+    """A clock that only moves when told to.
+
+    Pairs with ``wait_for(sleep=clock.sleep)``: the wait's own idea of elapsed
+    time advances by exactly the interval it asked to sleep, so a test proves
+    the deadline logic without spending the deadline.
+
+    ``asyncio.sleep(0)`` is yielded between steps so a test with many polls
+    still reaches a suspension point and cannot starve the loop.
+    """
+
+    def __init__(self, start: float = 0.0) -> None:
+        self.now = start
+        self.slept: List[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+        await asyncio.sleep(0)
 
 
 #: All three DataModels are supported, and ``loadstring`` was the only thing
@@ -250,6 +280,8 @@ async def wait_for(
     *,
     datamodel_type: str = "Edit",
     poll_timeout: float = POLL_TIMEOUT,
+    clock: Optional[Clock] = None,
+    sleep: Optional[Sleeper] = None,
 ) -> WaitVerdict:
     """Poll ``condition`` until it is true, or the deadline passes.
 
@@ -260,12 +292,18 @@ async def wait_for(
     module constant). A poll that exceeds it is a hung poll, not a slow one,
     and ``MAX_HUNG_POLLS`` consecutive hangs abort with ``TIMEOUT`` rather
     than burning the budget one dead poll at a time.
+
+    ``clock`` and ``sleep`` are injectable because the alternative is a test
+    suite that spends seconds of wall time proving a timeout works. The Node
+    implementation already had this seam; see ``waiting.ts``.
     """
     if not condition or not condition.strip():
         raise ToolError("INVALID_ARGUMENT", "condition must be a non-empty expression")
     budget = max(MIN_POLL, min(float(timeout_seconds), MAX_WAIT))
     probe = build_probe(condition)
-    deadline = time.monotonic() + budget
+    now = clock or time.monotonic
+    nap = sleep or asyncio.sleep
+    deadline = now() + budget
 
     delay = MIN_POLL
     last: Optional[str] = None
@@ -305,7 +343,7 @@ async def wait_for(
                     "the condition, and try again." % MAX_HUNG_POLLS,
                     condition=condition,
                 )
-            await asyncio.sleep(delay)
+            await nap(delay)
             delay = min(delay * BACKOFF, MAX_POLL)
             continue
         except Exception as exc:  # noqa: BLE001 - a poll failure is data, not a crash
@@ -315,7 +353,7 @@ async def wait_for(
             if err.code == "DATAMODAL_UNAVAILABLE":
                 raise err
             errors.append(err.message[:160])
-            await asyncio.sleep(delay)
+            await nap(delay)
             delay = min(delay * BACKOFF, MAX_POLL)
             continue
 
@@ -361,10 +399,10 @@ async def wait_for(
         if satisfied:
             return _verdict(True, last, polls, budget, delay, repeats, errors)
 
-        remaining = deadline - time.monotonic()
+        remaining = deadline - now()
         if remaining <= 0:
             return _verdict(False, last, polls, budget, delay, repeats, errors)
-        await asyncio.sleep(min(delay, remaining))
+        await nap(min(delay, remaining))
         if repeats >= SETTLED_AFTER:
             delay = min(delay * BACKOFF, MAX_POLL)
         else:
