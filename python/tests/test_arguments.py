@@ -139,8 +139,8 @@ class NoAcceptedArgumentIsItselfADefault(unittest.TestCase):
             self.assertIn(tool, es._EXTENDED_HANDLERS, tool)
 
     def test_allowlisted_arguments_are_still_in_the_schema(self):
-        """Allowlisting something the schema omits would hide the drift the
-        parity test exists to catch."""
+        """Allowlisting something the schema omits would hide drift the
+        contract test exists to catch."""
         for tool, keys in es._IGNORED_ARGUMENTS.items():  # noqa: SLF001
             declared = es._TOOL_PROPERTIES.get(tool, frozenset())  # noqa: SLF001
             for key in keys:

@@ -547,7 +547,7 @@ async def execute_luau_from_file(
 
         )
     with open(resolved, "r", encoding=encoding, newline=None) as f:
-        # Universal newlines, matching the TypeScript client.
+        # Universal newlines, so one written file reads back identically.
         code = f.read().replace("\r\n", "\n").replace("\r", "\n")
     if not code.strip():
         raise ToolError(

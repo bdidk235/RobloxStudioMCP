@@ -346,12 +346,11 @@ def _write_atomic(path: str, data: bytes) -> None:
 
 
 def _errno_name(exc: OSError) -> str:
-    """``ENOENT``-style name for an OS error, matching what Node's fs reports.
+    """``ENOENT``-style name for an OS error.
 
-    The symbolic name rather than the number or ``strerror``: the number differs
-    between Python and Node for the same failure, and ``strerror`` is per-OS
-    prose. The name is the one spelling both sides agree on, which is what makes
-    ``data.errno`` a branch key instead of something to string-match.
+    The symbolic name rather than the number or ``strerror``: the number is
+    platform-specific and ``strerror`` is per-OS prose. A stable name is what
+    makes ``data.errno`` a branch key instead of something to string-match.
     """
     if exc.errno is not None:
         return _errno.errorcode.get(exc.errno, "E%d" % exc.errno)

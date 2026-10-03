@@ -89,7 +89,9 @@ per-3-byte Luau loop because of it: 527 ms against the service's 7.5 ms for a
 **2. A chunk size that was a speed bug wearing a capacity costume.** Each append
 rewrites the whole module, so N appends write about `P*N/2` bytes - and splitting
 one module **never raises the 6,291,456 ceiling**, so a payload over it fails at
-any chunk size. Appending more than once therefore only ever costs time:| chunk | appends | approx written | elapsed |
+any chunk size. Appending more than once therefore only ever costs time:
+
+| chunk | appends | approx written | elapsed |
 |---|---|---|---|
 | 120,000 | 31 | 59.5 MB | 3.60 s |
 | 1,000,000 | 4 | 10.0 MB | 1.85 s |

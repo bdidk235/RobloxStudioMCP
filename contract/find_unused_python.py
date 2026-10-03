@@ -28,7 +28,7 @@ from typing import Dict, List, Set, Tuple
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "python", "src")
 TESTS = os.path.join(ROOT, "python", "tests")
-EXTRA = [os.path.join(ROOT, "parity"), os.path.join(ROOT, "skills")]
+EXTRA = [os.path.join(ROOT, "contract"), os.path.join(ROOT, "skills")]
 
 SKIP_DIRS = {"__pycache__", "node_modules", ".git", "dist"}
 
@@ -122,7 +122,7 @@ def main() -> int:
     print("=" * 78)
     print("scanned %d source files, %d module-level symbols\n" % (len(src_files), total))
 
-    print("1. DEAD - defined, referenced nowhere in src, tests or parity  (%d)" % len(dead))
+    print("1. DEAD - defined, referenced nowhere in src, tests or contract  (%d)" % len(dead))
     for line in sorted(dead):
         print("   " + line)
 

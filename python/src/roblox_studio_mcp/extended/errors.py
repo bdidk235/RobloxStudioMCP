@@ -150,7 +150,7 @@ _PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         #
         # Found by an exhaustiveness check over the closed set of codes, not by
         # pyright and not by any test: `ToolError("LAUNCH_FAILED", ...)` type
-        # checks in both languages. Only "is this set fully connected?" finds it.
+        # checks in one place. Only "is this set fully connected?" finds it.
         "no complete robloxstudio",
         "is not installed",
         "did not open a place",
@@ -244,15 +244,13 @@ def describe(value: Any) -> str:
     three different fixes.
 
     The rendering is **JSON, not Python repr**, and that is the whole point:
-    repr writes ``None``, ``True`` and ``'x'`` where the TypeScript side writes
-    ``null``, ``true`` and ``"x"``. Same request, two different error strings,
-    and a caller that string-matches - which is exactly what an agent does -
-    has to handle both. ``contract/errors.json`` pins the result.
+    ``None``/``True``/``'x'`` read as ``null``/``true``/``"x"`` on the wire, so a
+    caller that string-matches - which is exactly what an agent does - matches
+    what it was actually sent. ``contract/errors.json`` pins the result.
     """
     try:
-        # The separators match JSON.stringify exactly: no space after a comma or
-        # a colon. A space there is invisible to a human reading the error and
-        # fatal to a caller comparing the two implementations byte for byte.
+        # No space after a comma or a colon. A space there is invisible to a
+        # human reading the error and fatal to a caller comparing byte for byte.
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     except (TypeError, ValueError):
         return repr(value)

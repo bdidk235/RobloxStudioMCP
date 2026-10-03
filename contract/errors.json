@@ -1,7 +1,6 @@
 {
   "_comment": [
-    "Shared error contract, read by python/tests/test_error_parity.py and",
-    "node/tests/error-parity.test.ts.",
+    "Shared error contract, read by python/tests/test_error_contract.py.",
     "",
     "It exists for two measured defects:",
     "",

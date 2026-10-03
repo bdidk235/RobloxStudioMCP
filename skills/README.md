@@ -131,7 +131,7 @@ malformed skill raises rather than being skipped, because a silently dropped
 skill is a library that quietly shrank and nobody notices.
 
 The 160-character limit on `description`, and the rule that it is one line, are
-checked rather than trusted: both suites fail a skill that breaks either.
+checked rather than trusted: the suite fails a skill that breaks either.
 
 ## Adding one
 

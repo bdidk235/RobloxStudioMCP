@@ -1064,7 +1064,7 @@ def _manage_instance_actions() -> List[str]:
 
     Read from the schema so the "Accepted:" list in the unknown-action error
     cannot drift from what ``tools/list`` told the caller it may send. The
-    parity test checks the two servers advertise the same set; this keeps the
+    contract test checks the advertised set; this keeps the
     *error message* honest about the same thing.
     """
     for tool in _EXTENDED_TOOLS:
@@ -1592,8 +1592,8 @@ async def _handle_message(
             return
         # Steer callers toward the extended tools: append a note to the relayed
         # tools that have a better equivalent, so the choice happens in the one
-        # place it is made. `_STEERS` is mirrored in `contract/tools.json` and both
-        # suites assert the two agree, because a drift here is a model using the
+        # place it is made. `_STEERS` is mirrored in `contract/tools.json` and the
+        # suite asserts the two agree, because a drift here is a model using the
         # worse tool forever and nothing anywhere reports it.
         base_tools = base.get("tools") or []
         annotated = []

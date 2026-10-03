@@ -100,9 +100,8 @@ def find_skills_dir(start: Optional[str] = None) -> Optional[str]:
     """Walk up from ``start`` looking for a ``skills/`` folder.
 
     Walking up rather than using a fixed relative path is what lets one copy of
-    the skills serve both the Python and Node implementations, and keeps working
-    whether the package is imported from the source tree or from site-packages
-    inside the repo.
+    the skills ship with the package, and keeps working whether it is imported
+    from the source tree or from site-packages.
     """
     here = os.path.abspath(start or __file__)
     current = here if os.path.isdir(here) else os.path.dirname(here)

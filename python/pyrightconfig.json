@@ -1,5 +1,5 @@
 {
-  "include": ["src/roblox_studio_mcp", "../parity"],
+  "include": ["src/roblox_studio_mcp", "../contract"],
   "exclude": ["**/__pycache__", "**/node_modules", "verify_*.py", "probe_*.py", "measure_*.py"],
 
   "typeCheckingMode": "basic",

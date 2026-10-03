@@ -74,7 +74,7 @@ python/                 Python client
   examples/               runnable Python examples (python -m examples.<name>)
 docs/                   docs site, opens from disk (docs/index.html)
   EVIDENCE.md             closed research, moved out of TODO.md — look a "why" up here
-parity/                 generated tool contract (tools.json) the suite asserts
+contract/               generated tool contract (tools.json) the suite asserts
 skills/                 rsx-* transport skills, served by extended_skill
 CONTRIBUTING.md         how to work on this: setup, gates, conventions, evidence rules
 AGENTS.md               standing rules and gates

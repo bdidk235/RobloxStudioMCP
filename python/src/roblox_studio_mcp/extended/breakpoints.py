@@ -246,7 +246,7 @@ async def set_breakpoint(
     can be interpolated, e.g. ``error("i=" .. tostring(i))``.
     """
     if isinstance(line, bool) or not isinstance(line, int) or line < 1:
-        # The type check exists for parity: Node's `Number.isInteger` guard
+        # The type check exists for the caller's own Lua errors:
         # rejected `2.5` and `"3"`, this one used to let both through and send
         # them to Studio. Same input, different behaviour per server.
         raise ToolError(

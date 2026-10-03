@@ -66,8 +66,7 @@ from . import logid, platform
 MESH_PORT = 13469
 
 #: An executable smaller than this is a partially written or absent install.
-#: Defined in :mod:`platform` so the two implementations cannot drift; re-exported
-#: here because it was part of this module's surface first.
+#: Re-exported from :mod:`platform`, where it is defined.
 MIN_EXE_BYTES = platform.MIN_EXE_BYTES
 
 #: Optional override for where to find a baseplate, so a caller can point at a

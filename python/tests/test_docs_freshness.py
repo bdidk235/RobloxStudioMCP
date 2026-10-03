@@ -253,7 +253,7 @@ class TestEvidenceLogHasNotEatenItself(unittest.TestCase):
         return size <= self.MAX_TOTAL_BYTES
 
 
-class TestParityTestReadsItsOwnCap(unittest.TestCase):
+class TestContractTestReadsItsOwnCap(unittest.TestCase):
 
     def test_contract_test_does_not_hardcode_a_cap(self):
         src = (REPO / "python" / "tests" / "test_contract.py").read_text(
