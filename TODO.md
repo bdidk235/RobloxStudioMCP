@@ -108,7 +108,7 @@
 
 - [ ] **Gate gap: a unit test that calls the function instead of the dispatch path cannot see a missing `await`.** Worth one test per guard that drives the real JSON-RPC entry point. The Python guard now has one; the Node side has four.
 
-- [ ] **Two of my own test fakes were wrong in the same way on both sides** — bare objects where the code calls `.json()`. The guard reported "could not check" and the refusal test passed **for the wrong reason**. Mirrored suites caught it, which is the strongest argument yet for the habit.
+- [x] **RETRACTED 2026-10-03 - moot: the Python guard has its dispatch-path test and the Node side is gone.** ~~Two of my own test fakes were wrong in the same way on both sides** - bare objects where the code calls `.json()`. The guard reported "could not check" and the refusal test passed **for the wrong reason**. Mirrored suites caught it, which is the strongest argument yet for the habit.~~
 
 - [x] ~~**`skills/` is untracked and the repo has no CI over it.**~~ **Withdrawn 2026-10-03 - false on both counts.** `git ls-files skills` returns 8 files, none ignored; `ci.yml:35` runs `python -m pytest tests` on a two-OS matrix and `test_skills.py` loads the real directory. The real gap is narrower and recorded separately.
 
