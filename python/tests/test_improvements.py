@@ -585,25 +585,20 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
         with tempfile.NamedTemporaryFile(suffix=".rbxm", delete=False) as tf:
             tf.write(b"x" * (200 * 1024))  # span multiple slices (append path)
             tf.flush()
-            path = tf.name
-        # Same file, spelled non-canonically, so the assertion below can fail on
-        # a developer machine and not only on the runners. Without this the test
-        # is blind here: on a dev box the temp path is already its own resolved
-        # form, so comparing against the raw name passes either way.
-        spelled = os.path.join(os.path.dirname(path), ".", os.path.basename(path))
+            # Spelled non-canonically on purpose: on a dev box `tempfile` hands
+            # back a path that is already its own resolved form, so a canonical
+            # one cannot fail here - only on a runner, where it arrives short.
+            path = os.path.join(os.path.dirname(tf.name), ".", os.path.basename(tf.name))
         try:
             result = await insert_asset_from_file(
                 studio,
-                file_path=spelled,
+                file_path=path,
                 allow_outside=True,
                 file_type="model",
                 asset_name="TestModel",
                 parent_path="game.Workspace",
             )
             self.assertEqual(result["status"], "inserted")
-            # The tool returns the *resolved* path, not the spelling it was given.
-            # CI caught this: `tempfile` hands back a short path on both runners
-            # (RUNNER~1 on Windows, /private/var on macOS).
             self.assertEqual(result["file_path"], str(pathlib.Path(path).resolve()))
             self.assertEqual(result["asset_name"], "TestModel")
             self.assertEqual(result["parent_path"], "game.Workspace")
@@ -625,19 +620,17 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
         with tempfile.NamedTemporaryFile(suffix=".rbxm", delete=False) as tf:
             tf.write(b"bad")
             tf.flush()
-            path = tf.name
-        spelled = os.path.join(os.path.dirname(path), ".", os.path.basename(path))
+            path = os.path.join(os.path.dirname(tf.name), ".", os.path.basename(tf.name))
         try:
             result = await insert_asset_from_file(
                 studio,
-                file_path=spelled,
+                file_path=path,
                 allow_outside=True,
                 file_type="model",
                 asset_name="BadModel",
                 parent_path="game.Workspace",
             )
             self.assertEqual(result["status"], "insert_failed")
-            # Resolved path, for the same reason as in test_model_insert_succeeds.
             self.assertEqual(result["file_path"], str(pathlib.Path(path).resolve()))
             self.assertIn("model load failed", result["note"])
         finally:
