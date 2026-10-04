@@ -275,5 +275,39 @@ class TestContractTestReadsItsOwnCap(unittest.TestCase):
         self.assertIn("per_tool_description_cap", src)
 
 
+class TestAgentsMdIsInsideItsWordCeiling(unittest.TestCase):
+    """The one place this repo's AGENTS.md word budget is stated.
+
+    Every word here is loaded into context on every session, so growth is paid
+    for continuously and should be a decision rather than an accumulation. The
+    ceiling is **exact-current, not a target**: a file sitting at its ceiling has
+    zero headroom and the next word trips it. That is the point - it makes growth
+    visible instead of gradual.
+
+    Two things this replaces rather than adds:
+
+    * `scripts/agents-md-budget.ps1` defaults its `$Path` to the AGENTS.md sitting
+      next to the *script*, so a bare invocation reads `.config/opencode/AGENTS.md`
+      and never this file - a gate that silently reports on the wrong document.
+    * Nothing ran that script in CI anyway, so this repo's file had no ceiling
+      it could see, and sat over one for hours.
+
+    Move the constant when the file legitimately grows; cut when the growth is
+    padding. Do not raise it to silence a failure, and do not restate the count
+    in a comment - that is what this gate is for.
+    """
+
+    CEILING = 2259
+
+    def test_agents_md_is_within_its_word_ceiling(self):
+        words = len(AGENTS.read_text(encoding="utf-8").split())
+        self.assertLessEqual(
+            words, self.CEILING,
+            "AGENTS.md is %d words, over its %d ceiling. Cut something, or move "
+            "TestAgentsMdIsInsideItsWordCeiling.CEILING on purpose - every word "
+            "here is loaded on every session." % (words, self.CEILING),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
