@@ -9,7 +9,17 @@ there was work to do was the problem rather than the record.
 holds it at every commit. `TODO.md` now carries the open work and the withdrawals;
 this file is where a *why* is looked up once the question is already known.
 
-Sections: 23, 1331 lines.
+**Paths named below are as they stood when written, and some have since moved.**
+`parity/` is now `contract/`, and `test_parity.py` is now
+`python/tests/test_contract.py`. The *why* is what this file is for and it does not
+expire; a path does. Where a line below reads like a description of how the repo is
+enforced *now*, it is a description of how it was enforced on the day it was written
+- lines 772, 778, 780 and 1047-1052 name files that no longer exist. For current
+state read the live file: `contract/tools.json` for the generated contract,
+`TODO.md` for open work, `python/tests/` for the gates.
+
+Sections: 24. No line count: a file cannot state its own length and stay true —
+adding this note changed it, and nothing gates it.
 
 ## macOS: researched and implemented, still never executed
 
