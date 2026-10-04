@@ -46,7 +46,7 @@ green while skipping the async coverage. Use `pytest`.
 `contract/tools.json` is generated from the Python server by
 `contract/build_contract.py` and asserted by the suite. A tool, a parameter
 or a required argument cannot change unnoticed. After a deliberate
-surface change, regenerate it — the diff *is* the parity report:
+surface change, regenerate it - the diff *is* the contract report:
 
 ```
 python contract/build_contract.py

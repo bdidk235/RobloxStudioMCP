@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5"]
+dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5", "pyright"]
 
 [tool.pytest.ini_options]
 # The suite is dominated by real waits in subprocess-backed timing tests, and
