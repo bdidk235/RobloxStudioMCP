@@ -34,7 +34,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 sys.path.insert(0, os.path.join(_ROOT, "python", "src"))
 sys.path.insert(0, _ROOT)  # so `contract.build_contract` imports as a package
 
-from contract.build_contract import _normalise_schema  # noqa: E402
+from contract.build_contract import _normalise_schema, build  # noqa: E402
 from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS  # noqa: E402
 
 CONTRACT_PATH = os.path.join(_ROOT, "contract", "tools.json")
@@ -46,14 +46,16 @@ BY_NAME = {tool.name: tool for tool in _EXTENDED_TOOLS}
 
 
 class SteersMatchTheGeneratedContract(unittest.TestCase):
-    """The relay-to-extended steering table exists in two places.
+    """The relay-to-extended steering table exists in three places.
 
-    `contract/build_contract.py::_STEERS` is the source, and the server keeps a
-    copy to apply. This asserts both are identical - byte for byte, not
-    "roughly equivalent". The failure mode it guards is specific and invisible:
-    if the server copy drifts, a model is silently steered toward the worse
-    tool, and every call still succeeds. Nothing else in the suite would
-    notice, because the tools themselves are fine.
+    `contract/build_contract.py::_STEERS` is the source, the server keeps a copy
+    to apply, and `contract/tools.json` ships a rendered third. This asserts the
+    first two are identical - byte for byte, not "roughly equivalent"; the third
+    is pinned by `RegenerationReproducesTheCommittedContract`. The failure mode
+    it guards is specific and invisible: if the server copy drifts, a model is
+    silently steered toward the worse tool, and every call still succeeds.
+    Nothing else in the suite would notice, because the tools themselves are
+    fine.
     """
 
     def _contract(self) -> dict:
@@ -201,6 +203,43 @@ class SchemaContract(unittest.TestCase):
                 getattr(BY_NAME[name], "read_only", False),
                 "%s can mutate or execute caller code and must not be marked" % name,
             )
+
+
+class RegenerationReproducesTheCommittedContract(unittest.TestCase):
+    """The committed file must equal a fresh run of the generator.
+
+    `contract/build_contract.py:10-11` claims the contract "cannot drift without
+    a test failing". That was aspirational: `build()` was called from `main()`
+    and nowhere else, so every test read `tools.json` off disk and compared the
+    *server* against it. The generator's own inputs were unpinned - editing
+    `_STEERS` at `build_contract.py:67` moved neither side of that comparison,
+    and the suite stayed green while the generator and the committed file
+    disagreed.
+
+    `build()` is pure, so this is a regeneration diff rather than a second
+    comparison, and it makes the `:10-11` claim true instead of asserted.
+
+    If this fails on a tree you have not touched, **clear
+    `contract/__pycache__` before believing the diff.** CPython trusts a `.pyc`
+    whose header mtime-and-size match the source, so a stale cache survives an
+    edit that changed a string's case but not the file's length. Measured while
+    this test was written: a cached `build()` emitted `EXTENDED_write_script`
+    where the source and the committed contract both say `extended_write_script`
+    - same byte length, so the header matched and the cache was accepted. The
+    committed contract was correct; the cache was the liar.
+    """
+
+    def test_a_fresh_build_reproduces_the_committed_file(self):
+        fresh = json.dumps(build(), indent=2, sort_keys=False) + "\n"
+        with open(CONTRACT_PATH, encoding="utf-8") as handle:
+            committed = handle.read()
+        self.assertEqual(
+            committed,
+            fresh,
+            "contract/tools.json is not what build() produces now. Regenerate "
+            "with `python contract/build_contract.py`, or the generator and the "
+            "contract it ships have diverged.",
+        )
 
 
 if __name__ == "__main__":
