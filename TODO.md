@@ -20,6 +20,41 @@
 
 ## Open items
 
+### Platform-dependent assertions, found 2026-10-04 by CI
+
+Three tests asserted on the **spelling** of a path rather than on the file it
+names, so they passed on a Windows dev box and failed on both runners. All three
+are fixed; the class is not swept.
+
+- What CI saw: `test_improvements.py::TestInsertModel::test_model_insert_succeeds`
+  and `::test_model_insert_fails` on **both** runners, plus
+  `test_error_contract.py::LibrarySiteFaults::test_each_site_says_the_declared_words`
+  on **macOS only**. Three failures, not two - the third was not visible in the
+  first pass over the log.
+- Cause in all three: the input and the product disagree about spelling, not
+  about file. `tempfile` hands back a short form (`RUNNER~1`, `/private/var`);
+  `_confined()` returns `Path.resolve()` output, which expands it.
+- `insert: missing file` is now `code_only` in `contract/errors.json`, matching
+  the existing `save_path: unwritable destination` entry and its stated reason.
+  **Cost, measured: subtests 207 -> 206.** The code stays pinned by
+  `test_each_site_carries_its_declared_code` (mutation-tested: flipping it to
+  `NOT_FOUND` fails; deleting the site fails).
+- **Why the wording pin cannot simply be made to pass.** On macOS
+  `Path(r"C:\nope.luau").resolve()` is `<cwd>/C:\nope.luau` - backslashes are
+  legal filename characters in POSIX. Any single literal in the contract is
+  right on one platform and wrong on the others, so this is not a Windows bug.
+- The reason that message once mattered is now structural, not textual: it used
+  to classify as `NOT_FOUND` because the text contained "not found", and
+  `classify()` returns an existing `ToolError` unchanged (`errors.py:268`), so it
+  never inspects the text at all. That is what made dropping the pin defensible.
+
+- [ ] **Nothing sweeps the suite for this class.** The two `file_path` assertions
+  were found by CI, not by a test. The detector that works: assert against
+  `Path(x).resolve()`, and if the assertion cannot be made to fail locally, say
+  so in a comment - because on a Windows dev box the raw temp path *is* its own
+  resolved form. A first fix here passed a mutation that reintroduced the bug
+  for exactly that reason, and only CI's macOS job could tell.
+
 ### Open items: skills and guards, reviewed 2026-10-01
 
 - [ ] **`skills/README.md` cost figures are wrong by ~2x.** Claims ~27,000 chars of skill bodies; measured **52,982**. Index share claimed 7%, actual **3.6%**. Nothing pins it — the only gate is `index < bodies//4`, which passes at 3.6%, 7% and 25%. **Fix: delete the numbers** and cite the two tests, per the project's own policy on quoted counts.

@@ -352,7 +352,9 @@
     {
       "site": "insert: missing file",
       "code": "INVALID_ARGUMENT",
-      "message": "file_path must name an existing local file, got \"C:\\\\nope.luau\". Read the path back before sending it."
+      "message": "file_path must name an existing local file, got \"C:\\\\nope.luau\". Read the path back before sending it.",
+      "code_only": true,
+      "why": "code_only because the message embeds the path _confined() resolved, and that spelling is per-machine: identical to the input on Windows, but on macOS a Windows-style argument resolves to <cwd>/C:\\\\nope.luau because backslashes are legal filename characters there. Pinning the literal therefore fails on exactly the platforms it was written to generalise to. The code is still pinned, by test_each_site_carries_its_declared_code. And the reason this message once mattered - a text containing 'not found' used to classify as NOT_FOUND - is now structural rather than textual: classify() returns an existing ToolError unchanged (errors.py:268), so it never reads this message at all."
     },
     {
       "site": "capture: rgba length mismatch",

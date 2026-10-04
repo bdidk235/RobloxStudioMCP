@@ -7,6 +7,7 @@ singleton ownership, and server disabled-tools filtering.
 
 import json
 import os
+import pathlib
 import tempfile
 import unittest
 from unittest import mock
@@ -585,17 +586,25 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
             tf.write(b"x" * (200 * 1024))  # span multiple slices (append path)
             tf.flush()
             path = tf.name
+        # Same file, spelled non-canonically, so the assertion below can fail on
+        # a developer machine and not only on the runners. Without this the test
+        # is blind here: on a dev box the temp path is already its own resolved
+        # form, so comparing against the raw name passes either way.
+        spelled = os.path.join(os.path.dirname(path), ".", os.path.basename(path))
         try:
             result = await insert_asset_from_file(
                 studio,
-                file_path=path,
+                file_path=spelled,
                 allow_outside=True,
                 file_type="model",
                 asset_name="TestModel",
                 parent_path="game.Workspace",
             )
             self.assertEqual(result["status"], "inserted")
-            self.assertEqual(result["file_path"], path)
+            # The tool returns the *resolved* path, not the spelling it was given.
+            # CI caught this: `tempfile` hands back a short path on both runners
+            # (RUNNER~1 on Windows, /private/var on macOS).
+            self.assertEqual(result["file_path"], str(pathlib.Path(path).resolve()))
             self.assertEqual(result["asset_name"], "TestModel")
             self.assertEqual(result["parent_path"], "game.Workspace")
             # Verify Lua executed: single scratch module + write/append path
@@ -617,17 +626,19 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
             tf.write(b"bad")
             tf.flush()
             path = tf.name
+        spelled = os.path.join(os.path.dirname(path), ".", os.path.basename(path))
         try:
             result = await insert_asset_from_file(
                 studio,
-                file_path=path,
+                file_path=spelled,
                 allow_outside=True,
                 file_type="model",
                 asset_name="BadModel",
                 parent_path="game.Workspace",
             )
             self.assertEqual(result["status"], "insert_failed")
-            self.assertEqual(result["file_path"], path)
+            # Resolved path, for the same reason as in test_model_insert_succeeds.
+            self.assertEqual(result["file_path"], str(pathlib.Path(path).resolve()))
             self.assertIn("model load failed", result["note"])
         finally:
             os.unlink(path)
