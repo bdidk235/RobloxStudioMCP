@@ -18,7 +18,7 @@ enforced *now*, it is a description of how it was enforced on the day it was wri
 state read the live file: `contract/tools.json` for the generated contract,
 `TODO.md` for open work, `python/tests/` for the gates.
 
-Sections: 24. No line count: a file cannot state its own length and stay true —
+Sections: 25. No line count: a file cannot state its own length and stay true -
 adding this note changed it, and nothing gates it.
 
 ## macOS: researched and implemented, still never executed
@@ -1406,3 +1406,49 @@ name prefix, frontmatter parses, index smaller than bodies. `test_skills.py` loa
 the full text of `rsx-capture.md` and never inspects a word of it. So the gate
 surface over skill *content* is empty, deliberately: see above for why it cannot
 be filled mechanically.
+
+## The strip's justification, re-derived by running it (2026-10-04)
+
+The repo went Python-only on 2026-10-03 (`e91cdb3`). Its justification: **Node's
+remaining gaps were silent-wrong-answer bugs.** That rested on `bd77d97`'s commit
+message and a dated narrative in this file - never re-derived. Recorded because the
+answer differs from the claim in a way worth keeping.
+
+**How.** A `git worktree` at `bd77d97` on branch `parity`, node v26.4.0, `npm install`,
+`npm run build`, `npm run typecheck` (clean), `npm test` (**688 passed, 1 skipped** -
+matching `bd77d97` exactly), then `parity/compare_implementations.py`, which exists only
+on that branch and is pure static analysis. Worktree removed; `main` never on it.
+
+**What `bd77d97` named, and what each is when executed:**
+
+| named gap | measured | class |
+|---|---|---|
+| `placeFromCommandLine` truncates at the first space | `dist/extended/platform.js:379`, given `-localPlaceFile "C:\Users\My User\place.rbxl"` returns **`"My"`**; `"C:\Program Files\..."` returns **`"Program"`**. No throw, exit 0 | **silent wrong answer** |
+| Node "computes `readOnlyHint` and ships 0 of 7" | 16 tools, **7 carry `readOnly === true`** (`extendedServer.js:858,868`); a wire entry serialises `name, description, inputSchema` only, so **0 of 7 ship** | **safe omission** - an unmarked set reads as "may mutate", which is safe, per Python's own docstring |
+| `instance.ts` never imports `logid.ts` | both `logid` mentions in `instance.js` are comments (lines 6, 12); the import at line 28 takes `processRows` from `platform.js` | **honest refusal** |
+
+**1 of 3 is a silent wrong answer.** The justification is overstated; the decision is
+not. `compare_implementations.py` measures python `extended/` at 7,642 lines against
+node's 6,859, and python tests at 10,471 lines in 38 files against node's 7,309 in 19 -
+**5,708 python-only test lines** across 24 subjects node never covered (`typecheck`,
+`readonly_hints`, `platform_macos`, `logid_formats`, `relay_guards`, `parent_edge`, and
+18 more). Its one-sided-risk section names `split()` semantics as **already having
+fired**: python's `split(None, n)` keeps the remainder, JS truncates, and *"every row
+came back null"* in the macOS process parser. Same family as the `"My"` above -
+whitespace handled differently across two languages, yielding a plausible wrong value.
+
+**The honest statement:** *python was further ahead, and node was exposed to a class of
+cross-language bug that had already produced a real defect.* Not *"every remaining gap
+was a silent wrong answer."*
+
+**Three claims in the sources above are wrong, recorded so nobody inherits them.**
+(1) An earlier reading of this said `readOnlyHint` appears **zero** times in `node/`,
+therefore absent - wrong needle, the code says `READ_ONLY_TOOLS` and `tool.readOnly`.
+(2) `TODO.md`'s retracted item says `stopProcess(pid)` "has no PID to be given";
+`processRows()` returns `pid` straight from `Get-CimInstance Win32_Process`, so the
+`studio_id`-to-pid *mapping* is missing, not a pid. (3) The harness's section 5 reports
+*"node/dist does not exist - the Node server has never been built here"* - true of that
+worktree, false as history.
+
+**Settles against:** re-running the harness on `parity` and finding a fourth gap that
+*is* a silent wrong answer, which would make the justification understated instead.
