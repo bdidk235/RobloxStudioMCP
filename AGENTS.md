@@ -121,6 +121,52 @@ resulting container). The reasoning is in `TODO.md`. Note the honest limit: a
 defaulted `.get()` on a missing key is legal, so the checker is a
 backstop and the `TypedDict` on `WatchResult` is the actual fix.
 
+## Launching a Studio
+
+`extended_manage_instance` `action=launch` takes one argument, the place. Two
+routes, and their traps differ — read the one you are on.
+
+**URI route** (a published place), dispatched with `os.startfile`;
+`subprocess.Popen` cannot do it:
+
+```
+roblox-studio:1+task:EditPlace+placeId:<id>+universeId:<id>
+```
+
+- **Four keys, and both ids.** Four is what `build_launch_uri()` emits and what
+  `test_closed_sets.py::LaunchUriIsComplete` pins — **not** a measured minimum.
+  `TODO.md` records that the minimality is only half measured, so do not read
+  this as "fewer will not work"; it has not been established either way.
+- **Dropping `universeId` still attaches**, so a process count passes — but
+  Studio comes up with no place open, which only shows when you ask it for a
+  name. This is the trap: the launch *looks* successful.
+- *Uncorroborated here:* an earlier eleven-key prefix failed with an `Error`
+  dialog and never attached. No source in this repo records it, and no log on
+  this machine either — the oldest Studio log is 2026-10-02, after the fact.
+  **Settles against:** the session where it failed, if one is ever found.
+- `universeId: 0` and the place's real id are **both measured to open the
+  place** — 6 of 6 and 8 of 8. See rule 3's place-id section for the withdrawn
+  claim that the real id fails.
+
+**File route** (a place that exists only on disk):
+`--task EditFile --localPlaceFile <path>`.
+
+- A launch that starts but fails to identify returns `launched: false` **with
+  `started_but_unidentified: true`** and an `identified_by` field. **Do not
+  re-launch.** The process is live and a second launch orphans it. Read the
+  Studio log under `%LOCALAPPDATA%\Roblox\logs` for `State: OpenPlaceFailure`
+  instead; a `name: null` check is meaningless on this route. **This bug once
+  shipped and always reported failure on a successful launch, leaving the orphan
+  invisible** — it is why the flag exists, not a hypothetical.
+  *The `OpenPlaceFailure` string itself is uncorroborated.* No source in this
+  repo contains it; the sibling `State: OpenPlaceInitialization` is real and
+  appears in this machine's logs, but `OpenPlaceFailure` appears in none of
+  them, and none of those 15 sessions failed a launch, so its absence bounds
+  nothing. **Settles against:** one real failed launch.
+- `action=list` returns `processes` and `mesh` as two lists, **deliberately
+  unjoined** — the join is what cannot be trusted when two Studios share a place
+  and both report mesh name `Place1`.
+
 ## MCP Server
 
 Uses the **extended** Studio MCP server (`roblox_studio_mcp.extended_server`),
