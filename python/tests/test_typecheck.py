@@ -116,7 +116,8 @@ class TypeCheckGate(unittest.TestCase):
         proves the checker reports errors at all by feeding it a file that has
         one. Uses the acid-test file, which contains deliberate errors."""
         proc = subprocess.run(
-            [sys.executable, "-m", "pyright", "--outputjson", "typecheck_acid_test.py"],
+            [sys.executable, "-m", "pyright", "--outputjson",
+             os.path.join("scripts", "typecheck_acid_test.py")],
             cwd=os.path.join(_ROOT, "python"),
             capture_output=True,
             text=True,
