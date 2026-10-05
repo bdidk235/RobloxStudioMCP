@@ -16,10 +16,9 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from .writer import _GAME_TREE_PREFIX, _strip_line_prefixes, _pick_bracket_level, _lua_long_bracket
-from .updater import UpdateResult
 from .errors import (
     CAPABILITY_DENIED,
     INVALID_ARGUMENT,
@@ -494,7 +493,7 @@ class WatchResult(TypedDict):
     ``.get`` on a missing key is legal by design in both. What a TypedDict *does*
     catch is the subscript form, and what it does for this codebase is make the
     three real keys visible in one place. See
-    ``python/typecheck_acid_test.py`` for the measurement, and
+    ``python/scripts/typecheck_acid_test.py`` for the measurement, and
     ``TODO.md`` for the conclusion that the annotation is the fix and the checker
     is a backstop.
     """

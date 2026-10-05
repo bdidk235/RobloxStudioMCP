@@ -34,7 +34,6 @@ instead of silently reducing the library.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from typing import Dict, List, Optional, Tuple, TypedDict, Union

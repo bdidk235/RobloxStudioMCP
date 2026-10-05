@@ -255,7 +255,7 @@ class RobloxStudio:
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
-            for key in ("studios", "instances", "data", "result"):
+            for key in _STUDIO_LIST_KEYS:
                 if key in data:
                     value = data[key]
                     if isinstance(value, list):

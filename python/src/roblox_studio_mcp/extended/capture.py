@@ -64,7 +64,7 @@ import struct
 import tempfile
 import time
 import zlib
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from ..roblox import RobloxStudio
 from .errors import describe, ToolError

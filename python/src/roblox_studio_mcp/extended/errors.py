@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 # --- codes ------------------------------------------------------------------ #
 NO_STUDIO = "NO_STUDIO"
@@ -164,22 +164,6 @@ _PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "timed out",
         "timeout",
     )),
-    (LUA_ERROR, (
-        "attempt to call",
-        "attempt to index",
-        "attempt to concatenate",
-        "attempt to perform arithmetic",
-        "is not a valid member",
-        "failed to parse",
-        "unexpected symbol",
-        "invalid value (",
-        "unbalanced",
-        "malformed",
-        "cannot cast",
-        # Observed verbatim from Studio: a type mismatch on a service argument,
-        # reported as a cast failure rather than an API refusal.
-        "unable to cast",
-    )),
     (NOT_FOUND, (
         "could not find any instances",
         "script not found",
@@ -191,6 +175,13 @@ _PATTERNS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
 #: are the caller's bug, and conflating them with the engine saying "no" is what
 #: made a failed probe look like a transport fault. Checked before the message
 #: table so a syntax error is never claimed by a looser pattern.
+#:
+#: **This is the only place ``LUA_ERROR`` is produced from message text.** It
+#: used to also appear in :data:`_PATTERNS` as twelve literal needles, which
+#: could never fire: `classify` runs this regex first, and all twelve needles
+#: are substrings of it (measured, all 12). So the table copy was a second
+#: spelling of one rule - the shape that drifts - and its presence in
+#: ``_PATTERNS`` read as coverage the table was not actually providing.
 _LUA_FAULT = re.compile(
     r"(attempt to (call|index|concatenate|perform arithmetic)|"
     r"is not a valid member|"
@@ -199,6 +190,8 @@ _LUA_FAULT = re.compile(
     r"invalid value \(|"
     r"unbalanced|"
     r"malformed|"
+    # Observed verbatim from Studio: a type mismatch on a service argument,
+    # reported as a cast failure rather than an API refusal.
     r"unable to cast|"
     r"cannot cast)",
     re.IGNORECASE,

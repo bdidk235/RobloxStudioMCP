@@ -845,5 +845,80 @@ class TestInsertCrlf(unittest.IsolatedAsyncioTestCase):
             os.unlink(path)
 
 
+class TestRelayedCallAnswersOnce(unittest.IsolatedAsyncioTestCase):
+    """One request id must get exactly one response on the relay path.
+
+    This path used to send the result twice: once unconditionally after the
+    upstream call, then again after attaching `proxy_note`. Two responses to one
+    id is a protocol violation, and it had a direction - a JSON-RPC peer is
+    entitled to read the *first*, so it got the answer with no "we could not
+    check" beside it, which is the whole reason the note exists. The second
+    response is the one a peer ignores.
+
+    No Studio needed: `_send` writes to stdout, so patching it counts responses.
+    """
+
+    class _FakeClient:
+        def __init__(self, result):
+            self._result = result
+
+        async def request(self, method, params=None):
+            return self._result
+
+        async def list_tools(self):
+            return []
+
+    async def _drive(self, client, message):
+        from roblox_studio_mcp import extended_server as server
+
+        sent = []
+        with mock.patch.object(server, "_send", side_effect=sent.append):
+            await server._handle_message(client, message)
+        return sent
+
+    def _relayed(self):
+        return {
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "tools/call",
+            "params": {"name": "screen_capture", "arguments": {"studio_id": "x"}},
+        }
+
+    async def test_a_relayed_call_emits_exactly_one_response(self):
+        sent = await self._drive(self._FakeClient({"content": []}), self._relayed())
+        self.assertEqual(
+            len(sent), 1,
+            "one request id must get one response; got %d: %r" % (len(sent), sent),
+        )
+        self.assertEqual(sent[0]["id"], 42)
+        self.assertIn("result", sent[0])
+        self.assertNotIn("error", sent[0])
+
+    async def test_the_single_response_carries_the_guard_note(self):
+        """Or the fix traded a protocol violation for silent loss, which is
+        worse. The pass-through calls `_RELAY_GUARD_NOTES.clear()` before the
+        upstream call, so the note has to be seeded on a list whose clear is a
+        no-op - patching the real list is not enough, the clear wipes it."""
+        from roblox_studio_mcp import extended_server as server
+
+        class _Seeded(list):
+            def clear(self):
+                pass
+
+        server._RELAY_GUARD_NOTES.clear()
+        try:
+            with mock.patch.object(server, "_RELAY_GUARD_NOTES",
+                                   _Seeded(["guard did not run"])):
+                sent = await self._drive(self._FakeClient({"content": []}),
+                                         self._relayed())
+        finally:
+            server._RELAY_GUARD_NOTES.clear()
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(
+            sent[0]["result"].get("proxy_note"), ["guard did not run"],
+            "the guard note must ride on the single response",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,12 +12,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 from collections import deque
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence
 
 from ._version import __version__
-from .errors import JSONRPCError, MCPConnectionError, MCPProtocolError, MCPToolError
+from .errors import JSONRPCError, MCPConnectionError, MCPToolError
 from .types import CallToolResult, Tool
 
 DEFAULT_PROTOCOL_VERSION = "2024-11-05"
@@ -301,8 +300,6 @@ class MCPClient:
         self._deadlines[request_id] = state
 
         message: Dict[str, Any] = {"jsonrpc": "2.0", "id": request_id, "method": method}
-        if params is not None:
-            message["params"] = params
         # Echo the id as the progress token so a server that supports progress
         # can extend our deadline, and so we can attribute it back to this call.
         message["params"] = dict(params or {})

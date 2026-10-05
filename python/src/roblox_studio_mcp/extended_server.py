@@ -39,13 +39,12 @@ from typing import (
     Dict,
     List,
     Optional,
-    Sequence,
 )
 
 from .client import MCPClient
-from .extended.errors import ToolError, describe
-from .roblox import RobloxStudio, default_args, default_command, default_shell
-from .types import CallToolResult, Tool
+from .extended.errors import ToolError, classify, describe
+from .roblox import default_args, default_command, default_shell
+from .types import Tool
 
 from .extended import RobloxStudio as _RobloxStudio
 from .extended.grep import extended_script_grep as _grep
@@ -324,8 +323,6 @@ def _error_payload(exc: BaseException) -> Dict[str, Any]:
     for callers that want to branch, and is duplicated at the top level of
     ``error`` for readability.
     """
-    from .extended.errors import classify
-
     err = classify(exc)
     return {
         "code": -32000,
@@ -356,18 +353,16 @@ async def _call_extended_write(
     create_if_missing: bool = arguments.get("create_if_missing", False)
     studio_id: Optional[str] = arguments.get("studio_id")
 
+    # The shared client is not closed here: the server owns it for its whole
+    # lifetime. The `try`/`finally: pass` this note sat in was a no-op block.
     studio = _RobloxStudio(client=client, studio_id=studio_id)
-    try:
-        status = await _write(
-            studio,
-            target_path,
-            content,
-            className=class_name,
-            create_if_missing=create_if_missing,
-        )
-    finally:
-        # Don't close the shared client here — it's owned by the server.
-        pass
+    status = await _write(
+        studio,
+        target_path,
+        content,
+        className=class_name,
+        create_if_missing=create_if_missing,
+    )
 
     return {"content": [{"type": "text", "text": status}], "isError": False, "is_error": False}
 
@@ -423,18 +418,16 @@ async def _call_extended_update(
             {"old_string": old_string, "new_string": new_string, "replace_all": replace_all}
         )
 
+    # As in `_call_extended_write`: the shared client belongs to the server, so
+    # this must not close it.
     studio = _RobloxStudio(client=client, studio_id=studio_id)
-    try:
-        result: UpdateResult = await _update(
-            studio,
-            target_path,
-            edits,
-            skip_missing=skip_missing,
-            skip_no_ops=skip_no_ops,
-        )
-    finally:
-        # Don't close the shared client here — it's owned by the server.
-        pass
+    result: UpdateResult = await _update(
+        studio,
+        target_path,
+        edits,
+        skip_missing=skip_missing,
+        skip_no_ops=skip_no_ops,
+    )
 
     text = str(result)
     if result.warnings:
@@ -1411,10 +1404,6 @@ async def _guard_screen_capture(
 #: not a rewrite of the tool - the call is forwarded untouched when it passes -
 #: but the proxy does hold the arguments, so the "we cannot add parameters to a
 #: relayed tool" limit was never a reason to accept a wrong target.
-#: Guards on RELAYED tools: they run before pass-through and may refuse. This is
-#: not a rewrite of the tool - the call is forwarded untouched when it passes -
-#: but the proxy does hold the arguments, so the "we cannot add parameters to a
-#: relayed tool" limit was never a reason to accept a wrong target.
 #:
 #: Typed as ``Callable[..., Awaitable[None]]`` and NOT ``Dict[str, Any]``, on
 #: purpose. ``Any`` erases the coroutine type, so a missing ``await`` at the call
@@ -1739,12 +1728,16 @@ async def _handle_message(
                 "error": _error_payload(exc),
             })
             return
-        _send(
-            {"jsonrpc": "2.0", "id": message["id"], "result": result}
-        )
         # A guard that could not run its check passes the call through, but says so
         # rather than staying silent - "we verified" and "we could not check"
         # must not look the same to a caller.
+        #
+        # Annotated BEFORE the single send below, deliberately. This used to send
+        # the result twice: once here, unconditionally, and again after attaching
+        # `proxy_note`. Two responses to one request id is not readable by a
+        # JSON-RPC peer, and the note was the casualty - a client that stops at
+        # the first response gets the answer with no "we could not check" beside
+        # it, which is the whole reason the note exists.
         if _RELAY_GUARD_NOTES:
             result = dict(result or {})
             result["proxy_note"] = list(_RELAY_GUARD_NOTES)

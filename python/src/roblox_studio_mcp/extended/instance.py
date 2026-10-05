@@ -62,9 +62,6 @@ from typing import Any, Dict, List, Optional, Set
 from ..roblox import RobloxStudio
 from . import logid, platform
 
-#: The proxy mesh port. Attached Studios hold an established connection to it.
-MESH_PORT = 13469
-
 #: An executable smaller than this is a partially written or absent install.
 #: Re-exported from :mod:`platform`, where it is defined.
 MIN_EXE_BYTES = platform.MIN_EXE_BYTES

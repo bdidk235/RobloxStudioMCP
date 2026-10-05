@@ -47,7 +47,7 @@ Usage
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, TypedDict, Union
+from typing import Any, List, Mapping, Sequence, Tuple, TypedDict, Union
 
 from .writer import _strip_line_prefixes, _GAME_TREE_PREFIX, write_script
 from .errors import INVALID_ARGUMENT, ToolError, describe

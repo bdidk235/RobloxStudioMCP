@@ -68,15 +68,11 @@ document.
 from __future__ import annotations
 
 import os
-import re
 from typing import Any, Dict, List, Optional, Set
 
 from . import platform
 
-#: Studio's document lock, one field per line: pid, process, machine, session.
-#: A single-line pipe shape is accepted as a fallback. Trailing blank lines,
-#: and the PID is matched by shape rather than position
-#: because a document claimed by another user puts a different field first.
+
 def autosaves_dir() -> str:
     """Where Studio keeps its document locks. See :func:`platform.autosaves_dir`."""
     return platform.autosaves_dir()
