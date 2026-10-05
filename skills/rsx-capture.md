@@ -199,7 +199,7 @@ rather than for measuring pixels - `extended_capture` stays the exact path.
 Studio's title bar carries the **full place path**:
 
 ```
-C:\Users\User\AppData\Local\Temp\...\Baseplate-35375535.rbxl - Roblox Studio
+C:\Users\<you>\AppData\Local\Temp\...\Baseplate-35375535.rbxl - Roblox Studio
 ```
 
 The mesh reports only the **basename**; the log's command line reports the full
