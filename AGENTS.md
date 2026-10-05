@@ -1,4 +1,4 @@
-# Claude.md — Roblox Studio MCP Project
+# AGENTS.md — Roblox Studio MCP Project
 
 ## STANDING RULES
 
@@ -72,8 +72,8 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
           **8 of 8 launches on the real id succeeded on the first attempt**, 6 of 6
           on 0, zero errors, no retries needed. The 3-of-16 is the only
           counter-example and could not be reproduced. **The claim is withdrawn,
-          not the measurement** — see `TODO.md`, *The universe id is a function of
-          the place id*.
+          not the measurement** — see `docs/EVIDENCE.md`, *The universe id is a
+          function of the place id*.
      - *Unsaved local place* — there is **no place id to pass**. Studio reports
        `PlaceId: 0`, and this project's own copies are named `Baseplate-<n>.rbxl`,
        for which `template_place_id()` returns `None` rather than a fabricated one.
@@ -83,10 +83,10 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      because omitting `PlaceId` saves the *open* place, which may be a published one.
    - **Never** use "saveinstance" scripts — executor-based exploit tooling that
      works by ignoring Roblox's ownership and auth model. Same reason as rule 1:
-     the mechanism is the violation. `TODO.md` records why, without naming them.
+     the mechanism is the violation. `docs/EVIDENCE.md` records why, unnamed.
    - **No MCP exposes any of this.** Not the official `Roblox/studio-rust-mcp-server`
      (6 tools), not the built-in Studio MCP (34 documented tools), and not the
-     four community servers checked. Source and method in `TODO.md`.
+     four community servers checked. Source and method in `docs/EVIDENCE.md`.
 4. **Run the gates before claiming anything works.** `pytest`, which already
    includes the type gate. A gate that has not been run is not a gate.
 ## Gates
@@ -130,8 +130,8 @@ contract report.
 Type checking: **pyright**, chosen over mypy on measured evidence — both found
 the same 7 real defects, but mypy also reported a false positive at
 `instance.py:728` (it narrows the loop variable in a dict comprehension, not the
-resulting container). The reasoning is in `TODO.md`. Note the honest limit: a
-defaulted `.get()` on a missing key is legal, so the checker is a
+resulting container). The reasoning is in `docs/EVIDENCE.md`. Note the honest
+limit: a defaulted `.get()` on a missing key is legal, so the checker is a
 backstop and the `TypedDict` on `WatchResult` is the actual fix.
 
 ## Launching a Studio
@@ -157,9 +157,6 @@ roblox-studio:1+task:EditPlace+placeId:<id>+universeId:<id>
   dialog and never attached. No source in this repo records it, and no log on
   this machine either — the oldest Studio log is 2026-10-02, after the fact.
   **Settles against:** the session where it failed, if one is ever found.
-- `universeId: 0` and the place's real id are **both measured to open the
-  place** — 6 of 6 and 8 of 8. See rule 3's place-id section for the withdrawn
-  claim that the real id fails.
 
 **File route** (a place that exists only on disk):
 `--task EditFile --localPlaceFile <path>`.
@@ -219,7 +216,7 @@ count in two other places, twice. Every figure belongs in one place only:
 | --- | --- |
 | the live caps and usage | `contract/tools.json` - `total_description_cap`, `per_tool_description_cap`, `total_description_chars` |
 | whether a change fits | regenerate and read the diff |
-| why a figure was what it was | `TODO.md`, *The tool list is budgeted* |
+| why a figure was what it was | `docs/EVIDENCE.md`, *The tool list is budgeted* |
 
 `test_docs_freshness.py` enforces the rule above by failing if a cap-like figure
 appears in this section. It encodes no number itself, so it cannot rot the way
@@ -231,10 +228,10 @@ New surface is funded by trimming existing descriptions, never by raising the
 cap. The tool list is paid on every call, every session: a cap raise is a real
 cost, so it is a decision for the user, not a silent change.
 
-## Evidence lives in TODO.md
+## Where the record lives
 
-That file is the record of what was **measured** versus **inferred**, with
-provenance kept separate on purpose. Read it before proposing anything that
-depends on a prior finding — several plausible-sounding ideas in it are already
-marked retracted, and the reason is usually a measurement that contradicted the
-obvious reading.
+`docs/EVIDENCE.md` is the record of what was **measured** versus **inferred**,
+with provenance kept separate on purpose; `TODO.md` carries the open work and the
+withdrawals. Read the first before proposing anything that depends on a prior
+finding — several plausible-sounding ideas are already marked retracted, and the
+reason is usually a measurement that contradicted the obvious reading.

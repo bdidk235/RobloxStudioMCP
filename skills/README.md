@@ -78,20 +78,13 @@ either. "Body" is `content`: the file with its frontmatter block stripped and
 the ends trimmed, which is what `skills.py` sends to a model. Raw bytes on disk
 are larger, frontmatter included.
 
-**Neither total is written here, and that is deliberate.** The body figure was
-pinned here and went stale — 2026-10-05 it read 55,465 against an actual 72,139,
-because seven skills had been edited since. The index figure happened to still be
-right (1,984 against a claimed 1,985), which is worse: one correct number next to
-a wrong one reads as the whole line being trustworthy. A figure that only *might*
-be right is not worth keeping, and the ratio below is what a test actually pins.
-Re-measure with:
+**Neither total is written here, and that is deliberate.** Both went stale the
+moment a skill was edited, and a figure that only *might* be right is worse than
+none. `TODO.md` records that drift and the correction, dated. Re-measure with:
 
 ```
 # characters the loader counts as body, and the index it builds
 python -c "import sys;sys.path.insert(0,'python/src');from roblox_studio_mcp.extended.skills import load_skills,skill_index;s=load_skills();print('bodies',sum(len(x['content']) for x in s),'index',len(skill_index(s)))"
-
-# raw bytes on disk, frontmatter included
-Get-ChildItem skills\rsx-*.md | Measure-Object -Property Length -Sum
 ```
 
 No test asserts those totals, because they move for uninteresting
@@ -101,18 +94,11 @@ stay under a quarter of the bodies.
 ## The description budget
 
 Tool descriptions are capped per tool and in total, and both caps are enforced
-by tests in each implementation. The figures live in the generated contract,
-`contract/tools.json`: read `per_tool_description_cap`, `total_description_cap`
-and `total_description_chars` there rather than here. That file is produced by
-`contract/build_contract.py`, so a regeneration is also the diff that explains any
-change.
-
-The total was 2,700 until 2026-10-01, when it was raised to 3,200 by decision.
-The old cap forced a choice between saying what an action returns and staying in
-budget, which was the wrong trade. An agent that does not know a launch hands
-back a `studio_id` makes a second call to find one, so the cap was dictating
-tool behaviour. What the cap is for is prose that is not what, when or why, and
-that is caught by reading each description, not by starving them.
+by the suite. The figures live in the generated contract, `contract/tools.json`:
+read `per_tool_description_cap`, `total_description_cap` and
+`total_description_chars` there rather than here. That file is produced by
+`contract/build_contract.py`, which also carries why the total sits where it
+does, so a regeneration is the diff that explains any change.
 
 **The cap is not to be raised again.** New surface is funded by trimming
 existing descriptions. Depth still belongs in a skill rather than a description,

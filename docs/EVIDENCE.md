@@ -1396,10 +1396,11 @@ true:
 2. Every `` `rsx-*` `` a skill names must be a real sibling. Currently zero
    dangling.
 
-Rejected anyway: there are **4 `file:line` refs across 7 files**. A test file
-guarding four references is overhead that reads as safety, which is the same
-failure as a gate whose negative control is trivially true. Revisit if the count
-grows.
+Rejected anyway: there were **4 `file:line` refs across 7 files** when this was
+written. Re-measured 2026-10-05 there are **2, both in `rsx-capture.md`** — a
+test file guarding two references is overhead that reads as safety, which is the
+same failure as a gate whose negative control is trivially true. Revisit if the
+count grows.
 
 **The blind spot that is real.** Both suites assert only *structure* over skills -
 name prefix, frontmatter parses, index smaller than bodies. `test_skills.py` loads

@@ -6,7 +6,8 @@
 > to hold all of it, and reaching the work meant crossing 1,300 lines of
 > findings that were already settled.
 >
-> **61 open items.** `- [ ]` is work someone could pick up today.
+> **Open work, then withdrawals.** `- [ ]` is work someone could pick up
+> today; the count is whatever `- [ ]` returns, so it is not written here.
 > Withdrawals are kept because the value of a ledger is that a retraction
 > stays visible — an item struck from this list tends to be re-derived.
 
@@ -40,7 +41,7 @@
 
   > **Resolved 2026-10-03** - **already fixed** - there is now a section on waiting plus a poll snippet.
 
-- [x] **`rsx-playtest.md` — "all confirmed" is not true for three items:** `ExecutePlayModeAsync` appears nowhere else in the repo (its row's own class of claim, but unsourced); the `AddPlayers` 1–8 bound has no provenance; and the `EndTest` section is headed "Reproduced" with no `TODO.md` entry — and `TODO.md:1687` says the StartServer route works for `AddPlayers` **but not** for ending a test with a value, a combination the file presents as one loop.
+- [x] **`rsx-playtest.md` — "all confirmed" is not true for three items:** `ExecutePlayModeAsync` appears nowhere else in the repo (its row's own class of claim, but unsourced); the `AddPlayers` 1–8 bound has no provenance; and the `EndTest` section is headed "Reproduced" with no `TODO.md` entry — and this file says the StartServer route works for `AddPlayers` **but not** for ending a test with a value, a combination the file presents as one loop. *(The line ref was `TODO.md:1687`, back when this file was 2,790 lines; it named a line that no longer exists, so it is dropped rather than renumbered.)*
 
   > **Resolved 2026-10-03** - **already fixed**; one residue survives: `ExecutePlayModeAsync` still appears at line 29 only, now marked unsourced.
 
@@ -86,7 +87,7 @@
 
   > **Resolved 2026-10-03** - **fixed here** - heading retitled; the code's default-and-pass-through behaviour is stated. `log_expression: ""` being replaced rather than honoured is now covered by that same sentence.
 
-- [ ] **`rsx-breakpoints.md` — repeats the unscoped one-line console claim** (fixed in `rsx-console.md`; this file still says it universally).
+- [x] **`rsx-breakpoints.md` repeated the unscoped one-line console claim** (scoped in `rsx-console.md`). **Already fixed** before this pass — re-measured 2026-10-05 at `rsx-breakpoints.md:121-128`, which now says the shape is consumer-dependent and names the agent caller path; the tracker was stale, not the file.
 
 - [x] **`rsx-discovery.md` — `RunService.IsEdit()` is described backwards:** "a parse error, not a nil call" is wrong twice. It is valid Luau; the engine says `attempt to call a nil value (field 'IsEdit')`, which the project's own classifier maps to `LUA_ERROR` — so the distinction the skill draws is not one the codebase makes.
 
@@ -98,13 +99,13 @@
 
 - [ ] **`rsx-discovery.md` — a "useful services" table mixes evidence classes.** `ExecuteMultiplayerTestAsync` is documented-but-**unverified** (calling it is what wedges the test service) yet sits in a table whose neighbours are confirmed; `GetTestArgs` has no source anywhere.
 
-- [ ] **`rsx-discovery.md` — missing:** the one measured capability gate (`game.UniqueId` → "The current thread cannot read 'UniqueId'"); the complete no-process-id ruling, where `settings()` currently sits under a reflection heading rather than the capability story; array/`Vector2` return shapes, in the one skill that pushes APIs returning arrays; and any `see also` boundary (its telemetry section is near-verbatim duplicated from `rsx-targeting`).
+- [ ] **`rsx-discovery.md` — missing, partly fixed.** Re-measured 2026-10-05: the capability gate **is** now documented (`rsx-discovery.md:128-134` — `game.UniqueId`, the `RobloxScript` capability, and why reflection cannot answer it either), and the telemetry duplication is gone (no `telemetryLog` in `rsx-targeting.md`). Still missing: the array/`Vector2` return shapes, in the one skill that pushes APIs returning arrays; any `see also` boundary; and `settings()` still sits under the reflection heading at `:38` rather than in the capability story, so the no-process-id ruling is incomplete.
 
-- [x] **`rsx-transport.md` — still stale after the base64 fix:** "append in slices of roughly 120,000" under the ceiling heading (it is neither current nor a capacity strategy — splitting never raises the ceiling); missing `script_read`'s ` 1->` line prefixes, which **corrupt base64 if left in** and produce a valid-looking wrong image; missing the wait-for hung-poll abort; missing that the array note rides a **second content block** that our own `text()` collapses, so the note appends prose after the JSON and a caller that trims to parse discards it; a dangling pointer to the deleted
+- [ ] **`rsx-transport.md` — stale after the base64 fix.** Re-measured 2026-10-05: the slice sub-item **is** done (`rsx-transport.md:108-115` documents it as a speed knob with the measurement), so that clause is struck. The rest are all still missing, verified by reading the file: no ` 1->` line prefixes anywhere (they **corrupt base64 if left in** and produce a valid-looking wrong image); no wait-for hung-poll abort; nothing on the array note riding a **second content block** that our own `text()` collapses, so the note appends prose after the JSON and a caller that trims to parse discards it. It also still points at `REQUEST-luau-return-shapes.md`, which is not in the repo (`git ls-files` lists no such file).
 
-  > **Resolved 2026-10-03** - **fixed here** - "slices of roughly 120,000" is gone; the slice is documented as a speed knob with the measurement that shows why.
+  > **Partly resolved 2026-10-03** - the tracker had marked the whole item done on the strength of the slice fix alone. Re-opened 2026-10-05 against the file.
 
-- [ ] **Cross-file:** `README.md:168` carries the same pre-guard wrong-Studio wording. `extended_server.py` and `breakpoints.py` still assert the one-line console shape in comments/docstrings. `python/README.md:194` still says base64 is computed in Luau. `AGENTS.md:1` is still titled `# Claude.md`. Fixing one side of each leaves the falsehood live elsewhere.
+- [ ] **Cross-file:** the one-line console shape is still asserted unscoped in `python/src/roblox_studio_mcp/extended/breakpoints.py:32-35` ("The console arrives as ONE line with literal `\n` escapes") and `extended/skills.py:10`, where `rsx-console.md` and `rsx-breakpoints.md:121-128` both scope it to the consumer path. Re-measured 2026-10-05: `extended_server.py` no longer carries the claim, so the item that named it was half stale. `python/README.md:194` still says base64 is computed in Luau — true of the chunked write, but `capture.py:454` base64-encodes host-side too, so it reads as the only route. Fixing one side of each leaves the falsehood live elsewhere.
 
 - [ ] **Gate gap: a unit test that calls the function instead of the dispatch path cannot see a missing `await`.** Worth one test per guard that drives the real JSON-RPC entry point. The Python guard now has one; the Node side has four.
 
@@ -112,17 +113,17 @@
 
 - [x] ~~**`skills/` is untracked and the repo has no CI over it.**~~ **Withdrawn 2026-10-03 - false on both counts.** `git ls-files skills` returns 8 files, none ignored; `ci.yml:35` runs `python -m pytest tests` on a two-OS matrix and `test_skills.py` loads the real directory. The real gap is narrower and recorded separately.
 
-- [ ] **No gate reads a claim inside a skill body - and the obvious one provably cannot work.** `test_skills.py` asserts only structure (name prefix, frontmatter, index ratio); not one test looks at a word of `rsx-capture.md`'s text. The natural gate - figures in skills must appear in source - was measured against the six defects fixed on 2026-10-03 and **catches 0**: two have no figure at all, and the rest (`47 of 47`, `44 of 44`, `120,000`) had figures *present* in source, because the skill and the docstring agreed with each other and were both wrong. The defect is a shared false premise, and cross-file consistency checks reward exactly that. See `docs/EVIDENCE.md`. Cheap floor that does work, over only **4 `file:line` refs** in 7 files: a ref must name a file that exists and a line in range (negative control confirmed). Not worth a test file at that count - **revisit if the refs grow.**
+- [ ] **No gate reads a claim inside a skill body - and the obvious one provably cannot work.** `test_skills.py` asserts only structure (name prefix, frontmatter, index ratio); not one test looks at a word of `rsx-capture.md`'s text. The natural gate - figures in skills must appear in source - was measured against the six defects fixed on 2026-10-03 and **catches 0**: two have no figure at all, and the rest (`47 of 47`, `44 of 44`, `120,000`) had figures *present* in source, because the skill and the docstring agreed with each other and were both wrong. The defect is a shared false premise, and cross-file consistency checks reward exactly that. See `docs/EVIDENCE.md`. Cheap floor that does work, over the **`file:line` refs in the skills** - re-measured 2026-10-05: **2, both in `rsx-capture.md`**, not the 4 across 7 files an earlier revision claimed: a ref must name a file that exists and a line in range (negative control confirmed). Not worth a test file at that count - **revisit if the refs grow.**
 
-- [ ] **`TODO.md`'s description of the `save_path` failure is wrong** - it says the message survives and names the recovery; the message is discarded (see the `INTERNAL_ERROR` item above). `skills/rsx-capture.md` was corrected on 2026-10-03 to describe what the code does, so this file now contradicts a skill it should agree with.
+- [x] **`TODO.md`'s description of the `save_path` failure was wrong** - it said the message survived while the `INTERNAL_ERROR` item said it was discarded, and the two contradicted each other. **Both are now moot**: re-measured 2026-10-05, the code raises `INVALID_ARGUMENT` with the recovery message intact (`capture.py:415-439`), so this file and `skills/rsx-capture.md` agree again.
 
 - [ ] **Unsourced figures across the skills** (640 classes, 50 methods on `StudioTestService`, `GetClass` returns nil, 0.002 px JPEG localisation, the ViewportFrame readback claim, ~139-char console sample). Each reads as measured against these files' own provenance standard. Either cite or label — "wrong notes that survive because nothing contradicts them".
 
-- [ ] **`extended_capture`'s `save_path` failure raises an undeclared code.** `INTERNAL_ERROR` is not in `ALL_CODES`, and `ToolError.__init__` asserts before storing — so the message saying *the capture succeeded and only the write failed* is **discarded**, and the caller sees `UNKNOWN: unknown error code 'INTERNAL_ERROR'`. This is the queued MEDIUM item, and the review establishes that `TODO.md`'s description of the fix describes behaviour that does not exist.
+- [x] **`extended_capture`'s `save_path` failure raised an undeclared code.** **Fixed before this pass** — re-measured 2026-10-05 at `capture.py:415-439`: it raises `INVALID_ARGUMENT` (in `ALL_CODES`) and the `CAPTURE_OK_RECOVERY` message survives, with `capture.py:416-426` recording why. The tracker was stale on all three counts — the code, the discarded message, and the `UNKNOWN` the caller saw.
 
 - [ ] **`rsx-playtest.md`'s "confirmed" claims need the same treatment** — three unsourced, listed above.
 
-- [ ] **`rsx-breakpoints.md` returns two more undocumented keys** — `hit_prefix` and `how_to_read_hits` are in the result at `extended_server.py:1012-1022` and appear nowhere in the skill. Found 2026-10-03 while fixing the `added`/`removed` item; out of scope there and not yet written up.
+- [ ] **`rsx-breakpoints.md` returns two more undocumented keys** — `hit_prefix` and `how_to_read_hits`, re-measured 2026-10-05 at `extended_server.py:1053-1056` (not the 1012-1022 an earlier revision gave). Neither appears in the skill. Found 2026-10-03 while fixing the `added`/`removed` item; out of scope there and not yet written up.
 
 ### Remaining
 
@@ -130,9 +131,7 @@
 
 - [x] **RETRACTED 2026-10-03 — moot: the repo is Python-only and the Node client is gone, so there is no second implementation left to wire up.** ~~The one real difference: identity resolution — and the code is already written.** `logid.ts` (86 KB) and `locks.ts` are ported and tested; `logid.test.ts` has 60-odd references. What is missing is the **call site**: `instance.ts` never imports `logid.ts`, so `listStudioProcesses` derives role and place from the command line (`processRows`, `roleFromCommandLine`, `placeFromCommandLine`) and `stopProcess(pid)` has no PID to be given. With two Studios on one place — the current state on this machine, both named `Place1` — Node **cannot say which is which**, so `action=stop` refuses rather than terminating the wrong process. **Closing it is now a wiring change, not a port: import `logid.ts` where `processRows` supplies role and place, and decide what a log with no PID does — it must be an error, never a silent "no identity".** Corrected 2026-10-03; this item previously said the module was unported and put the figure at 1,012 lines, which was wrong.~~
 
-- [ ] **The budget is still the binding constraint**: **3,025 of 3,200**, leaving 175 chars (live figures in `contract/tools.json`). *Corrected 2026-10-05; this said 2,897, which was true when written and had drifted — the live figure belongs in the contract, which is why the stale copy is struck rather than trusted.* A 17th tool is a decision for the user, not an accident.
-
-- [ ] **The description budget is effectively full, 16 tools.** Re-measured 2026-10-05: **3,025 of 3,200**, 175 chars of headroom, 16 tools. *(This item was last re-measured 2026-09-30 and quoted no figure, so it had gone stale rather than wrong — the figures moved, the sentence did not.)* This is a hard blocker on adding a 17th tool and it is worth knowing *before* designing one.
+- [ ] **The description budget is effectively full, 16 tools.** Re-measured 2026-10-05: **3,025 of 3,200**, 175 chars of headroom (live figures in `contract/tools.json`). *Two revisions of this item carried the figure: one said 2,897, true when written and since drifted; the other quoted none at all, so the figures moved and the sentence did not.* This is a hard blocker on adding a 17th tool, and a 17th tool is a decision for the user, not an accident — worth knowing *before* designing one.
 
 - [ ] **The PrintWindow *implementation* is not in the repo - only its measurement is.** Worth being precise about, because the 48-205 ms figure reads as though the code exists. It does not: no `PrintWindow` call exists in `python/src`. The chain up to the PID is built (`logid.resolve`), but the window tail is not written, so shipping it is new code, not wiring.
 
@@ -150,9 +149,9 @@
 
 - [ ] **`search_and_read` still validates nothing (MEDIUM, unchanged).** `root_path: "game.NoSuchService123"`, `max_results: -5` and a garbage path all return `[]` - indistinguishable from an empty service. Sibling `extended_script_grep` strictly refuses `context_lines: 99`, `max_results: 9999`, `query: ""` and a bad regex. Inconsistent strictness across two tools that look interchangeable. Also still unsettled: the `game.` prefix (inputs require it, returned paths drop it).
 
-- [ ] **Capture `save_path` failure emits an undeclared code (MEDIUM).** My own fix raises `INTERNAL_ERROR`, which is not in `ALL_CODES` - the exact defect the closed-set tests exist to prevent, and the harness correctly reports it as unknown. Fix: `INVALID_ARGUMENT` (a bad path is the caller's argument) or declare the code properly with its producibility test. Paired edit, both sides.
+- [x] **Capture `save_path` failure emitted an undeclared code (MEDIUM).** **Fixed before this pass** — re-measured 2026-10-05 at `capture.py:415-439`, it raises `INVALID_ARGUMENT`, which is in `ALL_CODES`. This item and the one under *Remaining* said the same thing twice; merged into the entry there. Kept rather than deleted, because the reasoning is what stopped it recurring.
 
-- [ ] **The closed-set gate has a reverse gap (mine, found via the above).** `test_closed_sets.py` proves every declared code is producible; nothing proves every raised code is declared - which is how `INTERNAL_ERROR` shipped. Add the reverse test: every `ToolError("CODE", ...)` literal in `src/` must be in `ALL_CODES`. Both sides (Node's suite needs the same direction).
+- [x] **The closed-set gate had a reverse gap** (mine, found via the above). **Already closed** — re-measured 2026-10-05: `test_closed_sets.py::EveryRaisedCodeIsDeclared::test_no_raise_site_names_an_undeclared_code` scans every `ToolError("CODE"` literal across `src/` and asserts membership in `ALL_CODES`, which is the direction this item asked for. Its docstring names `INTERNAL_ERROR` as the defect that motivated it. The Node half is moot: the repo went Python-only on 2026-10-03.
 
 - [ ] **Scope the console one-line claim (LOW-MEDIUM).** The fuzzer measured real newlines through the agent caller path, so `rsx-console.md`'s absolute prohibition ("match the pattern, do not parse lines") is consumer-dependent. Skill edit: state which path the one-line shape holds on instead of asserting it universally. No code.
 
@@ -186,7 +185,7 @@
 
 ### Corrections to earlier notes in this file
 
-- [ ] **The minimality of the URI is only half measured.** Four keys works. The key count and the value are settled, but whether `placeId` **alone** is enough was never established — the six-variant sweep (`python/verify_uri_minimal.py`, written and not completed) would answer it, along with whether `universeId` can be dropped. The key is currently kept on the **user's authority**: they have worked with Studio launch arguments at length and confirmed `universeId` is required. That supersedes the earlier note here, which credited a local attempt that left `name: null` — retired as evidence, because a key that can be dropped fails in a way a process count cannot see.
+- [ ] **The minimality of the URI is only half measured.** Four keys works. The key count and the value are settled, but whether `placeId` **alone** is enough was never established — a six-variant sweep would answer it, along with whether `universeId` can be dropped. *Re-measured 2026-10-05: the sweep script this named, `python/verify_uri_minimal.py`, is not in the repo and never was committed, so the measurement is unbuilt rather than pending — nothing is waiting on it.* The key is currently kept on the **user's authority**: they have worked with Studio launch arguments at length and confirmed `universeId` is required. That supersedes the earlier note here, which credited a local attempt that left `name: null` — retired as evidence, because a key that can be dropped fails in a way a process count cannot see.
 
 - [ ] **NOT portable, and it is most of their repo.** Everything under `plugin/` is off limits: Roblox's `StudioMCP` is signed, so the hub, the `PluginConnection` star, the 8 ms `CooperativeJobRunner`, the `ChangeHistoryService` recording wrapper, and the `LogService.MessageOut` push journal all require owning the plugin. Their `docs/research-brief.md` reaches the same conclusion from the other side: `PluginConnectionService` has **zero third-party adoption** and its payload cap is undocumented. `bridge/src/sync/*` is a Rojo reimplementation and Rojo exists. `bridge/src/vision/*` is a product, not a technique.
 
