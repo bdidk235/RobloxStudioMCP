@@ -104,6 +104,34 @@ The macOS branch has never been run against a real macOS Studio. Treat a macOS
 bug report as a genuine unknown, and check `TODO.md` before concluding anything
 about macOS is broken.
 
+## Commit messages
+
+**Subject: what changed, imperative, under ~70 characters.** The range here is
+already 48–83; the long ones read as a sentence rather than a label.
+
+**Body: why, and only what the diff cannot show. Under ~700 characters.** Bodies
+have run to 3,294 and average ~2,000 across the recent ten — a changelog wearing
+a commit's clothes.
+
+The line that decides:
+
+> **If the reasoning survives only in the commit, it stays.**
+> **If the repo already records it, point at it and stop.**
+
+Both occur here. The pyright-in-CI finding is in `AGENTS.md` and
+`docs/EVIDENCE.md`. The fourteen-drifted-`studio_id`-descriptions finding was in
+**no** file — `git grep` finds "14 times" nowhere in the tree — so trimming that
+body would have deleted the only record of why the constant exists.
+
+Load-bearing detail takes **conclusion plus pointer**, not the whole
+investigation: one sentence of cause, one of evidence, then where it is written
+down. Findings go to `docs/EVIDENCE.md`, open work to `TODO.md`. A commit that
+leaves a finding nowhere in the tree has moved the record where nobody greps.
+
+The two habits that produced the long bodies, both subtraction failures:
+restating a measurement that takes one sentence, and carrying an investigation
+that belongs in `EVIDENCE.md`.
+
 ## Commit signing
 
 Commits are SSH-signed and `commit.gpgsign` is on, so a plain `git commit` is
