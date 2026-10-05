@@ -69,14 +69,22 @@ breakpoint blocks the very tool call that sets it. For pausing, it is
 ## Why a skill and not a longer tool description
 
 A tool description is paid on **every call of every session**. A skill is read
-only when it is needed. Seven skills carry 55,465 characters of body against a
-1,985-character index, so under 4% is always-on.
+only when it is needed. The index stays small enough that always-on cost is a
+rounding error next to the descriptions — and that ratio is the claim worth
+making, because it is the one a test pins.
 
-Those two figures measure different things, so name the measure when you quote
+The two quantities measure different things, so name the measure when you quote
 either. "Body" is `content`: the file with its frontmatter block stripped and
 the ends trimmed, which is what `skills.py` sends to a model. Raw bytes on disk
-come to 56,779, frontmatter included. Both drift as skills are added, so
-re-measure instead of trusting this line:
+are larger, frontmatter included.
+
+**Neither total is written here, and that is deliberate.** The body figure was
+pinned here and went stale — 2026-10-05 it read 55,465 against an actual 72,139,
+because seven skills had been edited since. The index figure happened to still be
+right (1,984 against a claimed 1,985), which is worse: one correct number next to
+a wrong one reads as the whole line being trustworthy. A figure that only *might*
+be right is not worth keeping, and the ratio below is what a test actually pins.
+Re-measure with:
 
 ```
 # characters the loader counts as body, and the index it builds

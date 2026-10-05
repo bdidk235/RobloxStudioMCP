@@ -22,9 +22,9 @@
 
 ### Open items: skills and guards, reviewed 2026-10-01
 
-- [ ] **`skills/README.md` cost figures are wrong by ~2x.** Claims ~27,000 chars of skill bodies; measured **52,982**. Index share claimed 7%, actual **3.6%**. Nothing pins it — the only gate is `index < bodies//4`, which passes at 3.6%, 7% and 25%. **Fix: delete the numbers** and cite the two tests, per the project's own policy on quoted counts.
+- [x] **DONE 2026-10-05 — `skills/README.md` cost figures deleted, not corrected.** Both totals are gone and the ratio is cited instead. Re-measured before editing: the **body figure was wrong** (claimed 55,465, actual **72,139**) and the **index figure was right** (claimed 1,985, actual **1,984**), which is the worse outcome — one correct number beside a wrong one makes the whole line read as trustworthy. Nothing pinned either: the only gate is `index < bodies//4`, which passes at 2.7%, 7% and 25%. *An earlier revision of this item quoted 27,000 / 52,982 / 7%, and then a second revision quoted 55,465 — so the record of the drift was itself drifting, which is the argument for deleting the numbers rather than refreshing them.*
 
-- [ ] **`skills/README.md` still states "never raise the cap"** as policy. The cap was raised to 3,200, so the file asserts the opposite of what was done.
+- [x] **DONE 2026-10-05 — the "never raise the cap" policy line was already gone.** `:110` already reads "The total was 2,700 until 2026-10-01, when it was raised to 3,200 by decision", and `:104-108` already points at `contract/tools.json` for the live figures rather than quoting them. Closed by reading the section, not the single line the item named — which is why this took a second pass.
 
 - [ ] **`skills/README.md` routing gaps:** missing the *reachability exception* (a skill may document something this transport cannot reach — `rbx-debug` prescribes `OnStopped`/`GetVariables`, and `OnStopped` does not propagate edit → play); missing the "read it, don't build it" rule that the global `AGENTS.md` now carries; missing "neither tool serves the other's names"; missing the registry-is-host-side fact; and it is `SKILL_IGNORED`, so it is NOT the file `extended_skill` serves — an agent will treat it as the index.
 
@@ -130,9 +130,9 @@
 
 - [x] **RETRACTED 2026-10-03 — moot: the repo is Python-only and the Node client is gone, so there is no second implementation left to wire up.** ~~The one real difference: identity resolution — and the code is already written.** `logid.ts` (86 KB) and `locks.ts` are ported and tested; `logid.test.ts` has 60-odd references. What is missing is the **call site**: `instance.ts` never imports `logid.ts`, so `listStudioProcesses` derives role and place from the command line (`processRows`, `roleFromCommandLine`, `placeFromCommandLine`) and `stopProcess(pid)` has no PID to be given. With two Studios on one place — the current state on this machine, both named `Place1` — Node **cannot say which is which**, so `action=stop` refuses rather than terminating the wrong process. **Closing it is now a wiring change, not a port: import `logid.ts` where `processRows` supplies role and place, and decide what a log with no PID does — it must be an error, never a silent "no identity".** Corrected 2026-10-03; this item previously said the module was unported and put the figure at 1,012 lines, which was wrong.~~
 
-- [ ] **The budget is still the binding constraint**: 2,897 of 3,200 (live figures in `contract/tools.json`). A 17th tool is a decision for the user, not an accident.
+- [ ] **The budget is still the binding constraint**: **3,025 of 3,200**, leaving 175 chars (live figures in `contract/tools.json`). *Corrected 2026-10-05; this said 2,897, which was true when written and had drifted — the live figure belongs in the contract, which is why the stale copy is struck rather than trusted.* A 17th tool is a decision for the user, not an accident.
 
-- [ ] **The description budget is effectively full, 16 tools.** Re-measured 2026-09-30 after the Block 1 and Block 2 edits, which moved it. This is a hard blocker on adding a 17th tool and it is worth knowing *before* designing one:
+- [ ] **The description budget is effectively full, 16 tools.** Re-measured 2026-10-05: **3,025 of 3,200**, 175 chars of headroom, 16 tools. *(This item was last re-measured 2026-09-30 and quoted no figure, so it had gone stale rather than wrong — the figures moved, the sentence did not.)* This is a hard blocker on adding a 17th tool and it is worth knowing *before* designing one.
 
 - [ ] **The PrintWindow *implementation* is not in the repo - only its measurement is.** Worth being precise about, because the 48-205 ms figure reads as though the code exists. It does not: no `PrintWindow` call exists in `python/src`. The chain up to the PID is built (`logid.resolve`), but the window tail is not written, so shipping it is new code, not wiring.
 
@@ -144,7 +144,7 @@
 
 - [ ] **`screen_capture` PNG** (request P0.2b) is **not possible** - it is a relayed Studio tool and we cannot add parameters to it. `extended_capture` supersedes the need.
 
-- [ ] **Schema bloat is now the bigger half of our footprint.** 7,141 of 9,502 chars are schema, and `extended_update_script` alone is 1,450, mostly a nested `edits.items` block. Needs a decision on whether the `replaceAll` alias earns its place.
+- [ ] **Schema is now about half the footprint, by count.** Re-measured 2026-10-05: **3,144 schema chars against 3,025 description chars — 51%**. *Corrected: this said "7,141 of 9,502", which put schema at 75% and overstated the absolute size by ~2.3×. The conclusion survives; the numbers did not.* Needs a decision on whether the `replaceAll` alias earns its place.
 
 ### To do (recorded 2026-09-30, not yet built)
 
