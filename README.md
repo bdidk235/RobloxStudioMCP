@@ -1,5 +1,12 @@
 # roblox-studio-mcp
 
+> **This project is AI-written.**
+> The code, the tests, the documentation and the commit history were produced by
+> AI coding agents working with a human maintainer and tested by other agents. No line here was typed by hand
+> by a person.
+
+---
+
 A **dependency-free** Python client for
 [MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers, with
 built-in convenience for the **Roblox Studio MCP**
