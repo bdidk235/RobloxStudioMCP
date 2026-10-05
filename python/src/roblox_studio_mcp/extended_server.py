@@ -95,6 +95,30 @@ _STEERS: Dict[str, str] = {
 # Extended tool definitions (for tools/list)
 # --------------------------------------------------------------------------- #
 
+#: One description for the ``studio_id`` argument, shared by every tool that takes
+#: it. It was previously inlined 14 times and had already drifted into three
+#: variants - ten said only "Optional explicit studio_id to target", three added
+#: "Auto-detected if omitted", and one said "For stop: which Studio to terminate".
+#:
+#: A shared constant because duplicated text drifts, and because the rule an agent
+#: most needs is the one no schema can state on its own: **omitting this is safe
+#: only when the answer is unambiguous.** With several Studios attached there is no
+#: single right target, so the call is refused and the candidate ids come back in
+#: the error. An agent reading ten identically-shaped hints has no way to know that,
+#: and the failure arrives as a refusal that reads like a broken tool.
+#:
+#: Parameter descriptions are deliberately *not* counted by
+#: ``total_description_cap`` - measured 2026-10-04: tool descriptions total 3025
+#: against a 3200 cap, while parameter descriptions total 3591 and sit outside it.
+#: So the accurate place to spend documentation effort is here, where the cap does
+#: not bind, rather than in a tool description where it does.
+_STUDIO_ID_DESCRIPTION = (
+    "Optional explicit studio_id to target. Auto-detected when exactly one "
+    "Studio is attached. Omit it, or pass the id from extended_list_studios when "
+    "several are: with more than one there is no single right target, so the call "
+    "is refused and the candidate ids come back in the error."
+)
+
 _EXTENDED_TOOLS: List[Tool] = [
     Tool(
         name="extended_write_script",
@@ -138,10 +162,7 @@ _EXTENDED_TOOLS: List[Tool] = [
                 },
                 "studio_id": {
                     "type": "string",
-                    "description": (
-                        "Optional explicit studio_id to target.  "
-                        "Auto-detected if omitted."
-                    ),
+                    "description": _STUDIO_ID_DESCRIPTION,
                 },
             },
             "required": ["target_path", "content"],
@@ -224,10 +245,7 @@ _EXTENDED_TOOLS: List[Tool] = [
                 },
                 "studio_id": {
                     "type": "string",
-                    "description": (
-                        "Optional explicit studio_id to target.  "
-                        "Auto-detected if omitted."
-                    ),
+                    "description": _STUDIO_ID_DESCRIPTION,
                 },
             },
             "required": ["target_path", "edits"],
@@ -272,7 +290,7 @@ _EXTENDED_TOOLS: List[Tool] = [
                 },
                 "studio_id": {
                     "type": "string",
-                    "description": "Optional explicit studio_id to target.  Auto-detected if omitted.",
+                    "description": _STUDIO_ID_DESCRIPTION,
                 },
             },
             "required": ["query"],
@@ -465,7 +483,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
                 "required": ["root_path"],
@@ -514,7 +532,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
                 "required": ["file_path"],
@@ -541,7 +559,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
             },
@@ -567,7 +585,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
             },
@@ -602,7 +620,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
                 "required": ["script_path", "line"],
@@ -619,7 +637,7 @@ _EXTENDED_TOOLS.extend(
                 "properties": {
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
             },
@@ -667,7 +685,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "For stop: which Studio to terminate.",
+                        "description": "Required for action='stop'. " + _STUDIO_ID_DESCRIPTION,
                     },
                     "place_path": {
                         "type": "string",
@@ -708,7 +726,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
                 "required": ["condition"],
@@ -735,7 +753,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
             },
@@ -752,7 +770,7 @@ _EXTENDED_TOOLS.extend(
                 "properties": {
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
             },
@@ -813,7 +831,7 @@ _EXTENDED_TOOLS.extend(
                     },
                     "studio_id": {
                         "type": "string",
-                        "description": "Optional explicit studio_id to target.",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                     "allow_outside": {
                         "type": "boolean",

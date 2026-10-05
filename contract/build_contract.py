@@ -124,10 +124,24 @@ def _normalise_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
     """Reduce a schema to the parts that must match across implementations.
 
     Only the *shape* is contractual: the property names, their JSON types, which
-    are required, and the read-only hint. Wording differs legitimately - the
-    descriptions are separately budgeted, not required to be identical - and
-    defaults are recorded but not compared, because one side may legitimately
-    spell a default differently while behaving the same.
+    are required, and the read-only hint. Defaults are recorded but not compared,
+    because one side may legitimately spell a default differently while behaving
+    the same.
+
+    **Parameter descriptions are neither compared nor budgeted.** An earlier
+    version of this docstring said they were "separately budgeted". That was
+    false: measured 2026-10-04, `TOTAL_CAP` counts tool descriptions only (3025
+    against a 3200 cap) while parameter descriptions total 3591 and sit outside
+    every ceiling. Corrected rather than acted on, because not comparing wording is
+    still right - it only ever mattered for cross-implementation drift, and there
+    is one implementation now. The false clause is removed instead of being
+    papered over with a new budget.
+
+    The place to spend documentation effort is therefore the parameter
+    descriptions, where the cap does not bind and an agent's choices are actually
+    made. The 14-way duplication of the `studio_id` description - which had
+    already drifted into three variants - was the observable cost of there being
+    no gate over that text; it is now one shared constant.
 
     `read_only` was added after measuring that 7 tools were marked read-only
     while a past variant marked **none**, with nothing able to notice. The hint is what tells a
