@@ -4,7 +4,12 @@ Written 2026-10-06 for a reader who has none of the context this file carries.
 Every claim below traces to a sha, a `file:line`, or a command listed in
 [§11](#11-how-to-re-derive-every-number-here). Where the repository
 contradicts something commonly said about it, the repository wins and the
-contradiction is recorded in [§9](#9-known-defects-in-this-repositorys-own-record).
+contradiction is recorded in [§9](#9-defects-in-this-repositorys-own-record).
+
+**Rewritten 2026-10-06.** Every sha in the prose is the **pre-rewrite** value,
+measured before `main`'s history was rewritten; see
+[§9.4](#94-the-history-rewrite-of-2026-10-06). The old shas still resolve, and
+the tip tree is unchanged.
 
 This file is a **history**, not a status report. For what is open today read
 `TODO.md`; for why a design decision was taken read `docs/EVIDENCE.md`; for what
@@ -16,35 +21,43 @@ number in a generated artefact cannot — which is the lesson
 
 ## 1. Shape at a glance
 
-Measured 2026-10-06 against `main` = `1c08e50`.
+Measured 2026-10-06 against `main` = `7189ce6`. **Every sha in this file was
+measured before the history rewrite of 2026-10-06 and is therefore the
+pre-rewrite value.** The pre-rewrite shas still resolve, on
+`origin/backup/pre-public-2026-10-06`; [§9.4](#94-the-history-rewrite-of-2026-10-06)
+gives the old→new mapping for all 44 shas cited here.
 
 | | value | how |
 |---|---|---|
-| Commits on `main` | **92** | `git rev-list --count main` |
-| Date span | **2026-09-13 → 2026-10-05** | `git log --format=%ad --date=short main \| sort` |
-| Commits reachable from `--all` | **94** | `git rev-list --count --all` |
-| Branches | `main`, `parity`, `backup/pre-public-2026-10-06` | `git branch -a` |
-| `parity` tip | `bd77d97`, **67** commits, **ancestor of `main`** | `git merge-base --is-ancestor bd77d97 main` → exit 0; `git rev-list --count main..parity` → 0 |
-| Tracked files at `HEAD` | **110** | `git ls-files \| wc -l` |
+| Commits on `main` | **93** (was 96 pre-rewrite) | `git rev-list --count main` |
+| Date span | **2026-09-13 → 2026-10-06** | `git log --format=%ad --date=short main \| sort` |
+| Commits reachable from `--all` | **219** | `git rev-list --count --all \| sort -u \| wc -l` |
+| Refs | `main`, `parity`, `backup/…`, `origin/*`, `refs/original/*`, `refs/stash` | `git for-each-ref` |
+| `parity` tip | `bd77d97`, **67** commits, **no longer an ancestor of `main`** | `git merge-base --is-ancestor parity main` → exit 1; `git merge-base main parity` → empty |
+| Tracked files at `HEAD` | **111** | `git ls-tree -r --name-only HEAD \| wc -l` |
 | Tracked files on `parity` | **168**, of which **56** under `node/` | `git ls-tree -r --name-only parity` |
 | Live gate | **744 passed, 2 skipped, 206 subtests** | `python -m pytest tests -q` from `python/` |
 | Contract surface | 16 tools, 3,025 of 3,200 description chars, 450 per tool | `contract/tools.json` |
 | Open work | **36** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
 | `docs/EVIDENCE.md` | 1,455 lines, 25 `##` sections | `wc -l`, `grep -c '^## '` |
-| `AGENTS.md` | **2,226** words against a 2,259 ceiling | `python -c "print(len(open('AGENTS.md').read().split()))"` |
-| Remote | `https://github.com/bdidk235/RobloxStudioMCP_Full.git` | `git config --get remote.origin.url` |
+| `AGENTS.md` | **2,250** words against a 2,259 ceiling — **9 to spare** | `python -c "print(len(open('AGENTS.md').read().split()))"` |
+| Remote | `https://github.com/bdidk235/RobloxStudioMCP_Full.git` (private) | `git config --get remote.origin.url` |
 
-Commits per day on `main`: 1 on 09-13, 17 on 09-14, 28 on 10-01, 7 on 10-02,
-19 on 10-03, 11 on 10-04, 9 on 10-05. The 10-01 spike is
+Commits per day on `main`: 1 on 09-13, 15 on 09-14, 28 on 10-01, 7 on 10-02,
+19 on 10-03, 11 on 10-04, 8 on 10-05, 4 on 10-06. The 10-01 spike is
 [`940c7b8`](https://github.com/bdidk235/RobloxStudioMCP_Full) *Add the Node
 extended tool surface* and the surrounding macOS-CI diagnosis, not a
 development phase of its own.
 
-**The 94-vs-92 gap is not history.** Two of the four refs are `dff5f0e` and
-`b82d41f`, both dated 2026-09-14 and both parented on `7768bc7`; `git stash list`
-reports `stash@{0}: On main: temp tsconfig change`. They are a stash pair that
-`--all` reaches because `refs/stash` is a ref. A reader counting `--all` will
-get 94 and should subtract them.
+**The 219 figure is not the size of the project.** It is `sort -u`'d, and three
+distinct *versions* of this repository's history are reachable at once: the
+rewritten `main` (93), the original pre-rewrite line held by
+`origin/backup/pre-public-2026-10-06` (96), and `parity` (67), plus a 20-commit
+stash. Overlapping commits are counted once, so 219 is smaller than the sum.
+Before the rewrite the same command returned 94, when two refs pointed at the
+same 92-commit line and the only extra was the stash pair `dff5f0e` /
+`b82d41f` — both dated 2026-09-14, both parented on `7768bc7`, which
+`git stash list` reports as `stash@{0}: On main: temp tsconfig change`.
 
 ---
 
@@ -151,22 +164,35 @@ rest packaging), the Python tree, and `parity/compare_implementations.py` +
 the Node tree, and so exist nowhere on `main`. Measured 2026-10-06 with
 `git ls-tree -r --name-only parity | awk -F/ '{print $1"/"$2}' | sort | uniq -c`.
 
-**It is an ancestor of `main`.** Not a fork that has drifted: `git merge-base
---is-ancestor bd77d97 main` exits 0 and `git rev-list --count main..parity`
-returns 0. `main` carries `parity`'s tip and then continues past it. The
-reversibility claim in `e91cdb3`'s body — *"Branch `parity` at bd77d97 holds
-the full dual state, so this is reversible"* — is therefore about the working
-tree and CI surface, not about a divergence that would need a merge.
+**It was an ancestor of `main`; after the 2026-10-06 rewrite it is not.** Before
+the rewrite: `git merge-base --is-ancestor bd77d97 main` exited 0 and
+`git rev-list --count main..parity` returned 0 — `main` carried `parity`'s tip
+and continued past it. That is now false. `git merge-base main parity` returns
+**empty**: the two branches share no commit at all, because `parity` was left
+alone while `main`'s 96 commits were rewritten, and the 67 they previously shared
+were given new shas on `main` only. `git rev-list --count main..parity` is
+now **67**, i.e. all of it.
+
+Nothing was lost and no merge is needed — `parity` is intact at `bd77d97` and
+still holds the Node tree — but the reversibility claim in `e91cdb3`'s body, *"Branch
+`parity` at bd77d97 holds the full dual state, so this is reversible"*, now
+depends on `parity` surviving as a branch rather than on it being reachable from
+`main`. **Deleting `parity` would destroy the only ref holding the Node
+implementation.** Measured 2026-10-06 after the rewrite.
 
 **Why it exists rather than a tag.** A tag names a point; the branch is where
 the Node work is still reviewable, including the test suite that would be
 reinstated with it.
 
-**Third branch, different purpose.** `backup/pre-public-2026-10-06` points at
-`1c08e50`, the same commit as `main` and `origin/main`. It is a pre-publication
-marker, not a divergent line. *True 2026-10-06; created by an unnamed hand, not
-by any commit body this file can point at; falsified by `git branch -v` showing
-it at a different sha.*
+**Third branch, different purpose.** `backup/pre-public-2026-10-06` was a
+pre-publication marker pointing at `1c08e50`, the same commit as `main`. It has
+since been moved twice by the rewrite and now sits at `a41d4b8`, an
+*intermediate* state — after the trailer and `node_modules` rewrites, before the
+`node/dist` one. **It is not a restore point for any state described in this
+file**, and it is the ref that still keeps the pre-rewrite shas alive. Its
+purpose is now ambiguous and it should be resolved deliberately; see
+[§9.4](#94-the-history-rewrite-of-2026-10-06). *Falsified by
+`git branch -v` showing it at a third sha.*
 
 ---
 
@@ -476,9 +502,14 @@ the retraction and the design that replaced it.
 
 ---
 
-## 9. Known defects in this repository's own record
+## 9. Defects in this repository's own record
 
-### 9.1 2,573 vendored blobs are in published history
+Two of the three entries below were open when this file was written and were
+**fixed by a history rewrite on 2026-10-06**; they are kept in the past tense
+because the claims they record were true, and a reader who finds the commit
+bodies first should know the difference. §9.3 is still open.
+
+### 9.1 2,573 vendored blobs were in published history — removed 2026-10-06
 
 `3653edd` *Remove node_modules accidentally committed with the strip* deleted
 **2,665** files (`git show --name-status 3653edd`: 2,665 `D`, 1 `M`; 1,411,978
@@ -488,52 +519,144 @@ under `node/`, of which:
 - **2,573** under `node/node_modules/`
 - **92** under `node/dist/`
 
-**They remain in history and are reachable from `origin/main`.** `e91cdb3` is on
-`main`, so anyone cloning gets those blobs; deleting the working tree does not
-remove them. The repository is named `_Full` on the remote
-(`RobloxStudioMCP_Full.git`) and keeps full history rather than being rewritten
-— which is the right call, and also means the blobs are permanent without a
-history rewrite. `.gitignore:16` now carries a single `node/` guard so a stray
+**They were in history and reachable from `origin/main`.** `e91cdb3` is on
+`main`, so anyone cloning got those blobs; deleting the working tree does not
+remove them. `.gitignore:16` now carries a single `node/` guard so a stray
 checkout cannot re-add them.
 
-### 9.2 15 of 92 commits carry a false `Co-Authored-By`
+**Both sets are now gone from `main`**: `git rev-list --objects main | grep -c
+node_modules` → **0**, and the same for `node/dist` → **0**. A third purge of
+124 `node/` objects was deliberately **not** made — those are the Node
+implementation's own sources (`node/src` 62, `node/tests` 38, `node/examples` 11,
+plus packaging), not vendored blobs, and they are absent from the tip anyway.
+See [§9.4](#94-the-history-rewrite-of-2026-10-06).
+
+### 9.2 15 of 92 commits carried a false `Co-Authored-By` — removed 2026-10-06
 
 **15** commits on `main` — exactly the **15 most recent**, dated 2026-10-04 and
-2026-10-05 — carry `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`.
-The trailer is **false**: the work in those commits was done by a different
-model family. It is **known and not yet corrected**, recorded here rather than
-fixed, because correcting it is a history rewrite and this file's job is the
-record.
+2026-10-05 — carried `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`.
+The trailer was **false**: the work in those commits was done by a different
+model family. It was known and uncorrected when this file was written, recorded
+here rather than fixed, because correcting it is a history rewrite and this
+file's job is the record.
 
 The 15, in order (`git log --format='%(trailers:key=Co-Authored-By,valueonly)'`
 per commit on `main`): `1c08e50`, `98a2360`, `bb8bdff`, `08abfa0`, `633af67`,
 `e9ff9ec`, `f2a44ee`, `c9bb45f`, `0789035`, `b9b2e69`, `6d6ff1a`, `7d5ff53`,
-`2e4f27e`, `9fb5a1d`, `8b2b7a2`. The 16th commit back, `c2144b6`, does not carry
-it, so the defect covers a contiguous window rather than the history.
+`2e4f27e`, `9fb5a1d`, `8b2b7a2`. The 16th commit back, `c2144b6`, did not carry
+it, so the defect covered a contiguous window rather than the history.
+
+**Now 0.** `git log main --format='%(trailers:key=Co-Authored-By,valueonly)' |
+grep -c 'Claude Opus 4.5'` returns **0**. Only the trailer *line* was removed:
+prose in later commit bodies that names the model in order to explain the
+defect survives, and a dry run before the rewrite confirmed the split — **15**
+messages would change, **81** would not.
 
 **What the repository itself can and cannot say.** `git grep -i 'co-authored'`
-over tracked files returns nothing — the trailer is the only copy. The only
+over tracked files returns nothing — the trailer was the only copy. The only
 `Claude` strings in tracked source are "Claude Code Edit/Write semantics"
 (`writer.py:3`, `updater.py:3`, `extended_server.py:12`), an API format, not an
 authorship claim. So the repository contains **no** statement of which model
 wrote any commit, and this file does not invent one; the mismatch was
 identified outside the repo.
 
-*Falsifier:* `git log main --format='%(trailers:key=Co-Authored-By,valueonly)' |
-grep -c 'Claude Opus 4.5'` returning 0, or a rewritten history where the
-trailer names the model that did the work.
+*Falsifier for the fix:* the trailer count returning to a non-zero value on
+`main`, which would mean a commit was authored with it after 2026-10-06.
 
 ### 9.3 The `_Full` suffix is not explained anywhere in the repository
 
 The remote is `RobloxStudioMCP_Full.git` and the working directory on this
 machine is `RobloxStudioMCP` — the suffix lives in the remote URL only.
-`git grep -i 'full history'` over tracked files returns **nothing found**, and no
-commit body in the 92 explains the name. "It keeps full history" is a
+`git grep -i 'full history' -- . ':!docs/HISTORY.md'` returns **nothing found**,
+and no commit body in the 93 explains the name. "It keeps full history" is a
 reasonable reading of a name plus §9.1, but it is **inference, not a recorded
 reason**, and is labelled as such here. (A negative from `git grep` is one
 hypothesis among five — absent, wrapped, renamed, fenced, wrong needle. The
 corroboration is that `git log --all` bodies were read for the same window and
 none mentions it.)
+
+The `':!docs/HISTORY.md'` exclusion is not cosmetic. This file quotes the phrase
+*"It keeps full history"* in order to report that nothing else does, so an
+unexcluded `grep` matches **this file** and returns exit 0 — the negative
+announces itself as a positive. Measured: 4 self-matches, exit 1 without them.
+
+The rewrite sharpened this rather than settling it. `_Full` now holds the **only**
+copy of the pre-rewrite line, because `main` no longer contains it and the public
+repository is a different repository entirely (§9.5). So the suffix is more true
+than it was, and still unexplained.
+
+### 9.4 The history rewrite of 2026-10-06
+
+Three passes with `git filter-branch`, **scoped to `main`** — `parity` was left
+untouched and is still the pre-rewrite `bd77d97`. `git filter-repo` was not
+installed (`git filter-repo --version` → *not a git command*).
+
+| # | what | how | verified after |
+|---|---|---|---|
+| 1 | Remove 15 false `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>` trailers | `--msg-filter`, a `sed` deleting lines matching `^Co-Authored-By: Claude Opus 4\.5 <noreply@anthropic\.com>$` | 96 → 96 commits; **15** messages changed, **81** untouched |
+| 2 | Remove 2,573 vendored `node/node_modules/` files | `--index-filter 'git rm -r --cached --ignore-unmatch -q node/node_modules'` | 96 → 93 commits; **0** `node_modules` objects |
+| 3 | Remove 92 compiled `node/dist/` files | `--index-filter '… -q node/dist'` | **0** `node/dist` objects |
+
+**No content changed.** The tip tree hash is `9d2612b9a4400621cb82f5ef2bb2214d36e9872d`
+before and after all three passes, and the suite passes on the rewritten tree:
+**744 passed, 2 skipped, 206 subtests**. That is the load-bearing check — the
+rewrite touched history only.
+
+**Why the trailer filter is anchored to the start of a line.** Later commit
+bodies *name* the model in prose, in order to record the defect. An unanchored
+`grep` would have deleted those sentences too. A dry run over all 96 messages
+before anything was rewritten reported exactly **15** changed and **81**
+unchanged, and confirmed the prose mention in `5074b21` survived the filter
+intact.
+
+**The 3 commits that disappeared, and why each went.** `--prune-empty` drops any
+commit whose diff becomes empty. This is not only about vendored blobs:
+
+- `5db54b6` and `7e86e80` (*Update ci.yml*) — identical trees, 64 files each, 28
+  of them under `node/`. Their diffs were **entirely** vendored blobs, so both
+  vanished.
+- `c9bb45f` (*Trigger a CI run to test whether the overnight failure…*) — **was
+  already empty before any rewrite**: its tree `ddc6402780d2c4a80e26dc36ae92453355c99723`
+  is identical to its parent's. `filter-branch` pruned a pre-existing empty
+  commit, which is a change to the history that has nothing to do with blobs.
+
+96 − 3 = 93, exactly. `e91cdb3` — the commit that carried all 2,573 blobs — was
+**not** pruned; it survives as `498a662`, with the same author date and subject
+and 109 files instead of 2,774. It is `426d37e` at the intermediate stage
+between passes 2 and 3.
+
+**A second `filter-branch` pass silently did nothing.** Pass 2 initially
+aborted with *Cannot create a new backup. A previous backup already exists in
+refs/original/*, because pass 1 had already created one. Nothing in the command's
+output said the rewrite had not happened, and the commit count and tip tree were
+unchanged — both of which read like success. Only re-counting the objects
+(`git rev-list --objects main | grep -c node_modules` → still 2,780) caught it.
+Re-run with `-f`. **A history rewrite that exits 0 has not necessarily rewritten
+anything**; count the objects afterwards.
+
+**Every pre-rewrite sha cited in this file still resolves**, on
+`origin/backup/pre-public-2026-10-06` (still `f0f8d86`) or, where the commit is in
+`parity`'s range, on `parity`. None is reachable from `main`. Of the 44 distinct
+shas cited here, **42 were remapped**, 2 (`b82d41f`, `dff5f0e`) are the
+stash pair and were never on `main`, and `c9bb45f` was pruned. The map was built
+by joining on tree + author date + subject, then checked 1:1 — no new sha is
+claimed by two old commits — and spot-checked by comparing subjects.
+
+Selected old → new: `1c08e50`→`46ca7cf`, `c2144b6`→`7c585f3`, `8b2b7a2`→`a7a2e43`,
+`9fb5a1d`→`c5d3041`, `7d5ff53`→`ffebe51`, `3653edd`→`bb46c72`, `e91cdb3`→`498a662`,
+`bd77d97`→`dbcd2d7` (on `parity` only).
+
+### 9.5 Publication target
+
+`RobloxStudioMCP_Full` is **private** and is the archive: it holds the only copy
+of the pre-rewrite line. The public repository is a **different** one,
+`bdidk235/RobloxStudioMCP` (id `1407227973`, created 2026-10-06T12:02:45Z), which
+was **empty** when this was written. Publishing is therefore a *push of the two
+clean refs*, not an export: `main` and `parity` carry no `node_modules`, no
+`node/dist`, and no false trailers, so they go as they stand.
+
+*Unverified at the time of writing:* that push had not happened, and
+`bdidk235/RobloxStudioMCP` was still `size_kb=0`.
 
 ---
 
@@ -546,51 +669,78 @@ overwrites anything; the sources still say what they say.
 |---|---|---|---|---|
 | 1 | `3653edd` body: "2,665 untracked **node_modules** files were committed" | 2,665 node_modules | 2,665 total under `node/`, of which **2,573** `node_modules/` and **92** `dist/` | 2026-10-06 |
 | 2 | `9bb8e48` subject: "Take **1,344** lines back out" | 1,344 | `TODO.md` 4,135 → 2,790 = **1,345** | 2026-10-06 |
-| 3 | `7d5ff53` body: "`AGENTS.md` sits at its ceiling with zero headroom" | 2,259 = ceiling, 0 headroom | true at `7d5ff53`; **2,226** at `HEAD`, **33 words** of headroom | 2026-10-06 |
+| 3 | `7d5ff53` body: "`AGENTS.md` sits at its ceiling with zero headroom" | 2,259 = ceiling, 0 headroom | true at `7d5ff53`; **2,250** at `HEAD`, **9 words** of headroom | 2026-10-06 |
 | 4 | `bc75db8` subject: "Gate the **evidence log**'s size" | a gate on `docs/EVIDENCE.md` | `docs/EVIDENCE.md` **did not exist** at `bc75db8` (created by the next commit, `9b44c51`); the gate was on `TODO.md`, and the content moved the next day | 2026-10-06 |
 | 5 | `e91cdb3` body: Node's remaining gaps are **all** silent-wrong-answer bugs | 3 of 3 | **1 of 3**; see [`docs/EVIDENCE.md:1411`](EVIDENCE.md) and §4.2 | 2026-10-04, by `b9b2e69` |
+| 6 | §1 of the earlier draft of this file: "Tracked files at `HEAD` — **110**" | 110 | **111**; `git ls-files` and `git ls-tree -r --name-only HEAD` agree. The count was taken against `1c08e50`, and **committing this file made it the 111th** | 2026-10-06 |
+| 7 | §1 of the earlier draft: "`AGENTS.md` — **2,226** words" | 2,226 | **2,250**; the tip commit `7189ce6` *Set the real commit targets: 60 and 700* edited `AGENTS.md` after the 2,226 was measured. Not caused by the rewrite | 2026-10-06 |
+| 8 | §3 of this file: "`parity` **is an ancestor of `main`** … `main..parity` returns 0" | ancestor, 0 | **no longer related**: `git merge-base main parity` is **empty**, `main..parity` is **67** | 2026-10-06, by the rewrite |
 
 Row 5 is not this file's correction — `b9b2e69` *Record the strip's justification,
 re-derived by running it* already made it and wrote it into the evidence log. It
 is listed because the original claim is still the one in the commit body, and a
 reader who finds `e91cdb3` first should not take it at face value.
 
+Row 6 is the shape of error this file exists to warn about: a number can be
+correct when measured and wrong the moment the file reporting it is committed.
+Row 7 is the ordinary way a hand-written figure rots — nothing exotic, the file
+it describes simply changed afterwards.
+
 ---
 
 ## 11. How to re-derive every number here
 
-Run from the repository root unless noted.
+Run from the repository root unless noted. **Shas written in this file's prose are
+pre-rewrite** (§9.4), so the commands below use the new values; the pre-rewrite
+object is still reachable at `origin/backup/pre-public-2026-10-06` if you want to
+re-derive the "before" column.
 
 ```bash
 # counts and shape
-git rev-list --count main                       # 92
-git rev-list --count --all                      # 94 (2 are a stash pair)
-git stash list                                  # dff5f0e / b82d41f
-git merge-base --is-ancestor bd77d97 main && echo YES
-git rev-list --count main..parity               # 0
-git ls-files | wc -l                            # 110
+git rev-list --count main                       # 93
+git rev-list --all | sort -u | wc -l            # 219 (three history lines overlap)
+git stash list                                  # stash@{0}: On main: temp tsconfig change
+git merge-base --is-ancestor parity main && echo YES   # prints nothing: NOT an ancestor
+git merge-base main parity                      # empty - the branches share no commit
+git rev-list --count main..parity               # 67
+git ls-tree -r --name-only HEAD | wc -l         # 111
 git ls-tree -r --name-only parity | wc -l       # 168
 
-# the node_modules blobs (§9.1)
-git ls-tree -r --name-only 3653edd^ | grep -c '^node/'              # 2665
-git ls-tree -r --name-only 3653edd^ | grep -c '^node/node_modules/' # 2573
-git show --name-status --format='' 3653edd | awk '{print $1}' | sort | uniq -c
+# the vendored blobs are gone from main (§9.1)
+git rev-list --objects main | grep -c node_modules        # 0
+git rev-list --objects main | grep -c 'node/dist/'        # 0
+git rev-list --objects main | grep -c ' node/'            # 124 - real Node source, kept
 
-# the false trailer (§9.2)
-git log main --format='%(trailers:key=Co-Authored-By,valueonly)' | grep -c 'Claude Opus 4.5'   # 15
-git log --oneline -15 main                                                                  # the 15 window
+# ...and were there, on the pre-rewrite line
+git ls-tree -r --name-only e91cdb3 | grep -c '^node/'              # 2665
+git ls-tree -r --name-only e91cdb3 | grep -c '^node/node_modules/'  # 2573
+git ls-tree -r --name-only e91cdb3 | grep -c '^node/dist/'         # 92
+
+# the false trailers are gone from main (§9.2)
+git log main --format='%(trailers:key=Co-Authored-By,valueonly)' | grep -c 'Claude Opus 4.5'  # 0
+git log f0f8d86 --format='%(trailers:key=Co-Authored-By,valueonly)' | grep -c 'Claude Opus 4.5'  # 15
+
+# the rewrite itself (§9.4) - the tip tree is the load-bearing check
+git rev-parse main^{tree}                        # 9d2612b9a4400621cb82f5ef2bb2214d36e9872d
+git rev-parse origin/backup/pre-public-2026-10-06^{tree}   # same tree, different line
+git rev-list --count f0f8d86                     # 96, the pre-rewrite line
 
 # the _Full explanation is not in the repo (§9.3) - a negative, not an absence
-git grep -n -I -i 'full history' -- . ; echo "exit=$?"   # exit=1, nothing found
+# NOTE the exclusion: this file quotes the phrase, so without it grep self-matches
+git grep -n -I -i 'full history' -- . ':!docs/HISTORY.md' ; echo "exit=$?"   # exit=1, nothing found
 
 # gates (from python/)
 python -m pytest tests -q -rs                  # 744 passed, 2 skipped, 206 subtests
 python -c "import json;d=json.load(open('../contract/tools.json'));print(d['tool_count'],d['total_description_chars'],d['total_description_cap'])"
 
 # the AGENTS.md ceiling — use the test's own method, not wc -w
-python -c "print(len(open('../AGENTS.md').read().split()))"          # 2226
-git show 7d5ff53:AGENTS.md | python -c "import sys;print(len(sys.stdin.read().split()))"  # 2259
+python -c "print(len(open('../AGENTS.md').read().split()))"          # 2250, ceiling 2259
+git show ffebe51:AGENTS.md | python -c "import sys;print(len(sys.stdin.read().split()))"  # 2259 at the ceiling commit
 ```
+
+`wc -w` undercounts this file by 44 words against Python's `split()` — em-dashes
+and an unset locale — which is why §1 quotes the Python figure and the ceiling
+test uses it too.
 
 ---
 
