@@ -228,6 +228,11 @@ New surface is funded by trimming existing descriptions, never by raising the
 cap. The tool list is paid on every call, every session: a cap raise is a real
 cost, so it is a decision for the user, not a silent change.
 
+## Short commits
+
+Subject ~70 chars, body under ~700, only what the diff cannot show. What the
+repo already records, point at instead. Rule: `CONTRIBUTING.md`.
+
 ## Where the record lives
 
 `docs/EVIDENCE.md` is the record of what was **measured** versus **inferred**,
