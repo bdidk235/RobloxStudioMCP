@@ -653,7 +653,7 @@ the archive: it holds the only reachable copy of the pre-rewrite line. The publi
 repository is a **different** one, `bdidk235/RobloxStudioMCP` (id `1407227973`,
 created 2026-10-06T12:02:45Z), so publication was a *push*, not an export.
 
-**What was pushed: `main` only**, at `06446a4`. `parity` was **left out by
+**What was pushed: `main` only**, audited at `06446a4`. `parity` was **left out by
 decision**, not by oversight — it is clean too, but it is the deliberately
 abandoned Node implementation, and publishing it invites "why are there two?"
 with no answer a reader can act on. The public repository has exactly one branch,
@@ -666,7 +666,7 @@ misled twice during this work:
 | | value | how |
 |---|---|---|
 | Branches | **1** (`main`) | `gh api …/branches` |
-| Commits | **94** | `git rev-list --count main` in the clone |
+| Commits | **94** at the audited commit | `git rev-list --count main` in the clone |
 | Clone size | **1.2 MB** (from 45 MB) | `du -sh .git` |
 | `node_modules` objects | **0** | `git rev-list --objects --all \| grep -c node_modules` |
 | `node/dist` objects | **0** | `… \| grep -c 'node/dist/'` |
@@ -675,11 +675,29 @@ misled twice during this work:
 | Tip tree | `841675ae6bbcbea58ef103908c91c603769807e9` | identical to local `main` |
 | Suite, run **from the clone** | **744 passed, 2 skipped, 206 subtests** | `python -m pytest tests -q` |
 
-**Falsifier:** a fresh clone of the public URL exceeding ~1.2 MB, returning any
-`node_modules` or `node/dist` object, showing a branch other than `main`, or
-`main` no longer at `06446a4`. Also: `gh api repos/bdidk235/RobloxStudioMCP
---jq .private` returning `true` — the repository was public from creation and
-nothing in this history has changed that.
+**Do not read `06446a4` as the current tip.** `main` advances, and the commit
+that *writes this section* is itself such an advance — it moved the public tip to
+`14d0a33` immediately after the audit above was taken. A record that says "the
+branch is at `<sha>`" is falsified by the act of recording it, which is a defect
+in the format and not in the fact. **The invariant is what was established, not
+the sha:**
+
+1. public `main` **descends from** `06446a4` — `git merge-base --is-ancestor
+   06446a4 public/main` exits 0; and
+2. the cleanliness properties hold on whatever `main` currently is — 0
+   `node_modules`, 0 `node/dist`, 0 false trailers, no branch but `main`.
+
+Both re-measured after the tip moved to `14d0a33`: **0 / 0 / 0**, 95 commits,
+still one branch.
+
+**Falsifier:** a fresh clone of the public URL returning any `node_modules` or
+`node/dist` object, or any commit carrying a `Co-Authored-By: Claude Opus 4.5`
+trailer, or a branch appearing other than `main`. Also
+`git merge-base --is-ancestor 06446a4 public/main` exiting **non-zero** — that
+would mean the public history had been rewritten again and this audit describes a
+history nobody can reach. And `gh api repos/bdidk235/RobloxStudioMCP --jq .private`
+returning `true`: the repository was public from creation and nothing in this
+history has changed that.
 
 ### 9.6 The red CI was never the code, and was never account-wide
 
