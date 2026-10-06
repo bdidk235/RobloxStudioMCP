@@ -230,7 +230,7 @@ cost, so it is a decision for the user, not a silent change.
 
 ## Short commits
 
-Subject ~100 chars, body ~1,400, only what the diff cannot show. What the repo
+Subject ~60 chars, body ~700 unless the detail is nowhere else. What the repo
 already records, point at instead. Rule: `CONTRIBUTING.md`.
 
 ## Where the record lives

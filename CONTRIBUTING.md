@@ -106,14 +106,14 @@ about macOS is broken.
 
 ## Commit messages
 
-**Subject: what changed, imperative, under ~100 characters.** Half a sentence
-still reads better than a fragment, and the measure is whether you would scan it
-in a `git log --oneline`.
+**Subject: what changed, imperative, ~60 characters.** The measure is whether you
+would scan it in a `git log --oneline`.
 
-**Body: why, and only what the diff cannot show. Under ~1,400 characters.** That
-is two or three short paragraphs. Bodies have run to 3,294 here; the ceiling is
-about where a message stops being a commit note and becomes a changelog nobody
-reads twice.
+**Body: why, and only what the diff cannot show. ~700 characters — but go longer
+when the detail genuinely is nowhere else.** That is a target, not a quota: a
+finding recorded only in the commit body must stay there, and padding it down to
+hit a number would delete the only copy. What is not acceptable is restating what
+the repo already holds.
 
 The line that decides:
 
