@@ -106,12 +106,14 @@ about macOS is broken.
 
 ## Commit messages
 
-**Subject: what changed, imperative, under ~70 characters.** The range here is
-already 48–83; the long ones read as a sentence rather than a label.
+**Subject: what changed, imperative, under ~100 characters.** Half a sentence
+still reads better than a fragment, and the measure is whether you would scan it
+in a `git log --oneline`.
 
-**Body: why, and only what the diff cannot show. Under ~700 characters.** Bodies
-have run to 3,294 and average ~2,000 across the recent ten — a changelog wearing
-a commit's clothes.
+**Body: why, and only what the diff cannot show. Under ~1,400 characters.** That
+is two or three short paragraphs. Bodies have run to 3,294 here; the ceiling is
+about where a message stops being a commit note and becomes a changelog nobody
+reads twice.
 
 The line that decides:
 
