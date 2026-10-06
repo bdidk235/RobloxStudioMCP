@@ -646,17 +646,70 @@ Selected old → new: `1c08e50`→`46ca7cf`, `c2144b6`→`7c585f3`, `8b2b7a2`→
 `9fb5a1d`→`c5d3041`, `7d5ff53`→`ffebe51`, `3653edd`→`bb46c72`, `e91cdb3`→`498a662`,
 `bd77d97`→`dbcd2d7` (on `parity` only).
 
-### 9.5 Publication target
+### 9.5 Publication target — published 2026-10-06
 
-`RobloxStudioMCP_Full` is **private** and is the archive: it holds the only copy
-of the pre-rewrite line. The public repository is a **different** one,
-`bdidk235/RobloxStudioMCP` (id `1407227973`, created 2026-10-06T12:02:45Z), which
-was **empty** when this was written. Publishing is therefore a *push of the two
-clean refs*, not an export: `main` and `parity` carry no `node_modules`, no
-`node/dist`, and no false trailers, so they go as they stand.
+`RobloxStudioMCP_Full` is **private** (`private=true`, measured 2026-10-06) and is
+the archive: it holds the only reachable copy of the pre-rewrite line. The public
+repository is a **different** one, `bdidk235/RobloxStudioMCP` (id `1407227973`,
+created 2026-10-06T12:02:45Z), so publication was a *push*, not an export.
 
-*Unverified at the time of writing:* that push had not happened, and
-`bdidk235/RobloxStudioMCP` was still `size_kb=0`.
+**What was pushed: `main` only**, at `06446a4`. `parity` was **left out by
+decision**, not by oversight — it is clean too, but it is the deliberately
+abandoned Node implementation, and publishing it invites "why are there two?"
+with no answer a reader can act on. The public repository has exactly one branch,
+`main`.
+
+Measured 2026-10-06, by pushing and then auditing **a fresh `git clone` of the
+public URL** — not the local repository, which is the instrument that had already
+misled twice during this work:
+
+| | value | how |
+|---|---|---|
+| Branches | **1** (`main`) | `gh api …/branches` |
+| Commits | **94** | `git rev-list --count main` in the clone |
+| Clone size | **1.2 MB** (from 45 MB) | `du -sh .git` |
+| `node_modules` objects | **0** | `git rev-list --objects --all \| grep -c node_modules` |
+| `node/dist` objects | **0** | `… \| grep -c 'node/dist/'` |
+| False trailers | **0** | `git log --all --format='%(trailers:…)'` |
+| Secret-shaped matches | **0** (six patterns, every commit) | `git grep -I -l -E …` |
+| Tip tree | `841675ae6bbcbea58ef103908c91c603769807e9` | identical to local `main` |
+| Suite, run **from the clone** | **744 passed, 2 skipped, 206 subtests** | `python -m pytest tests -q` |
+
+**Falsifier:** a fresh clone of the public URL exceeding ~1.2 MB, returning any
+`node_modules` or `node/dist` object, showing a branch other than `main`, or
+`main` no longer at `06446a4`. Also: `gh api repos/bdidk235/RobloxStudioMCP
+--jq .private` returning `true` — the repository was public from creation and
+nothing in this history has changed that.
+
+### 9.6 The red CI was never the code, and was never account-wide
+
+For ~40 hours every run on `_Full` failed with **0 steps executed** — both jobs
+failing before a single step, in 8–11s. It was recorded as account-side, and
+correctly so as to the code, but with no cause established.
+
+Publishing to the public repository settled it by **contrast**, because the same
+commit ran on both:
+
+```
+06446a4  public   run 37465467554  success   1m29s   8 steps per job, all success
+06446a4  _Full    run 37464689633  failure   11s     0 steps per job
+```
+
+Same commit, same workflow, same runners — **green public, red private.** So the
+failure is scoped to the repository's **visibility**, not its content, and
+**today's work is CI-verified**: the public run is that verification, on both
+`macos-latest` and `windows-latest`. No workflow references `secrets.`, so the
+public repository needed none.
+
+**The cause on `_Full` is not established.** "Private-repository Actions minutes"
+is the obvious candidate and is **inference only** —
+`gh api user/settings/billing/actions` returns **404** from this machine, as does
+`check-runs`. It is also not a month-boundary reset: the last green run was
+2026-10-04T20:43:11Z, not the 1st.
+
+*Settles against:* a `_Full` run that executes steps and then fails on a real
+assertion. That would make the visibility theory wrong and the quota story wrong
+with it.
 
 ---
 
@@ -675,6 +728,12 @@ overwrites anything; the sources still say what they say.
 | 6 | §1 of the earlier draft of this file: "Tracked files at `HEAD` — **110**" | 110 | **111**; `git ls-files` and `git ls-tree -r --name-only HEAD` agree. The count was taken against `1c08e50`, and **committing this file made it the 111th** | 2026-10-06 |
 | 7 | §1 of the earlier draft: "`AGENTS.md` — **2,226** words" | 2,226 | **2,250**; the tip commit `7189ce6` *Set the real commit targets: 60 and 700* edited `AGENTS.md` after the 2,226 was measured. Not caused by the rewrite | 2026-10-06 |
 | 8 | §3 of this file: "`parity` **is an ancestor of `main`** … `main..parity` returns 0" | ancestor, 0 | **no longer related**: `git merge-base main parity` is **empty**, `main..parity` is **67** | 2026-10-06, by the rewrite |
+| 9 | §9.5 first draft: "Publishing is a push of the **two clean refs** … *Unverified: that push had not happened, and was still `size_kb=0`*" | pending, 2 refs | **published, `main` only**; 94 commits, **1.2 MB**, 0 blobs, 0 trailers, 0 secrets, suite green from a fresh clone of the public URL. `parity` omitted by decision | 2026-10-06, same day |
+| 10 | The working claim of 2026-10-06 that CI was red "account-side, not code" and "**nothing today is CI-verified**" | red everywhere; nothing verified | first half **right but not scoped**: it was never account-wide — it is private-only, proven by `06446a4` running **green** on the public repo (8 steps/job) while failing with **0** steps on `_Full`. Second half **wrong**: that public run *is* today's CI verification | 2026-10-06, same day |
+
+Rows 9 and 10 were both written into this file earlier the same day and were
+outgrown within the hour. They are kept rather than deleted so a reader who saw
+the earlier version can tell a superseded claim from one that was never true.
 
 Row 5 is not this file's correction — `b9b2e69` *Record the strip's justification,
 re-derived by running it* already made it and wrote it into the evidence log. It
