@@ -1196,12 +1196,26 @@ async def _call_manage_instance(
         if not found.get("resolved"):
             result = {"action": action, **found}
         else:
-            result = {
-                "action": action,
-                "studio_id": studio_id,
-                "resolved_by": found.get("how"),
-                **await asyncio.to_thread(inst.terminate_process, found["pid"]),
-            }
+            # Revalidated between resolve and kill: the resolve answer
+            # describes a moment that has passed, and killing on stale evidence
+            # hits the wrong process once the pid is reused. A refusal reports
+            # instead of terminating; nothing here changes the tool's inputs.
+            rechecked = await inst.revalidate_pid_for_stop(found["pid"], found)
+            if not rechecked.get("ok"):
+                result = {
+                    "action": action,
+                    "studio_id": studio_id,
+                    "resolved_by": found.get("how"),
+                    "stopped": False,
+                    "error": rechecked.get("error"),
+                }
+            else:
+                result = {
+                    "action": action,
+                    "studio_id": studio_id,
+                    "resolved_by": found.get("how"),
+                    **await asyncio.to_thread(inst.terminate_process, found["pid"]),
+                }
     else:
         # The accepted set goes in the message because this is the one error an
         # agent is guaranteed to hit at least once, and without it the caller

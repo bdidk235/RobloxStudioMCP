@@ -39,7 +39,7 @@ def _client():
     return client
 
 
-def _patches(proc, identified=None, existing=None):
+def _patches(proc, identified=None, existing=None, asleep=None):
     """`existing` is the process list *after* the launch.
 
     The first read of `list_studio_processes` is what `launch_instance` records as
@@ -62,7 +62,13 @@ def _patches(proc, identified=None, existing=None):
         mock.patch.object(inst.subprocess, "Popen", return_value=proc),
         mock.patch.object(inst, "find_studio_exe", return_value="X.exe"),
         mock.patch.object(inst, "list_studio_processes", side_effect=processes),
-        mock.patch.object(inst.time, "sleep"),
+        # The launch loop yields with `asyncio.sleep`, never `time.sleep`: a
+        # blocking sleep would freeze the server's event loop for the whole
+        # wait. Patched to instant so the timeout path stays fast, and its
+        # presence here pins that the loop does not block. A caller may pass
+        # its own `asleep` mock to observe the yields.
+        mock.patch.object(inst.asyncio, "sleep",
+                          new=asleep if asleep is not None else mock.AsyncMock()),
         mock.patch.object(inst.time, "monotonic",
                           side_effect=[float(i) for i in range(0, 500)]),
     ]
@@ -74,8 +80,8 @@ def _patches(proc, identified=None, existing=None):
     return patches, identify
 
 
-def _run(proc, identified=None, existing=None):
-    patches, identify = _patches(proc, identified, existing)
+def _run(proc, identified=None, existing=None, asleep=None):
+    patches, identify = _patches(proc, identified, existing, asleep)
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         return asyncio.run(inst.launch_instance(PLACE_DIR + "/Baseplate-1.rbxl",
                                                 studio_client=_client())), identify
@@ -140,6 +146,38 @@ class LaunchResponse(unittest.TestCase):
         self.assertFalse(got["launched"])
         self.assertEqual(got["exit_code"], 1)
         identify.assert_not_called()
+
+    def test_an_exited_parent_cannot_hide_a_live_child(self):
+        """The scan comes before the exit check: a parent that exits while a
+        live child holds the place open must still identify, not report
+        "Studio exited"."""
+        proc = mock.Mock()
+        proc.pid = 4242
+        proc.poll.return_value = 1
+        proc.returncode = 1
+        got, identify = _run(
+            proc,
+            identified={"studio_id": "abc", "mesh_name": "Baseplate-1.rbxl"},
+            existing=[{"pid": 999, "created": "/Date(0)/"},
+                      {"pid": 4242, "created": "/Date(0)/"}],
+        )
+        self.assertTrue(got["launched"], got)
+        self.assertEqual(got["studio_id"], "abc")
+        identify.assert_called_once()
+
+    def test_the_wait_yields_instead_of_blocking(self):
+        """The loop must not freeze the event loop: `asyncio.sleep` is awaited
+        every pass, and `time.sleep` is never touched. Driven down the
+        never-attaches path so the loop actually has passes to yield on."""
+        asleep = mock.AsyncMock()
+        with mock.patch.object(inst.time, "sleep",
+                              side_effect=AssertionError("blocked the loop")):
+            got, _ = _run(self._alive(),
+                          identified={"studio_id": None, "mesh_name": None},
+                          asleep=asleep)
+        self.assertFalse(got["launched"], got)
+        self.assertTrue(asleep.await_count >= 1,
+                        "the launch loop never yielded")
 
 
 if __name__ == "__main__":
