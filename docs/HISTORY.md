@@ -38,8 +38,8 @@ gives the old→new mapping for all 44 shas cited here.
 | Tracked files on `parity` | **168**, of which **56** under `node/` | `git ls-tree -r --name-only parity` |
 | Live gate | **744 passed, 2 skipped, 206 subtests** | `python -m pytest tests -q` from `python/` |
 | Contract surface | 16 tools, 3,025 of 3,200 description chars, 450 per tool | `contract/tools.json` |
-| Open work | **36** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
-| `docs/EVIDENCE.md` | 1,455 lines, 25 `##` sections | `wc -l`, `grep -c '^## '` |
+| Open work | **45** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
+| `docs/EVIDENCE.md` | 1,570 lines, 26 `##` sections | `wc -l`, `grep -c '^## '` |
 | `AGENTS.md` | **2,250** words against a 2,259 ceiling — **9 to spare** | `python -c "print(len(open('AGENTS.md').read().split()))"` |
 | Remote | `https://github.com/bdidk235/RobloxStudioMCP_Full.git` (private) | `git config --get remote.origin.url` |
 
@@ -123,7 +123,7 @@ This repository spent five days deleting prose. The line counts, measured by
 | `AGENTS.md` | 355 | 206 | `20d9800` |
 | `TODO.md` | 4,135 | 2,790 | `9bb8e48` |
 | `TODO.md` | 2,790 | 170 | `9b44c51` (closed research moved to a new `docs/EVIDENCE.md`, created here at 1,348 lines) |
-| `docs/EVIDENCE.md` | 1,348 (at creation) | 1,455 (now) | `9b44c51` onward |
+| `docs/EVIDENCE.md` | 1,348 (at creation) | 1,570 (now) | `9b44c51` onward |
 
 The argument for each cut is in the commit body, and they are consistent: a
 rules file that carries a second copy of documentation will drift from it.
@@ -827,7 +827,7 @@ Four files, four jobs, deliberately not merged:
 
 | file | holds | do not put there |
 |---|---|---|
-| `TODO.md` | open work (36 items) and the 6 withdrawals | closed research |
+| `TODO.md` | open work (45 items) and the 6 withdrawals | closed research |
 | `docs/EVIDENCE.md` | closed research, provenance tagged `MEASURED` / `DOCUMENTED` / `INFERRED` / `UNVERIFIED` | open work |
 | `AGENTS.md` | standing rules and the gates table | any figure that a generated artefact owns |
 | `contract/tools.json` | the generated surface and its budget | hand-edits — it is generated |

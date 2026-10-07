@@ -1453,3 +1453,118 @@ worktree, false as history.
 
 **Settles against:** re-running the harness on `parity` and finding a fourth gap that
 *is* a silent wrong answer, which would make the justification understated instead.
+
+---
+
+## External review of 2026-10-07, verified against source: 8 defects, 5 wrong claims
+
+An outside reviewer produced three write-ups and a 13-question transcript about
+this repository. The claims were **not taken on trust**: each was checked against
+the source by four independent readers working from disjoint claim sets, and the
+disagreements were then resolved against the file. Measured 2026-10-07 by that
+verification pass; the code had not changed since `1680942`.
+
+**What the review is worth: roughly half of it.** Five of its specific factual
+claims are wrong, two of them flattering to the reviewer and three unflattering
+to this repository. That ratio is the reason the verdicts are recorded per claim
+rather than the review being adopted or dismissed as a whole.
+
+### Provenance, so a reader can tell whether they are reading the same thing
+
+The review is **not in this repository** and lives in an ephemeral location. The
+hashes below pin what was read; if a reader's copy differs, every verdict here
+needs redoing.
+
+| file | sha256 (first 16) | bytes | authored |
+|---|---|---|---|
+| `roblox-mcp-improvements.md` | `fcf2f70e9380e08e` | 2,926 | 2026-10-07 ~14:08Z (zip entry) |
+| `roblox-mcp-final-stretch.md` | `99f17c358a4d40b7` | 1,952 | 2026-10-07 ~14:07Z (zip entry) |
+| `IMPROVEMENT.md` | `de529f232e75decb` | 10,092 | 2026-10-07 15:08:26Z |
+| `full.txt` (transcript) | `4d7c40c3ca8f0132` | 42,308 | see note |
+| `…Questions_and_Answers.docx` | `1bed1b1955a827c5` | 19,443 | 2026-10-07 20:10:45Z (internal `docProps`) |
+| `mcprevs.zip` | `772dfce147c4406f` | 7,794 | - |
+
+**`full.txt` is not the full transcript.** Its filesystem mtime (23:11Z) is a
+*copy* time, not an authoring time, so the `.docx` internal `created` is the only
+authoring anchor. And the two disagree on content: both carry **13** questions,
+but they are not the same 13. `full.txt` is missing the *"What about for 10?"*
+exchange, which the `.docx` contains; `full.txt` instead ends with *"Now give a
+download for it"*, which the `.docx` does not. Overlap is 12. A file named
+`full.txt` that is missing an exchange is the same defect as a figure named
+`total` that is a subset.
+
+*Settles against:* a copy of either document containing the other's extra
+exchange. That would mean one was edited after authoring and these hashes
+describe an intermediate state.
+
+### Confirmed — real defects, all reproduced at the line cited
+
+| # | defect | evidence |
+|---|---|---|
+| 1 | **`stop` cannot work on macOS.** `terminate_process` hardcodes `powershell` with **zero** platform branching, so it raises `FileNotFoundError` before killing anything. The platform-aware implementation exists — `platform.terminate` (`platform.py:336-345`) has the `is_windows()` branch and the `kill -9` fallback — and **nothing in `src` calls it** | `instance.py:1262-1272`; only `.terminate(` in src is `client.py:207` `proc.terminate()` on the MCP subprocess, unrelated |
+| 2 | **A launch can be attributed to the wrong Studio, and that id then kills a process.** `_identify_launched` route 1 filters only on `studio_id not in before_ids`; the `pid` it was handed is first used at `:856`, *after* route 1 has returned. One concurrent Studio inside the 75s window is credited instead. `launched: True` is returned, and `action=stop` terminates that `studio_id` | `instance.py:823-832`; `extended_server.py:1195→1203`; window `LAUNCH_WAIT=75.0` `:230` |
+| 3 | **The event loop is blocked for up to 75s.** `list_studio_processes` is plain `def` (`:127`) called bare from coroutines at `:630`, `:675`, `:1024`; plus `time.sleep(2.0)` at `:727` and a synchronous `urlopen(timeout=10)` at `:448` | **zero** `asyncio.to_thread` in `instance.py` |
+| 4 | **`to_thread` is known and not applied where it matters.** `stop` uses it (`extended_server.py:1203`); the launch path (`:1187`) and `resolve_pid_for_studio` (`:1195`) do not | as above |
+| 5 | **The `allow_console_write` docstring contradicts its own body.** It states the flag *"declines to touch Studios the caller never named"* (`:885-889`), and eleven lines later the same function loops `for row in ranked` (`:911-916`) — `ranked` is every row with a `studio_id` — writing a join token into each until one answers | both in `_identify_launched` (783-933) |
+| 6 | **`stop` has no confirmation and no revalidation.** Schema is 3 properties, no `dry_run`/`confirm`; resolve at `:1195` then kill at `:1203` with nothing between. `_pid_alive` is called only *after* the kill (`:1276`, `:1279`) | `extended_server.py:668-687`, `:1195-1203` |
+| 7 | **Early exit is misreported.** `proc.poll()` returns "Studio exited during launch" (`:657-667`) *before* the new-PID scan (`:673`), so a handing-off child is never looked for | ordering only; unverified whether Roblox hands off |
+| 8 | **Temp place copies are never deleted, repo-wide.** `mkstemp` + `copyfile` at `:576-579`; no `os.remove`/`unlink`/`rmtree`/`TemporaryDirectory`/`atexit` anywhere references the `"roblox-studio-"` prefix | disclosed at `:565-569` as a known limitation, not a hidden defect |
+
+### Refuted — the review is wrong, and the errors run both ways
+
+| claim | measured | how it was wrong |
+|---|---|---|
+| "`instance.py` alone **over 1,300** lines" | **1,290** | ten *under* |
+| "**40-plus** functions" | **29** (24 module-level, 4 nested, 1 class) | overstated ~40% |
+| "About **23,000** lines of Python" | `python/src` = **11,003**; `python/tests` = 10,879 | conflates tests with shipped code; overstates production ~2× |
+| "`stop` … **silently grants console writes to any attached Studio**" | `_resolve_by_console_token:1206` passes `studio_id=studio_id` — **one** named Studio | true for the hardcoded `True`, wrong about the blast radius |
+| "kills with `kill -9` on macOS" | that function has **no** macOS branch at all | describes `platform.terminate`, which `src` never calls |
+| "**Zero stars**" | 1 (`mobogreatthegreat`) | **true when written** — published 07-06, review 07-07 — so this is a claim that aged, not one that was false |
+
+Two figures were **exact** and are recorded because exact agreement is what makes
+the errors above credible rather than merely annoying: **756** test functions, and
+**16** contract tools matching 16 registered `extended_*` names.
+
+### Two defects found here that the review did not report
+
+1. **`platform.terminate`'s docstring is false.** It claims *"the only place in
+   the project that kills"*, while `instance.terminate_process` duplicates the
+   logic without the platform branch. So the correct implementation is dead code
+   wearing a claim of exclusivity, and the wrong one is live.
+2. **`python/pyproject.toml:30` still says "same 720 passed"** — a benchmark
+   comment now contradicting the 744 in `docs/HISTORY.md`, and *lower* than the
+   756 test functions. Related and also stale: `requires-python = ">=3.9"` is
+   declared but `ci.yml` pins **3.12**, so 3.9 is declared and never exercised.
+
+### Correction, same day: this record's author verified one claim against the wrong function
+
+While checking the review, the claim *"the `allow_console_write` docstring
+contradicts the code"* was reported as **refuted** — on the grounds that
+`_resolve_by_console_token` passes an explicit `studio_id`. That was **wrong**.
+The docstring making the claim lives in `_identify_launched` (783-933); the
+function inspected was its helper `_resolve_by_console_token` (1180-1255). Both
+facts are true; the refutation was of a claim about the wrong function. The
+claim is **confirmed** — defect 5 above.
+
+This is recorded rather than fixed silently because the error and its cause are
+the useful part: two readers disagreed, and the disagreement was only resolvable
+by asking *which function owns the line*, not by re-reading either answer.
+
+### Not verified, and not claimed
+
+- **The competitor-repository findings** (`drgost1` binding `0.0.0.0` with an
+  unauthenticated `/api/execute-luau`; `EL4CTEO`'s Host/Origin defences) describe
+  **other people's repositories**. The reviewer states plainly that no exploit was
+  tested. Nothing here confirms or repeats them. Two of the eight repos were never
+  cloned. **These are unverified claims about third-party code and are excluded
+  from this record's findings entirely** — not counted as either true or false.
+- **The review's Tier-1 proposals** (a POSIX branch, pinning the upstream Studio
+  tool surface) are *proposals*, not defect claims, so "confirmed" does not apply.
+  One incidental fact was checked: `ci.yml` `matrix.os` is
+  `[windows-latest, macos-latest]` — **no Linux job**, as claimed.
+- **Whether Roblox's launcher hands off to a child process** (defect 7's
+  precondition) was not tested. The code ordering is confirmed; the consequence
+  is conditional on a premise this record does not have.
+
+*Settles against:* a run on macOS where `stop` returns `stopped: true`. That
+would make defect 1 a harness artefact rather than a real failure.
