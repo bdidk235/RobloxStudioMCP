@@ -27,9 +27,9 @@ dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5", "pyright"]
 [tool.pytest.ini_options]
 # The suite is dominated by real waits in subprocess-backed timing tests, and
 # the slowest 12 accounted for ~19s of a ~35s run. Measured 2026-10-03: -n 4 on
-# an 8-core box gives 18.3/18.2/15.1s across three runs, same 720 passed, and -n 8
-# was no better than -n 4, so the lower figure leaves headroom. Override with
-# `-n 0` to serialise when debugging a single test.
+# an 8-core box gives 18.3/18.2/15.1s across three runs with an unchanged pass
+# count, and -n 8 was no better than -n 4, so the lower figure leaves headroom.
+# Override with `-n 0` to serialise when debugging a single test.
 addopts = "-n 4"
 
 [tool.setuptools.packages.find]

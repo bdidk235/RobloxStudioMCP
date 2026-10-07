@@ -221,7 +221,7 @@ Eight defects and two stale figures, every one reproduced at the line cited. Ver
 
 ### Housekeeping
 
-- [ ] The throwaway baseplate is at `%TEMP%\robloxstudio-mcp-baseplates\Baseplate-*.rbxl`, launched with `--task EditFile --localPlaceFile`. Worth deleting when done.
+- [ ] The throwaway baseplate is a `roblox-studio-*.rbxl` file in the platform temp dir (one `mkstemp` file per `make_place`), launched with `--task EditFile --localPlaceFile`. Worth deleting when done — see `cleanup_throwaway_place`.
 
 ## Withdrawn — do not re-derive these
 

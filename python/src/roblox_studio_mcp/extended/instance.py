@@ -546,6 +546,13 @@ def list_place_candidates() -> List[Dict[str, Any]]:
     return rows
 
 
+#: Prefix/suffix for temp copies made by :func:`make_throwaway_place`. The guard
+#: in :func:`cleanup_throwaway_place` is built from these, so a cleanup call
+#: can never remove a file this project did not make.
+THROWAWAY_PREFIX = "roblox-studio-"
+THROWAWAY_SUFFIX = ".rbxl"
+
+
 def make_throwaway_place() -> str:
     """Copy a discovered baseplate to a temp file and return the copy.
 
@@ -562,21 +569,53 @@ def make_throwaway_place() -> str:
     location, and guarantees the name is unique rather than rolling a uuid by
     hand.
 
-    Nothing prunes these, which is a real limitation: the OS clears its own temp
-    directory eventually, but not on a schedule anything here can rely on. That
-    is recorded rather than solved, because a cleanup policy needs a lifetime
-    rule ("delete once Studio exits") and the exit is not observable from here
-    without a handle on the process.
+    The caller owns the copy: Studio holds the file open while it runs, so
+    nothing here deletes it automatically. Deleting at exit would need a
+    lifetime rule this module cannot observe (Studio's exit), and on Windows
+    the delete fails while Studio holds the file anyway. When done, remove it
+    with :func:`cleanup_throwaway_place`.
     """
     source = find_baseplate()
     if not source:
         raise FileNotFoundError(
             "no baseplate found. Searched: " + ", ".join(_autosave_dirs())
         )
-    handle, target = tempfile.mkstemp(prefix="roblox-studio-", suffix=".rbxl")
+    handle, target = tempfile.mkstemp(
+        prefix=THROWAWAY_PREFIX, suffix=THROWAWAY_SUFFIX
+    )
     os.close(handle)
     shutil.copyfile(source, target)
     return target
+
+
+def cleanup_throwaway_place(path: str) -> bool:
+    """Remove one copy made by :func:`make_throwaway_place`.
+
+    Returns True when the file was removed, False when it was kept: a name
+    this project did not make, a file outside the platform temp directory, a
+    file already gone, or a file Studio still holds open (on Windows the
+    remove then fails). Never raises for those cases, and never removes
+    anything but a ``roblox-studio-*.rbxl`` entry in the temp directory.
+    """
+    try:
+        candidate = os.path.abspath(path)
+    except (OSError, ValueError):
+        return False
+    name = os.path.basename(candidate)
+    if not (name.startswith(THROWAWAY_PREFIX)
+            and name.endswith(THROWAWAY_SUFFIX)):
+        return False
+    try:
+        tmpdir = os.path.abspath(tempfile.gettempdir())
+    except OSError:
+        return False
+    if os.path.dirname(candidate) != tmpdir:
+        return False
+    try:
+        os.remove(candidate)
+    except OSError:
+        return False
+    return True
 
 
 # --------------------------------------------------------------------------- #
