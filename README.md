@@ -118,6 +118,61 @@ extended/
   skills.py         the rsx-* transport skills
 ```
 
+## Install
+
+**Not on PyPI yet — and not done.** What is done is the verification: the full
+suite passes (762 tests, plus the contract, type, and docs gates), and every
+claim below about the repo's own behaviour was checked against the source, not
+carried forward on trust. Install from a clone:
+
+```powershell
+git clone https://github.com/bdidk235/RobloxStudioMCP.git
+cd RobloxStudioMCP/python
+pip install -e .
+```
+
+That makes the package importable everywhere, so the server command below works
+from any directory. Contributors want `.[dev]` instead (pytest, pyright); see
+[Development](#development).
+
+### Connect your coding agent
+
+Any agent that speaks MCP over stdio can drive Studio through this. The command
+is the same everywhere — the **extended** server, with the 16 extra tools:
+
+```powershell
+python -m roblox_studio_mcp.extended_server
+```
+
+(Use `roblox_studio_mcp.server` instead for the plain passthrough with no
+extended tools.) Studio itself must be open with a place loaded and its MCP
+server enabled; see [Prerequisites](#prerequisites).
+
+| Agent | How |
+|---|---|
+| **Claude Code** | `claude mcp add roblox-studio -- python -m roblox_studio_mcp.extended_server`, or a `.mcp.json` with that command under `mcpServers` |
+| **Codex** | in `~/.codex/config.toml`: `[mcp_servers.roblox-studio]` with `command = "python"` and `args = ["-m", "roblox_studio_mcp.extended_server"]` |
+| **OpenCode** | in `opencode.json`: `"mcp": {"roblox-studio": {"type": "local", "command": ["python", "-m", "roblox_studio_mcp.extended_server"], "enabled": true}}` |
+| **Anything else** | any MCP client with stdio support, pointed at the same command |
+
+These follow each agent's documented stdio-server format; they have not been
+run end-to-end here, so if one rejects the config, its own `mcp` docs win over
+this table.
+
+### Or ask your agent to do it for you
+
+Paste this at your agent, with the clone path filled in:
+
+> Install the RobloxStudioMCP Python package from `<path>/python` with
+> `pip install -e .`, then register its extended MCP server in my config:
+> stdio, command `python -m roblox_studio_mcp.extended_server`. Confirm it is
+> reachable by listing tools. Roblox Studio is already open with a place
+> loaded and its MCP server enabled.
+
+Once connected, point it at the skills: `extended_skill` with no arguments
+returns the index (`rsx-transport` first — the truncation and bulk-write traps
+bite every new caller once).
+
 ## Using it from your own code
 
 Everything the MCP exposes is callable directly from Python — no
