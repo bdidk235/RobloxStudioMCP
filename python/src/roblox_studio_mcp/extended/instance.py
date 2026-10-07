@@ -434,6 +434,11 @@ async def resolve_universe_id(
 
     Raises :class:`UniverseLookupError`, which carries ``attempts``. A response
     with no ``universeId`` is a failure, never a silent ``0``.
+
+    The HTTP fetch runs in a worker thread: ``urlopen`` blocks the calling
+    thread for up to its timeout, and this coroutine shares the server's event
+    loop with every other in-flight tool call. The ``asyncio.sleep`` retry
+    backoff already yielded; the fetch itself did not.
     """
     import json
     import urllib.error
@@ -445,8 +450,8 @@ async def resolve_universe_id(
 
     for attempt in range(1, attempts + 1):
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
+            raw = await asyncio.to_thread(_fetch_universe_bytes, url, 10)
+            payload = json.loads(raw.decode("utf-8"))
             value = payload.get("universeId")
             if value is None:
                 last = f"response carried no universeId: {payload!r}"
@@ -463,6 +468,20 @@ async def resolve_universe_id(
             await asyncio.sleep(delay * (2 ** (attempt - 1)))
 
     raise UniverseLookupError(int(place_id), attempts, last)
+
+
+def _fetch_universe_bytes(url: str, timeout: float) -> bytes:
+    """One blocking universe-API fetch, run in a worker thread.
+
+    Kept separate (rather than inlining ``urlopen`` at the call site) so the
+    whole blocking section - open, read, close - moves off the event loop
+    together. ``urllib.request.urlopen`` is resolved here at call time, so a
+    patched ``urlopen`` is still honoured.
+    """
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return resp.read()
 
 
 async def launch_via_uri(place_id: int, universe_id: Optional[int] = None) -> None:
@@ -666,7 +685,10 @@ async def launch_instance(
         raise FileNotFoundError(f"place not found: {resolved}")
     exe = find_studio_exe()
     workdir = os.path.dirname(exe)
-    before = {p["pid"] for p in list_studio_processes()}
+    # Off the event loop: a process-list answer costs ~2s of PowerShell even
+    # without the attachment lookup, and this coroutine shares the server's
+    # loop with every other in-flight tool call.
+    before = {p["pid"] for p in await asyncio.to_thread(list_studio_processes)}
     # Set when a new process appeared but could not be identified, so the timeout
     # branch can say which of the two failures happened. Declared here because the
     # loop may never run, and Python would otherwise treat it as possibly-unbound.
@@ -693,17 +715,14 @@ async def launch_instance(
 
         deadline = time.monotonic() + LAUNCH_WAIT
         while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                return {
-                    "launched": False,
-                    "pid": proc.pid,
-                    "exit_code": proc.returncode,
-                    "error": (
-                        "Studio exited during launch. Exit code "
-                        f"{proc.returncode} usually means the install was being "
-                        "updated underneath the launch; retry once it settles."
-                    ),
-                }
+            # The new-PID scan comes BEFORE the exit check, deliberately. The
+            # parent process can exit while a live child holds the place open,
+            # and checking `poll` first reported "Studio exited" for a launch
+            # that had in fact succeeded. Likewise, once a new PID has been
+            # seen, the parent's exit no longer answers anything: the child is
+            # either identified above or reported as unidentified at the
+            # deadline below, and neither needs the parent's exit code.
+            #
             # Attachment is not needed to spot our own process, and looking it up
             # costs 9.5s against 2.1s - which is most of this loop's budget. The
             # cache is bypassed with max_age=0 because the whole question is
@@ -711,7 +730,9 @@ async def launch_instance(
             # cached answer would answer "no" to precisely the process we launched.
             new_pids = {
                 p["pid"]
-                for p in list_studio_processes(with_attachment=False, max_age=0.0)
+                for p in await asyncio.to_thread(
+                    list_studio_processes, False, 0.0
+                )
             } - before
             if new_pids:
                 # Identify the new process by its OWN pid, never by picking the
@@ -750,6 +771,8 @@ async def launch_instance(
                     }
                     if identified.get("console_writes"):
                         answer["console_writes"] = identified["console_writes"]
+                    if "verified" in identified:
+                        answer["verified"] = identified["verified"]
                     return answer
                 # A new process existing is NOT the same as its Studio being on the
                 # mesh. The poll below spots the process host-side within a second
@@ -763,7 +786,22 @@ async def launch_instance(
                 # The unresolved report belongs at the deadline, below.
                 unattached = identified.get("how")
 
-            time.sleep(2.0)
+            if not new_pids and proc.poll() is not None:
+                return {
+                    "launched": False,
+                    "pid": proc.pid,
+                    "exit_code": proc.returncode,
+                    "error": (
+                        "Studio exited during launch. Exit code "
+                        f"{proc.returncode} usually means the install was being "
+                        "updated underneath the launch; retry once it settles."
+                    ),
+                }
+
+            # Async sleep: this loop shares the server's event loop, and the old
+            # `time.sleep` froze every other in-flight tool call for the whole
+            # 2s, every iteration, for up to LAUNCH_WAIT.
+            await asyncio.sleep(2.0)
         return {
             "launched": False,
             "pid": proc.pid,
@@ -832,10 +870,16 @@ async def _identify_launched(
     Three routes, cheapest and least invasive first. The order is the fix.
 
     1. **The before/after mesh diff.** ``before_ids`` is the set of ``studio_id``s
-       attached *before* the spawn; a row whose id is not in it is new. This is
-       the route that needs no log read, no console write, and no name match -
-       so it is the only one that works when two Studios share a place name,
-       which is exactly the case the old code fell through to spraying a token.
+       attached *before* the spawn; a row whose id is not in it is new. A lone
+       newcomer is then checked against the launched pid's own log identity
+       before it is credited: the diff alone answers "which mesh id is new",
+       not "which process is mine", so without the check a pre-existing Studio
+       that attached mid-launch would be misattributed. With no readable
+       identity the row is still returned, but marked ``verified: False``; on a
+       mismatch this route abstains and the later routes decide. This is the
+       route that needs no console write, and no name match - so it is the
+       only one that works when two Studios share a place name, which is
+       exactly the case the old code fell through to spraying a token.
        Measured 2026-10-01 on two identical sessions: the name route cannot
        separate them, and the diff separates them for free.
     2. **The new process's own log command line**, compared against the mesh name.
@@ -859,16 +903,54 @@ async def _identify_launched(
         return row.get("name") if isinstance(row, dict) else getattr(row, "name", None)
 
     # Route 1: the diff. Skipped entirely when there is no snapshot.
+    # A single arrival is credited ONLY against the pid this launch actually
+    # started. The diff alone cannot do that: it answers "which mesh id is
+    # new", not "which process is mine", so a pre-existing Studio that
+    # attached between the snapshot and the spawn would be credited to the new
+    # process. The new process's own log identity confirms (or refuses) the
+    # pairing; with no readable identity the row is still returned, but marked
+    # `verified: False` so the caller knows the attribution is provisional.
     if before_ids is not None:
         arrived = [row for row in rows if _sid(row) and _sid(row) not in before_ids]
         if len(arrived) == 1:
             row = arrived[0]
-            return {
-                "studio_id": _sid(row),
-                "mesh_name": _name(row),
-                "how": "studio_id absent from the mesh before this launch and present after",
-                "console_writes": 0,
-            }
+            newcomer, newcomer_name = _sid(row), _name(row)
+            try:
+                newcomer_identity = logid.live_identities([pid]).get(pid)
+            except Exception:  # noqa: BLE001 - an unreadable log is unverified, not fatal
+                newcomer_identity = None
+            if newcomer_identity is not None and not logid.name_matches_identity(
+                newcomer_name, newcomer_identity
+            ):
+                # This mesh row is new, but it is not ours: something else
+                # attached during the launch. Fall through to routes 2 and 3
+                # rather than crediting the wrong Studio.
+                pass
+            elif newcomer_identity is not None:
+                return {
+                    "studio_id": newcomer,
+                    "mesh_name": newcomer_name,
+                    "how": (
+                        "studio_id absent from the mesh before this launch and "
+                        "present after, and the new process's own log command "
+                        "line confirms it opened this place"
+                    ),
+                    "verified": True,
+                    "console_writes": 0,
+                }
+            else:
+                return {
+                    "studio_id": newcomer,
+                    "mesh_name": newcomer_name,
+                    "how": (
+                        "studio_id absent from the mesh before this launch and "
+                        "present after (unverified: the new process has no "
+                        "readable log identity yet, so the pairing is by "
+                        "elimination alone)"
+                    ),
+                    "verified": False,
+                    "console_writes": 0,
+                }
         if len(arrived) > 1:
             # Something else attached at the same time - another agent, most
             # likely. That is genuinely ambiguous and the answer is to say so.
@@ -921,10 +1003,11 @@ async def _identify_launched(
     # It stays available, because the two routes above genuinely cannot decide
     # every case. It is no longer the default, and the caller authorises it.
     #
-    # `allow_console_write` is therefore a statement about scope, not a licence:
-    # it declines to touch Studios the caller never named, and passing it says
-    # only that this launch may. It does not grant anything on any other
-    # instance, and it is never a reason to name one implicitly - see
+    # `allow_console_write` is therefore a statement about scope, and the scope
+    # is this launch's candidate set: passing it authorises one join token per
+    # candidate Studio, in evidence order, until one answers with this pid -
+    # including Studios the caller never named. It does not grant anything
+    # outside that set, and it is never a reason to name one implicitly - see
     # `AGENTS.md` rule 1, which is about the instance rather than the flag.
     if not allow_console_write:
         return {
@@ -1059,8 +1142,11 @@ async def resolve_pid_for_studio(
     # Every process, not just attached ones: an unattached match is exactly the
     # kind of near-miss that produced the wrong kill. Attachment is not fetched
     # here - nothing in this function joins on it, and fetching it costs 9.5s
-    # against 2.1s for the list itself.
-    all_processes = list_studio_processes(with_attachment=False)
+    # against 2.1s for the list itself. Off the event loop, like every other
+    # process-list read on an async path.
+    all_processes = await asyncio.to_thread(
+        list_studio_processes, False
+    )
     # The fallback pool is every live Studio process, not only the attached ones.
     # Restricting it to attached was both wrong - a process that has not finished
     # attaching is still a candidate, and it is exactly the newly launched one -
@@ -1297,6 +1383,59 @@ async def _resolve_by_console_token(
 # --------------------------------------------------------------------------- #
 # Stop
 # --------------------------------------------------------------------------- #
+
+async def revalidate_pid_for_stop(
+    pid: int, resolved: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Re-check a resolved PID immediately before terminating it.
+
+    Runs between :func:`resolve_pid_for_studio` and :func:`terminate_process`.
+    A resolve answer is evidence about a moment that has already passed: since
+    it was read, the process may have exited (in which case the PID may already
+    belong to something else), or its log identity may have moved. Terminating
+    on stale evidence kills the wrong process, which is the exact failure the
+    resolver chain exists to prevent.
+
+    Checks liveness first, then that the live identity still matches what the
+    resolve reported (log filename and task, when the answer carried them).
+    Reads logs only - never writes to a console. Returns ``{"ok": True}`` or
+    ``{"ok": False, "error": ...}``; the caller reports the refusal instead of
+    killing.
+    """
+    target = int(pid)
+    if not await asyncio.to_thread(_pid_alive, target):
+        return {
+            "ok": False,
+            "error": (
+                f"pid {target} exited between resolve and stop; refusing to "
+                "terminate, because a reused pid would hit the wrong process. "
+                "Re-run action='list' and resolve again."
+            ),
+        }
+    current = await asyncio.to_thread(logid.live_identities, [target])
+    identity = current.get(target)
+    if identity is None:
+        return {
+            "ok": False,
+            "error": (
+                f"pid {target} is running but its log identity can no longer "
+                "be read; refusing to terminate an unverifiable pid. Re-run "
+                "action='list' and resolve again."
+            ),
+        }
+    for key in ("log", "task"):
+        expected = resolved.get(key)
+        if expected is not None and identity.get(key) != expected:
+            return {
+                "ok": False,
+                "error": (
+                    f"pid {target} no longer matches what resolve reported "
+                    f"({key}: {identity.get(key)!r} vs {expected!r}); refusing "
+                    "to terminate. Re-run action='list' and resolve again."
+                ),
+            }
+    return {"ok": True}
+
 
 def terminate_process(pid: int, *, grace_seconds: float = 8.0) -> Dict[str, Any]:
     """Terminate a process and confirm it went away.

@@ -280,6 +280,72 @@ class TheMeshDiffIsTheFirstRoute(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(got.get("why"), "an unresolved identification needs a reason")
 
 
+class RouteOneVerifiesThePid(unittest.IsolatedAsyncioTestCase):
+    """A lone mesh arrival is not enough to credit it to the launched pid.
+
+    The diff answers "which mesh id is new", not "which process is mine". A
+    pre-existing Studio that attaches between the snapshot and the spawn is
+    also exactly one arrival, and crediting it misattributes the launch - the
+    same wrong-Studio failure the stop path was rewritten to prevent. So the
+    launched pid's own log identity confirms the pairing, a mismatch abstains,
+    and an unreadable identity is reported as `verified: False` rather than
+    presented as certain.
+    """
+
+    async def _run(self, rows, before_ids, identity=None, matching=(), **kw):
+        accepted = set(matching)
+
+        async def token(client, studio_id, candidates):
+            return {"resolved": False, "error": "should not be reached"}
+
+        with mock.patch.multiple(
+            inst,
+            logid=mock.Mock(
+                live_identities=lambda pids, started=None: (
+                    {pids[0]: identity} if identity else {}
+                ),
+                name_matches_identity=lambda name, ident: bool(name) and name in accepted,
+            ),
+            _resolve_by_console_token=token,
+        ):
+            return await inst._identify_launched(
+                _Studio(rows), 777, "Mine.rbxl", before_ids=before_ids, **kw
+            )
+
+    async def test_a_matching_log_identity_verifies_the_diff(self):
+        rows = _rows(("old", "Mine.rbxl"), ("new", "Mine.rbxl"))
+        got = await self._run(
+            rows, {"old"},
+            identity={"place_path": "Mine.rbxl", "task": "EditFile"},
+            matching={"Mine.rbxl"},
+        )
+        self.assertEqual(got["studio_id"], "new")
+        self.assertTrue(got["verified"], got)
+        self.assertEqual(got["console_writes"], 0)
+
+    async def test_no_readable_identity_is_unverified_not_certain(self):
+        """The row is still returned - elimination is real evidence - but the
+        caller is told the pid pairing was never confirmed."""
+        rows = _rows(("old", "Mine.rbxl"), ("new", "Mine.rbxl"))
+        got = await self._run(rows, {"old"}, identity=None)
+        self.assertEqual(got["studio_id"], "new")
+        self.assertFalse(got["verified"], got)
+        self.assertIn("unverified", got["how"])
+
+    async def test_a_new_row_belonging_to_another_process_is_not_credited(self):
+        """Something else attached mid-launch: the diff's newcomer names a
+        place the launched pid's own log contradicts. Crediting it would hand
+        back the wrong Studio's id."""
+        rows = _rows(("old", "Mine.rbxl"), ("stranger", "Mine.rbxl"))
+        got = await self._run(
+            rows, {"old"},
+            identity={"place_path": "Other.rbxl", "task": "EditFile"},
+            matching={"Other.rbxl"},
+        )
+        self.assertIsNone(got["studio_id"], got)
+        self.assertNotIn("verified", got)
+
+
 class TheChainOrderIsTheContract(unittest.IsolatedAsyncioTestCase):
     """`studio_id -> pid` must try the cheap routes before the console.
 
