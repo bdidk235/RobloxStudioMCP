@@ -1,12 +1,11 @@
-"""Temp place copies are owned, guarded, and swept by age.
+"""Temp place copies are owned and guarded.
 
 ``make_throwaway_place`` copies a baseplate to a ``roblox-studio-*.rbxl`` temp
 file that Studio holds open while it runs, so nothing here can delete it at
 exit: the exit is unobservable without a process handle, and on Windows the
 remove fails while Studio holds the file. The policy is therefore explicit
 rather than automatic - the caller removes its copy with
-``cleanup_throwaway_place`` when done, and ``prune_stale_throwaway_places``
-sweeps copies older than its threshold. The guard is the load-bearing part: a
+``cleanup_throwaway_place`` when done. The guard is the load-bearing part: a
 cleanup call must never remove a file this project did not make.
 """
 
@@ -92,38 +91,6 @@ class CleanupThrowawayPlace(unittest.TestCase):
                 handle.write(b"do not touch")
             self.assertFalse(inst.cleanup_throwaway_place(planted))
             self.assertTrue(os.path.exists(planted))
-
-
-class PruneStaleThrowawayPlaces(unittest.TestCase):
-    def test_removes_only_copies_older_than_the_threshold(self):
-        tmpdir = tempfile.gettempdir()
-        old = tempfile.mkstemp(
-            prefix=inst.THROWAWAY_PREFIX,
-            suffix=inst.THROWAWAY_SUFFIX,
-            dir=tmpdir,
-        )[1]
-        fresh = tempfile.mkstemp(
-            prefix=inst.THROWAWAY_PREFIX,
-            suffix=inst.THROWAWAY_SUFFIX,
-            dir=tmpdir,
-        )[1]
-        foreign = os.path.join(tmpdir, "prune-probe-not-a-throwaway.txt")
-        with open(foreign, "w") as handle:
-            handle.write("do not touch")
-        ancient = 1_000_000_000.0
-        os.utime(old, (ancient, ancient))
-        try:
-            got = inst.prune_stale_throwaway_places(max_age_seconds=3600)
-            self.assertFalse(os.path.exists(old), got)
-            self.assertTrue(os.path.exists(fresh), got)
-            self.assertTrue(os.path.exists(foreign), got)
-            self.assertGreaterEqual(got["scanned"], 2, got)
-            self.assertGreaterEqual(got["removed"], 1, got)
-        finally:
-            inst.cleanup_throwaway_place(fresh)
-            os.remove(foreign)
-            if os.path.exists(old):
-                os.remove(old)
 
 
 if __name__ == "__main__":

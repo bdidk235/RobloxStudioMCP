@@ -573,8 +573,7 @@ def make_throwaway_place() -> str:
     nothing here deletes it automatically. Deleting at exit would need a
     lifetime rule this module cannot observe (Studio's exit), and on Windows
     the delete fails while Studio holds the file anyway. When done, remove it
-    with :func:`cleanup_throwaway_place`; copies older than a threshold can be
-    swept with :func:`prune_stale_throwaway_places`.
+    with :func:`cleanup_throwaway_place`.
     """
     source = find_baseplate()
     if not source:
@@ -617,46 +616,6 @@ def cleanup_throwaway_place(path: str) -> bool:
     except OSError:
         return False
     return True
-
-
-def prune_stale_throwaway_places(
-    max_age_seconds: float = 7 * 24 * 3600,
-) -> Dict[str, int]:
-    """Remove temp copies older than ``max_age_seconds`` (default 7 days).
-
-    The age gate is the lifetime rule :func:`make_throwaway_place` cannot
-    observe directly: a copy younger than the threshold may still belong to a
-    running Studio, so only older ones are removed. Returns counts as
-    ``{"scanned": n, "removed": n, "failed": n}``; ``failed`` covers files
-    that vanished mid-sweep or are still held open.
-    """
-    try:
-        tmpdir = os.path.abspath(tempfile.gettempdir())
-    except OSError:
-        return {"scanned": 0, "removed": 0, "failed": 0}
-    try:
-        names = os.listdir(tmpdir)
-    except OSError:
-        return {"scanned": 0, "removed": 0, "failed": 0}
-    now = time.time()
-    scanned = removed = failed = 0
-    for name in names:
-        if not (name.startswith(THROWAWAY_PREFIX)
-                and name.endswith(THROWAWAY_SUFFIX)):
-            continue
-        scanned += 1
-        full = os.path.join(tmpdir, name)
-        try:
-            if now - os.stat(full).st_mtime < max_age_seconds:
-                continue
-        except OSError:
-            failed += 1
-            continue
-        if cleanup_throwaway_place(full):
-            removed += 1
-        else:
-            failed += 1
-    return {"scanned": scanned, "removed": removed, "failed": failed}
 
 
 # --------------------------------------------------------------------------- #
