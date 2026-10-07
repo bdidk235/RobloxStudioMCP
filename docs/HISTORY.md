@@ -38,7 +38,7 @@ gives the old→new mapping for all 44 shas cited here.
 | Tracked files on `parity` | **168**, of which **56** under `node/` | `git ls-tree -r --name-only parity` |
 | Live gate | **744 passed, 2 skipped, 206 subtests** | `python -m pytest tests -q` from `python/` |
 | Contract surface | 16 tools, 3,025 of 3,200 description chars, 450 per tool | `contract/tools.json` |
-| Open work | **36** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
+| Open work | **34** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
 | `docs/EVIDENCE.md` | 1,570 lines, 26 `##` sections | `wc -l`, `grep -c '^## '` |
 | `AGENTS.md` | **2,250** words against a 2,259 ceiling — **9 to spare** | `python -c "print(len(open('AGENTS.md').read().split()))"` |
 | Remote | `https://github.com/bdidk235/RobloxStudioMCP_Full.git` (private) | `git config --get remote.origin.url` |
@@ -455,11 +455,11 @@ lines from that fix and re-proved the same mutation ladder.
 
 ## 8. What is deliberately still open
 
-**36** top-level `- [ ]` items in `TODO.md`, distributed:
+**34** top-level `- [ ]` items in `TODO.md`, distributed:
 
 | section | open |
 |---|---|
-| Open items: skills and guards, reviewed 2026-10-01 | 10 |
+| Open items: skills and guards, reviewed 2026-10-01 | 8 |
 | Remaining | 8 |
 | macOS | 5 |
 | `extended_wait_for`'s probe only works in Edit mode | 4 |
@@ -468,6 +468,7 @@ lines from that fix and re-proved the same mutation ladder.
 | Session operations | 1 |
 | Launch routes fail at different layers | 1 |
 | Housekeeping | 1 |
+| Found by external review 2026-10-07 | 0 (all 9 done 2026-10-08) |
 
 Plus **6** entries under `## Withdrawn — do not re-derive these`.
 
@@ -827,7 +828,7 @@ Four files, four jobs, deliberately not merged:
 
 | file | holds | do not put there |
 |---|---|---|
-| `TODO.md` | open work (36 items) and the 6 withdrawals | closed research |
+| `TODO.md` | open work (34 items) and the 6 withdrawals | closed research |
 | `docs/EVIDENCE.md` | closed research, provenance tagged `MEASURED` / `DOCUMENTED` / `INFERRED` / `UNVERIFIED` | open work |
 | `AGENTS.md` | standing rules and the gates table | any figure that a generated artefact owns |
 | `contract/tools.json` | the generated surface and its budget | hand-edits — it is generated |

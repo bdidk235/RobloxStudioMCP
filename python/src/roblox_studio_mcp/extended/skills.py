@@ -8,7 +8,8 @@ engine-level recipes (``rbx-debug``, ``rbx-device-simulator-lua``,
 the *engine*. What they do not cover is *this transport*, and the transport is
 where the traps are: the 100,015-character return truncation, the
 6,291,456-byte scratch-module ceiling, the console arriving as one line with
-literal newlines, ``ContinueExecution = false`` hanging the calling tool call,
+literal newlines on some consumers (real newlines on others - match, do not
+parse), ``ContinueExecution = false`` hanging the calling tool call,
 a per-call registry folder that makes ``list`` look empty, and dot-free instance
 names.
 

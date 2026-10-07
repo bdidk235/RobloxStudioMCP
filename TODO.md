@@ -101,11 +101,11 @@
 
 - [ ] **`rsx-discovery.md` — missing, partly fixed.** Re-measured 2026-10-05: the capability gate **is** now documented (`rsx-discovery.md:128-134` — `game.UniqueId`, the `RobloxScript` capability, and why reflection cannot answer it either), and the telemetry duplication is gone (no `telemetryLog` in `rsx-targeting.md`). Still missing: the array/`Vector2` return shapes, in the one skill that pushes APIs returning arrays; any `see also` boundary; and `settings()` still sits under the reflection heading at `:38` rather than in the capability story, so the no-process-id ruling is incomplete.
 
-- [ ] **`rsx-transport.md` — stale after the base64 fix.** Re-measured 2026-10-05: the slice sub-item **is** done (`rsx-transport.md:108-115` documents it as a speed knob with the measurement), so that clause is struck. The rest are all still missing, verified by reading the file: no ` 1->` line prefixes anywhere (they **corrupt base64 if left in** and produce a valid-looking wrong image); no wait-for hung-poll abort; nothing on the array note riding a **second content block** that our own `text()` collapses, so the note appends prose after the JSON and a caller that trims to parse discards it. It also still points at `REQUEST-luau-return-shapes.md`, which is not in the repo (`git ls-files` lists no such file).
+- [ ] **`rsx-transport.md` — stale after the base64 fix.** Re-measured 2026-10-05: the slice sub-item **is** done (`rsx-transport.md:108-115` documents it as a speed knob with the measurement), so that clause is struck. **Partly fixed 2026-10-08:** the ` 1->` prefix warning is now in the skill (verified against `strip_line_prefixes` in `capture.py:244`, which states the prefixes "are never safe to leave in"), and the dead `REQUEST-luau-return-shapes.md` pointer is gone — no in-repo target exists, so the paragraph itself is now the record. Still missing: no wait-for hung-poll abort; nothing on the array note riding a **second content block** that our own `text()` collapses.
 
   > **Partly resolved 2026-10-03** - the tracker had marked the whole item done on the strength of the slice fix alone. Re-opened 2026-10-05 against the file.
 
-- [ ] **Cross-file:** the one-line console shape is still asserted unscoped in `python/src/roblox_studio_mcp/extended/breakpoints.py:32-35` ("The console arrives as ONE line with literal `\n` escapes") and `extended/skills.py:10`, where `rsx-console.md` and `rsx-breakpoints.md:121-128` both scope it to the consumer path. Re-measured 2026-10-05: `extended_server.py` no longer carries the claim, so the item that named it was half stale. `python/README.md:194` still says base64 is computed in Luau — true of the chunked write, but `capture.py:454` base64-encodes host-side too, so it reads as the only route. Fixing one side of each leaves the falsehood live elsewhere.
+- [x] **DONE 2026-10-08 — all three sites scoped.** `breakpoints.py:32-35`, `extended/skills.py:10`, and `python/README.md:194` (which also now notes `extended_capture` encodes host-side, verified at `capture.py:454`) all state both console shapes. The skill already scoped it, so the code caught up to the docs rather than the reverse.
 
 - [ ] **Gate gap: a unit test that calls the function instead of the dispatch path cannot see a missing `await`.** Worth one test per guard that drives the real JSON-RPC entry point. The Python guard now has one; the Node side has four.
 
@@ -123,7 +123,7 @@
 
 - [ ] **`rsx-playtest.md`'s "confirmed" claims need the same treatment** — three unsourced, listed above.
 
-- [ ] **`rsx-breakpoints.md` returns two more undocumented keys** — `hit_prefix` and `how_to_read_hits`, re-measured 2026-10-05 at `extended_server.py:1053-1056` (not the 1012-1022 an earlier revision gave). Neither appears in the skill. Found 2026-10-03 while fixing the `added`/`removed` item; out of scope there and not yet written up.
+- [x] **DONE 2026-10-08 — both keys are documented in the skill.** `hit_prefix` and `how_to_read_hits` (returned at `extended_server.py:1053-1054`) now appear in `rsx-breakpoints.md` with their literal values, so callers stop re-deriving them.
 
 ### Remaining
 

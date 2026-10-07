@@ -48,8 +48,9 @@ to the result when it sees an object whose keys are exactly `"1".."n"` with `n
 above. If you see that note, the shape is present; deciding whether it was
 meant to be an array is a question only the source can answer.
 
-This came from `REQUEST-luau-return-shapes.md` in this repo, where a 165-row
-driver returned `{}` with **no error** - caught only because the next probe
+This came from a 165-row driver run (the originating note is not in this
+repo, and no pointer to it survives — so this paragraph is the record), where
+the driver returned `{}` with **no error** - caught only because the next probe
 compared a row count and noticed zero. That is the failure mode this project
 exists to prevent: a well-formed, confidently-delivered, structurally-wrong
 answer.
@@ -135,6 +136,11 @@ base64 characters you need. Encode base64 explicitly.
 local ES = game:GetService("EncodingService")
 return ES:Base64Encode(buffer)   -- then buffer.tostring() to move ASCII out
 ```
+
+**Strip `script_read`'s line prefixes before encoding.** It prefixes every line
+with `     1->`, and leaving them in corrupts the base64 into a valid-looking
+wrong image. `strip_line_prefixes` (`capture.py`) removes them; the 7-character
+single-line overhead is not the problem, the corruption is.
 
 Measured on a real 3,718,728-byte frame: **7.5 ms + 5 ms**, against **527 ms**
 for a hand-rolled per-3-byte Luau loop on the same input. That is a 70x tax, and

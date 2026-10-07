@@ -29,10 +29,13 @@ Three things that are not optional, each of them learned the hard way:
   a fresh invocation, so a per-call registry folder reads as empty to the next
   one. That produced a ``list`` that always returned nothing while the
   breakpoint itself worked perfectly.
-* **Read hits by pattern, not by line.** The console arrives as ONE line with
-  literal ``\n`` escapes, so ``splitlines()`` finds a single line and a
-  digit scan swallows the interleaved output around each hit. Match the
-  expression's own text instead.
+* **Read hits by pattern, not by line.** The console's newline shape is
+  consumer-dependent - through some callers it arrives as ONE line with
+  literal ``\n`` escapes, through the agent caller path with real newlines -
+  so ``splitlines()`` is right on one shape and silently wrong on the other.
+  Match the expression's own text (or the ``Breakpoint `` hit prefix) instead
+  of parsing lines; see ``rsx-breakpoints`` for the digit-scan failure that
+  made 60 correct hits look like garbage.
 
 ``Plugin:GetSetting``-backed breakpoint persistence, as used by Chrrxs, is
 plugin-only and does not port. Everything here is a plain service call.

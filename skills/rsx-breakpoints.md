@@ -118,6 +118,10 @@ looks like the debugger is broken when it is fine.
 Hits are ordinary console lines, so `extended_watch_output` carries them in the
 same stream as everything else. Filter on the `Breakpoint ` prefix.
 
+The tool returns the prefix and the read recipe as literal keys, so callers do
+not re-derive them: `hit_prefix` is `"Breakpoint "`, and `how_to_read_hits` is
+"`extended_watch_output` with `pattern='^Breakpoint '`; each hit is one line."
+
 Match the pattern, do not parse lines — unconditionally. The console's newline
 shape is consumer-dependent: on some consumers it arrives as one line with
 literal `\n` escapes, and through the agent caller path it arrives with real

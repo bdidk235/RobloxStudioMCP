@@ -191,7 +191,7 @@ How it works, because the constraints are not obvious:
 | Step | Detail |
 | --- | --- |
 | Read | `CaptureService:CaptureScreenshot` → `CreateEditableImageAsync` → **one** `ReadPixelsBuffer`. No 1024px tiling: 2048x1024 (2 M px) reads back exactly. |
-| Encode | base64 computed in Luau — `buffer.tostring` is *not* base64, it returns a byte-string of the input length. |
+| Encode | base64 computed in Luau for the chunked-write path (`buffer.tostring` is *not* base64, it returns a byte-string of the input length); `extended_capture`'s PNG return is encoded host-side instead. |
 | Write | chunked into a scratch `ModuleScript` under `PluginGuiService` via `ScriptEditorService:UpdateSourceAsync(target, cb)`. Ceiling 6,291,456 B; 8 MB fails `bad allocation`. |
 | Read back | `script_read`, stripping its `     1→` line prefixes. |
 
