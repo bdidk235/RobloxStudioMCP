@@ -1262,15 +1262,12 @@ async def _resolve_by_console_token(
 def terminate_process(pid: int, *, grace_seconds: float = 8.0) -> Dict[str, Any]:
     """Terminate a process and confirm it went away.
 
-    The single place this module kills anything, so the blast radius is
-    auditable: a PID must be resolved from a ``studio_id`` first, never guessed.
+    Kills via :func:`platform.terminate`, which branches on the host platform
+    (``Stop-Process`` on Windows, ``kill -9`` elsewhere), so the blast radius
+    is auditable: a PID must be resolved from a ``studio_id`` first, never
+    guessed.
     """
-    proc = subprocess.Popen(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-         f"Stop-Process -Id {int(pid)} -Force -ErrorAction SilentlyContinue"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    proc.wait(timeout=30)
+    platform.terminate(int(pid))
     deadline = time.monotonic() + grace_seconds
     while time.monotonic() < deadline:
         if not _pid_alive(pid):

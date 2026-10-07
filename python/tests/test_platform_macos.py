@@ -408,5 +408,38 @@ class Termination(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][:2], ["kill", "-9"])
 
 
+class TerminateProcessRouting(unittest.TestCase):
+    def test_delegates_to_platform_terminate(self):
+        with mock.patch.object(instance.platform, "terminate") as term, \
+             mock.patch.object(instance, "_pid_alive", return_value=False):
+            result = instance.terminate_process(4700)
+        term.assert_called_once_with(4700)
+        self.assertEqual(result, {"stopped": True, "pid": 4700})
+
+    def test_windows_path_issues_stop_process(self):
+        with mock.patch.object(platform, "is_windows", return_value=True), \
+             mock.patch.object(platform.subprocess, "run") as run, \
+             mock.patch.object(instance, "_pid_alive", return_value=False):
+            result = instance.terminate_process(4700)
+        self.assertIn("Stop-Process", " ".join(run.call_args.args[0]))
+        self.assertEqual(result, {"stopped": True, "pid": 4700})
+
+    def test_macos_path_issues_kill(self):
+        with mock.patch.object(platform, "is_windows", return_value=False), \
+             mock.patch.object(platform.subprocess, "run") as run, \
+             mock.patch.object(instance, "_pid_alive", return_value=False):
+            result = instance.terminate_process(4700)
+        self.assertEqual(run.call_args.args[0][:3],
+                         ["kill", "-9", "4700"])
+        self.assertEqual(result, {"stopped": True, "pid": 4700})
+
+    def test_grace_expiry_reports_error(self):
+        with mock.patch.object(instance.platform, "terminate"), \
+             mock.patch.object(instance, "_pid_alive", return_value=True):
+            result = instance.terminate_process(4700, grace_seconds=0)
+        self.assertFalse(result["stopped"])
+        self.assertIn("error", result)
+
+
 if __name__ == "__main__":
     unittest.main()

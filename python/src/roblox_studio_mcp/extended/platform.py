@@ -334,7 +334,8 @@ def open_uri(uri: str) -> None:
 
 
 def terminate(pid: int) -> None:
-    """Kill a process. Blocking, and the only place in the project that kills."""
+    """Kill a process. Blocking. The single kill primitive: ``instance`` stops
+    processes by calling this, so both platforms are handled here."""
     if is_windows():
         subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command",
