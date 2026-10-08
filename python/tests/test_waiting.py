@@ -159,10 +159,6 @@ class TestProbeWrapper(unittest.TestCase):
         literal = _luau_string('say "hi" \\ and \n newline')
         self.assertIn('say "hi" \\ and \n newline', literal)
 
-    def test_escapes_are_unnecessary_and_omitted(self):
-        literal = _luau_string('say "hi" \\ and \n newline')
-        self.assertIn('say "hi" \\ and \n newline', literal)
-
 
 class TestParseProbe(unittest.TestCase):
     def test_plain_true(self):

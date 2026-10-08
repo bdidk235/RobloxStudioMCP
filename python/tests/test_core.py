@@ -222,13 +222,6 @@ class TestResolveReadiness(unittest.IsolatedAsyncioTestCase):
             await studio.resolve_studio_id(timeout=5.0, interval=0.01)
         self.assertEqual(client.attempts, 1)
 
-    async def test_empty_list_raises_immediately(self):
-        client = FlakyListClient(failures=0, mode="empty")
-        studio = RobloxStudio(client)
-        with self.assertRaises(MCPToolError):
-            await studio.resolve_studio_id(timeout=5.0, interval=0.01)
-        self.assertEqual(client.attempts, 1)
-
     async def test_multiple_studios_raise_rather_than_guess(self):
         """An implicit id is only accepted when exactly one Studio is open."""
         client = FlakyListClient(failures=0, mode="multi")

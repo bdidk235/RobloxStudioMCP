@@ -410,7 +410,7 @@ class LibrarySiteFaults(unittest.TestCase):
         for case in CONTRACT["sites"]:
             if case["code"] == "INVALID_ARGUMENT" or case.get("why"):
                 continue
-            self.fail("%s is INVALID_ARGUMENT with no recorded reason" % case["site"])
+            self.fail("%s is not INVALID_ARGUMENT and records no reason" % case["site"])
 
     def test_the_integrity_checks_stay_off_invalid_argument(self):
         """The capture sites check *our* consistency, not the caller's request.
