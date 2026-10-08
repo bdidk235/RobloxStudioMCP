@@ -638,9 +638,9 @@ _EXTENDED_TOOLS.extend(
         Tool(
             name="extended_skill",
             description=(
-                "Fetch a transport skill from the repo's skills/ folder; omit "
-                "skill_name for the index.  Read one before driving the transport: "
-                "these cover its traps, not the engine."
+                "Fetch a transport skill shipped inside this package; omit "
+                "skill_name for the index.  Read one before driving the "
+                "transport: these cover its traps, not the engine."
             ),
             input_schema={
                 "type": "object",

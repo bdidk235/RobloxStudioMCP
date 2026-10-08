@@ -16,8 +16,8 @@ import pathlib
 import re
 import unittest
 
-_SKILLS = pathlib.Path(__file__).parent.parent.parent / "skills"
-_SRC = _SKILLS.parent / "python" / "src" / "roblox_studio_mcp"
+_SKILLS = pathlib.Path(__file__).parent.parent / "src" / "roblox_studio_mcp" / "skills"
+_SRC = _SKILLS.parent
 
 # Bare filenames resolve here first: ``capture.py`` means the module, not a
 # coincidentally-named test fixture.
@@ -25,10 +25,12 @@ _ROOTS = [
     _SKILLS,
     _SRC / "extended",
     _SRC,
-    _SKILLS.parent / "python",
-    _SKILLS.parent / "python" / "tests",
-    _SKILLS.parent,
+    _SRC.parent,
+    _SRC.parent.parent,
+    _SRC.parent.parent / "tests",
+    _SRC.parent.parent.parent,
 ]
+
 
 _REF = re.compile(
     r"(?<![/\w:])"  # not part of a URL or a longer token
@@ -68,6 +70,14 @@ def _problems(text_file):
 
 
 class TestSkillPointersResolve(unittest.TestCase):
+    def test_the_skills_folder_exists(self):
+        # Without this, a moved or renamed folder makes the loop below iterate
+        # over nothing and the whole file passes vacuous.
+        self.assertTrue(_SKILLS.is_dir(), f"no skills folder at {_SKILLS}")
+        self.assertGreaterEqual(
+            len(list(_SKILLS.glob("*.md"))), 5, f"{_SKILLS} holds too few skills"
+        )
+
     def test_every_file_line_pointer_names_a_real_line(self):
         problems = []
         for skill in sorted(_SKILLS.glob("*.md")):
