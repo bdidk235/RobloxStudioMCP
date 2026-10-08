@@ -744,14 +744,40 @@ def parse_identity(text: str) -> Dict[str, Any]:
 #: PID falls back to a full read rather than reporting a process as unidentified.
 PREFIX_BYTES = 256 * 1024
 
+#: Ceiling on the full-file fallback in :func:`read_identity`, in bytes.
+#:
+#: The fallback exists for one case: a log still being written, whose PID line
+#: has not landed yet, must not be reported as an unidentified process. That is
+#: a *freshness* race, and it is decided in the first few KB — the largest of 43
+#: measured logs is 3,809 bytes in a 1.7 MB file.
+#:
+#: So the ceiling is sized on the corpus rather than on the big end: 4 MiB is
+#: ~2.4x the largest log measured here, and an order of magnitude past any log
+#: a Studio is expected to produce. Reading without a limit instead meant one
+#: hostile or corrupt file — user-writable, and read on every sweep — could pull
+#: an arbitrary number of bytes into memory.
+#:
+#: When the ceiling bites, the read is *marked* rather than silent:
+#: ``read_truncated: True`` rides along with the identity, so "we stopped
+#: reading" cannot be mistaken for "the PID is not in this log". A silent cap
+#: here would convert a bounded read into a plausible wrong answer, which is the
+#: failure class this project keeps paying for.
+FULL_READ_BYTES = 4 * 1024 * 1024
+
 
 def read_identity(path: str) -> Optional[Dict[str, Any]]:
     """Read one log file's identity, or ``None`` if it is unreadable.
 
-    Reads a prefix, and only escalates to the whole file when the prefix has no
-    PID. Everything needed is within 4 KB in practice, but "in practice" is not a
-    guarantee for a log that is still being written, and silently reporting no PID
-    for a live process would drop it from the join entirely.
+    Reads a prefix, and only escalates to the whole file — bounded by
+    :data:`FULL_READ_BYTES` — when the prefix has no PID. Everything needed is
+    within 4 KB in practice, but "in practice" is not a guarantee for a log that
+    is still being written, and silently reporting no PID for a live process
+    would drop it from the join entirely.
+
+    The returned identity carries ``read_truncated`` (``False`` in the ordinary
+    case), so a caller can tell a capped read from a log that simply has no PID
+    further down. See :data:`FULL_READ_BYTES` for why that distinction is
+    load-bearing.
 
     ``None`` on failure is deliberate: a log that is locked, mid-rotation, or
     unreadable is a normal condition, and a resolver that raised here would fail
@@ -760,8 +786,14 @@ def read_identity(path: str) -> Optional[Dict[str, Any]]:
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as handle:
             text = handle.read(PREFIX_BYTES)
+            truncated = False
             if _PID_RE.search(text) is None:
-                rest = handle.read()
+                # Read one byte past the cap so "there was more" is observable
+                # rather than inferred, then drop it.
+                rest = handle.read(FULL_READ_BYTES + 1)
+                truncated = len(rest) > FULL_READ_BYTES
+                if truncated:
+                    rest = rest[:FULL_READ_BYTES]
                 if rest:
                     text += rest
     except OSError:
@@ -769,6 +801,7 @@ def read_identity(path: str) -> Optional[Dict[str, Any]]:
 
     identity = parse_identity(text)
     identity["log"] = platform.basename(path)
+    identity["read_truncated"] = truncated
     return identity
 
 

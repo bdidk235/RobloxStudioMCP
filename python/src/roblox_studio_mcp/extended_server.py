@@ -37,6 +37,7 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
+    Iterable,
     List,
     Optional,
 )
@@ -1325,7 +1326,17 @@ async def _call_list_studios(
             place_id=selector.get("place_id"),
         )
     elif refresh:
-        result = await list_instances()
+        # The server's own client, wrapped - not a fresh `connect()`. Measured
+        # live 2026-10-08: a `RobloxStudio.connect()` adds a `StudioMCP.exe`
+        # proxy that survives the client closing, and 8 were alive for one
+        # attached Studio. So one `extended_list_studios` call cost one more of
+        # those, for a connection that was already open and already paid for.
+        #
+        # `list_instances` takes the wrapper as its first parameter and only
+        # closes a client it opened itself, so nothing about the result changes:
+        # same rows, one proxy.
+        studio = _RobloxStudio(client=client, studio_id=arguments.get("studio_id"))
+        result = await list_instances(studio, refresh=True)
     else:
         from .extended.registry import load_all, registry_path
 
@@ -1588,6 +1599,36 @@ def _closest(key: str, declared: frozenset) -> Optional[str]:
 # JSON-RPC relay loop (matches the existing server.py style)
 # --------------------------------------------------------------------------- #
 
+#: Where a `tools/list` row came from. The list is a merge of two surfaces with
+#: one request id and no other marker, so "which implementation answers this
+#: call" was a thing a caller had to infer from the description. It cannot be
+#: inferred: ours say `extended_`, but the *steer* text appended to a relayed row
+#: names `extended_*` tools too, and a description is the one field this proxy
+#: deliberately rewrites.
+#:
+#: Two values, not a boolean, because the answer to "is this ours?" has a third
+#: state on a row this proxy does not produce at all.
+ORIGIN_RELAYED = "relayed"
+ORIGIN_EXTENDED = "extended"
+
+
+def _disabled_tool_names(client: MCPClient) -> set:
+    """The tools this client refuses to expose or call.
+
+    Read through ``getattr`` for the same reason ``server.py:106`` does: a
+    client double in a test may not be an :class:`MCPClient`, and a proxy that
+    raises on its own configuration is worse than one that ignores it. An
+    omitted set means "nothing is disabled", which is also the correct answer
+    for every client constructed before this was wired up. A non-set (a Mock,
+    a ``__getattr__`` double serving a function) is treated the same way:
+    only a real set of names can disable anything.
+    """
+    names = getattr(client, "disabled_tools", None)
+    if not isinstance(names, (set, frozenset)):
+        return set()
+    return set(names)
+
+
 def _send(message: Dict[str, Any]) -> None:
     sys.stdout.buffer.write(
         (json.dumps(message, separators=(",", ":"), ensure_ascii=False) + "\n").encode(
@@ -1664,8 +1705,30 @@ async def _handle_message(
                     "description": f"{t.get('description') or ''} {steer}".strip(),
                 }
             annotated.append(t)
-        base_tools = annotated
-        extended_dicts = [t.to_dict() for t in _EXTENDED_TOOLS]
+        # Every row says where it came from. The merged list is 28 relayed rows
+        # plus 16 of ours, and nothing else on the wire distinguishes them: a
+        # caller comparing descriptions cannot tell a Roblox one from an
+        # `extended_*` one, which matters the moment they differ — and the
+        # steers above make them differ on purpose.
+        base_tools = [
+            {**t, "origin": ORIGIN_RELAYED} if isinstance(t, dict) else t
+            for t in annotated
+        ]
+        extended_dicts = [
+            {**t.to_dict(), "origin": ORIGIN_EXTENDED} for t in _EXTENDED_TOOLS
+        ]
+        # Honor client-side disabled_tools even though we proxy raw. The base
+        # server does this at server.py:104-112 and this proxy did neither half,
+        # so a caller who disabled a tool still saw it in the list and could
+        # still call it through here.
+        disabled = _disabled_tool_names(client)
+        if disabled:
+            base_tools = [
+                t for t in base_tools if t.get("name") not in disabled
+            ]
+            extended_dicts = [
+                t for t in extended_dicts if t.get("name") not in disabled
+            ]
         _send(
             {
                 "jsonrpc": "2.0",
@@ -1680,6 +1743,23 @@ async def _handle_message(
             return
         name = (params or {}).get("name")
         arguments = (params or {}).get("arguments") or {}
+
+        # Before any dispatch, extended or relayed. A disabled tool must not run
+        # its handler at all, and putting the check here keeps it ahead of the
+        # extended-name priority below rather than racing it.
+        disabled = _disabled_tool_names(client)
+        if name in disabled:
+            _send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": message["id"],
+                    "error": {
+                        "code": -32602,
+                        "message": f"Tool {name!r} is disabled.",
+                    },
+                }
+            )
+            return
 
         if name in _EXTENDED_HANDLERS:
             # Reject unknown parameters *before* dispatch (request P0.2a).
@@ -1785,11 +1865,27 @@ async def _handle_message(
         )
 
 
-async def serve(client: Optional[MCPClient] = None) -> None:
-    """Run the extended stdio proxy until stdin closes."""
+async def serve(
+    client: Optional[MCPClient] = None,
+    disabled_tools: Optional[Iterable[str]] = None,
+) -> None:
+    """Run the extended stdio proxy until stdin closes.
+
+    ``disabled_tools`` is honoured the same way the base proxy honours it
+    (``server.py``): the tools are hidden from ``tools/list`` and refused on
+    ``tools/call``. It only applies when this function constructs the client —
+    a caller who supplies one already decided, and the client carries its own
+    set (``MCPClient(..., disabled_tools=...)``). Passing both is not an error;
+    the supplied client's set is the one that is used.
+    """
     owns_client = client is None
     if client is None:
-        client = MCPClient(default_command(), default_args(), shell=default_shell())
+        client = MCPClient(
+            default_command(),
+            default_args(),
+            shell=default_shell(),
+            disabled_tools=disabled_tools,
+        )
         await client.connect()
 
     try:

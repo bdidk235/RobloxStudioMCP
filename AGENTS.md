@@ -102,9 +102,9 @@ project keeps paying for:
 
 - **Unknown arguments are refused** before dispatch. A silently
   ignored parameter produces a *plausible wrong answer* and reports success —
-  three separate incidents here did exactly that. Relayed Studio tools
-  (`screen_capture`) are deliberately exempt, because this project cannot add
-  parameters to them.
+  three separate incidents here did exactly that. Relayed tools are fully
+  exempt: the check is inside the extended-handler branch, since parameters
+  can't be added to Roblox's tools.
 - **`tests/test_closed_sets.py`** checks exhaustiveness over the closed sets:
   every error code is producible, every advertised `action` is handled rather
   than merely accepted. This is what found `LAUNCH_FAILED` being unreachable —

@@ -23,19 +23,60 @@ DEFAULT_PROTOCOL_VERSION = "2024-11-05"
 DEFAULT_TIMEOUT = 120.0
 _READ_CHUNK_SIZE = 65536
 
+#: Ceiling on one inbound message, in bytes.
+#:
+#: Deliberately generous, because the largest message this transport legitimately
+#: carries is measured, not guessed: the ``extended_capture`` path moves a whole
+#: framebuffer as base64 through ``script_read``, and the Studio-side write
+#: ceiling for that payload is **6,291,456 bytes** (``capture.py:23`` — 8 MB
+#: fails with ``bad allocation``), with line prefixes on top. 64 MiB is ~10x
+#: that, so no real call is affected.
+#:
+#: What it buys: an upstream that streams without a newline — a wedged proxy, a
+#: debug channel left on, or a hostile one — no longer grows this process's
+#: buffer until the host OOMs. Past this size nothing legitimate is in flight, so
+#: the response is to fail every pending request loudly rather than keep reading.
+MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+
+#: Absolute ceiling on one request, however much progress it reports.
+#:
+#: Progress is proof of life, and the extension exists so a long Studio call is
+#: not abandoned while it is still working. Unbounded, it is also a way to hold
+#: one request open forever: a server that notifies every 100 ms never lets a
+#: movable deadline arrive. So the deadline moves on every notification but can
+#: never pass this ceiling - a chatty server holds a request for 10 minutes at
+#: most, never forever. A fixed *count* of extensions was tried first and
+#: removed: it broke the pinned semantic that steady progress completes
+#: (`test_progress_extends_the_deadline`: 2.5 s of work on a 0.6 s timeout),
+#: while this ceiling bounds the threat without touching it.
+MAX_REQUEST_SECONDS = 600.0
+#:
+#: The second of two independent limits, because either alone is wrong: the
+#: extension count alone scales with ``timeout`` (a caller who sets a 600 s
+#: timeout gets 40 minutes), and this alone would let a slow-then-silent call be
+#: extended indefinitely in small steps. 600 s is ~10 minutes, and with the
+#: default 120 s timeout the extension count binds first (4 x 120 = 480 < 600),
+#: so this only bites on a caller who raised the timeout deliberately.
+MAX_REQUEST_SECONDS = 600.0
+
 
 async def _readline_unbounded(
     stream: "asyncio.StreamReader",
     buf: bytearray,
 ) -> bytes:
-    """Read one newline-terminated message without any size cap.
+    """Read one newline-terminated message, up to :data:`MAX_MESSAGE_BYTES`.
 
     ``StreamReader.readline()`` enforces its buffer ``limit`` (64KB by
     default) and raises ``LimitOverrunError`` on large payloads such as
     base64 screenshots. MCP stdio framing is one JSON value per line, so
     instead accumulate fixed-size ``read()`` chunks — which are not subject
-    to the line limit — until a newline is seen. Memory use is exactly one
-    message; there is no artificial cap to tune.
+    to the line limit — until a newline is seen. Memory use is one message,
+    bounded by the cap above rather than by whatever the peer chooses to send.
+
+    Raises :class:`MCPConnectionError` when a single line exceeds the cap. The
+    caller turns that into "every pending request failed", which is the point:
+    a message that large is a fault, not a payload, and it must not read as a
+    slow one.
     """
     while True:
         idx = buf.find(b"\n")
@@ -49,6 +90,18 @@ async def _readline_unbounded(
             buf.clear()
             return line
         buf += chunk
+        if len(buf) > MAX_MESSAGE_BYTES:
+            # Only reachable when no newline is in the buffer, i.e. the line
+            # itself is over the cap. Discard what was read: keeping it would
+            # hold the allocation this check exists to avoid.
+            size = len(buf)
+            buf.clear()
+            raise MCPConnectionError(
+                "one inbound message exceeded %d bytes (saw %d with no newline); "
+                "the largest legitimate payload on this transport is the base64 "
+                "capture at ~6 MB, so this is a fault rather than a large message"
+                % (MAX_MESSAGE_BYTES, size)
+            )
 
 
 class MCPClient:
@@ -116,8 +169,10 @@ class MCPClient:
         self._stderr_task: Optional[asyncio.Task] = None
         self._pending: Dict[int, asyncio.Future] = {}
         # Per-request deadline state, so a progress notification can push the
-        # deadline out instead of the whole call dying on a flat timer.
-        self._deadlines: Dict[int, Dict[str, float]] = {}
+        # deadline out instead of the whole call dying on a flat timer. Values
+        # are `deadline` (movable) and `until` (the absolute ceiling, never
+        # moved).
+        self._deadlines: Dict[int, Dict[str, Any]] = {}
         #: Called with (request_id, progress_dict) for each progress notification.
         self.on_progress: Optional[Callable[[int, Dict[str, Any]], None]] = None
         self._send_lock = asyncio.Lock()
@@ -295,7 +350,15 @@ class MCPClient:
         # `deadline` is separate from `future` so a progress notification can
         # push it out. A single asyncio.wait_for cannot express "extend when the
         # server shows signs of life", which is the whole point here.
-        state: Dict[str, float] = {"deadline": loop.time() + self.timeout}
+        #
+        # `until` is the ceiling that no notification can move. Without it an
+        # unbounded extension is a way to hold one request open forever: see
+        # MAX_REQUEST_SECONDS.
+        now = loop.time()
+        state: Dict[str, Any] = {
+            "deadline": now + self.timeout,
+            "until": now + MAX_REQUEST_SECONDS,
+        }
         self._pending[request_id] = future
         self._deadlines[request_id] = state
 
@@ -310,7 +373,10 @@ class MCPClient:
         await self._send(message)
         try:
             while True:
-                remaining = state["deadline"] - loop.time()
+                # The earlier of the movable deadline and the hard ceiling. A
+                # notification that arrives after `until` cannot buy more time,
+                # which is what stops a chatty server from running forever.
+                remaining = min(state["deadline"], state["until"]) - loop.time()
                 if remaining <= 0:
                     raise asyncio.TimeoutError
                 try:
@@ -322,13 +388,18 @@ class MCPClient:
                         # The shield was cancelled, not the future: a real
                         # result landed in the same tick the timer fired.
                         return future.result()
-                    if loop.time() >= state["deadline"]:
+                    if loop.time() >= min(state["deadline"], state["until"]):
                         raise
                     # A progress notification extended the deadline; keep going.
         except asyncio.TimeoutError:
+            # Names the ceiling rather than claiming no progress arrived: when
+            # it is what fired, notifications *did* arrive and were correctly
+            # refused past it. The old single-clause message was a lie on
+            # exactly the path this ceiling exists for.
             raise MCPConnectionError(
-                f"Timed out waiting for {method!r} after {self.timeout}s "
-                "(no progress notification arrived to extend it)"
+                f"Timed out waiting for {method!r}: {self.timeout}s per leg, "
+                f"{MAX_REQUEST_SECONDS:.0f}s hard ceiling however much "
+                f"progress arrived"
             ) from None
         finally:
             self._pending.pop(request_id, None)
@@ -434,7 +505,17 @@ class MCPClient:
             # finish. Requests that opted in carry a token equal to their id.
             state = self._deadlines.get(token) if isinstance(token, int) else None
             if state is not None:
-                state["deadline"] = asyncio.get_running_loop().time() + self.timeout
+                # Bounded by the absolute ceiling, not by a count: a fixed
+                # number of extensions broke the pinned semantic that steady
+                # progress completes, while the ceiling bounds the threat
+                # without touching it. A server that notifies continuously
+                # is otherwise indistinguishable from one making progress,
+                # and the request never ends.
+                now = asyncio.get_running_loop().time()
+                if now < state["until"]:
+                    state["deadline"] = min(
+                        now + self.timeout, state["until"]
+                    )
             if self.on_progress is not None and isinstance(token, int):
                 try:
                     self.on_progress(token, params)
