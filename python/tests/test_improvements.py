@@ -501,6 +501,20 @@ class TestRunTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(studio.started, 1)
         self.assertEqual(studio.stopped, 1)
 
+    async def test_unbounded_wait_is_refused_before_play(self):
+        """`wait_seconds` bounds the poll loop, so `1e9` is an unbounded
+        loop that only terminates if the console happens to go quiet - and
+        NaN never satisfies `>=` at all. Both are refused before `start_play`
+        runs, so a bad budget cannot wedge a session half-open."""
+        from roblox_studio_mcp.extended.errors import INVALID_ARGUMENT
+
+        for bad in (1e9, float("nan"), float("inf"), -1.0, "30", True):
+            studio = FakeStudio()
+            with self.assertRaises(ToolError, msg=repr(bad)) as caught:
+                await run_tests(studio, wait_seconds=bad)
+            self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
+            self.assertEqual(studio.started, 0, repr(bad))
+
     async def test_detects_errors_case_insensitive(self):
         studio = FakeStudio()
         studio.console_lines = ["SCRIPT ERROR: boom", "done"]

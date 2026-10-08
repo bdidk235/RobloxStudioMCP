@@ -623,6 +623,20 @@ async def run_tests(
 
     Returns {passed: bool, console_lines: [...], errors: [...]}
     """
+    # The loop below runs until output stabilises *or the budget runs out*,
+    # so an unbounded budget is an unbounded loop: `1e9` only terminates if
+    # the console happens to go quiet, and NaN never satisfies `>=` at all.
+    # Cap it at the client's own timeout horizon; anything above is a fault.
+    if (
+        isinstance(wait_seconds, bool)
+        or not isinstance(wait_seconds, (int, float))
+        or not 0 <= wait_seconds <= 120
+    ):
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"wait_seconds must be a number between 0 and 120, got "
+            f"{describe(wait_seconds)}.",
+        )
     missing: List[str] = []
     if test_paths:
         for path in test_paths:

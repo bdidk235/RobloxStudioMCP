@@ -42,6 +42,7 @@ class _NoStudioClient:
     protocol_version = "2024-11-05"
     capabilities = {}
     server_info = {"name": "dispatch-sweep-double"}
+    disabled_tools = set()
 
     def __getattr__(self, name):
         if name.startswith("__"):

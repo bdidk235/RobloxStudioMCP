@@ -154,5 +154,58 @@ class TheGuardIsRegistered(unittest.TestCase):
             )
 
 
+class UnknownArgumentsPassThroughOnRelayedTools(unittest.TestCase):
+    """The refusal is scoped to the extended table, not to unknown arguments.
+
+    `_reject_unknown_arguments` runs only inside the `name in
+    _EXTENDED_HANDLERS` branch, so EVERY relayed tool skips it - not just
+    `screen_capture`. This pins that scope with a second relayed tool, so a
+    later reader cannot conclude the exemption is per-tool.
+    """
+
+    def test_execute_luau_forwards_unknown_arguments_untouched(self):
+        import asyncio
+        from unittest import mock
+
+        import roblox_studio_mcp.extended_server as es
+
+        seen = {}
+
+        class RecordingClient:
+            async def request(self, method, params):
+                seen["method"] = method
+                seen["params"] = params
+                return {"content": [{"type": "text", "text": "ok"}]}
+
+        sent = []
+        with mock.patch.object(es, "_send", side_effect=lambda m: sent.append(m)):
+            asyncio.new_event_loop().run_until_complete(
+                es._handle_message(
+                    RecordingClient(),
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 7,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "execute_luau",
+                            "arguments": {
+                                "code": "return 1",
+                                "datamodel_type": "Edit",
+                                "not_a_real_argument": True,
+                            },
+                        },
+                    },
+                )
+            )
+        self.assertEqual(len(sent), 1, "one response, not several")
+        self.assertIn("result", sent[0], sent[0].get("error"))
+        # Untouched means untouched: the bogus key is still there, because
+        # this proxy cannot add parameters to Roblox's tools - or remove them.
+        self.assertTrue(
+            seen["params"]["arguments"].get("not_a_real_argument"),
+            seen["params"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

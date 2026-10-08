@@ -16,21 +16,34 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 from .client import MCPClient
 from .roblox import default_args, default_command, default_shell
 
 
-async def serve(client: Optional[MCPClient] = None) -> None:
+async def serve(
+    client: Optional[MCPClient] = None,
+    disabled_tools: Optional[Iterable[str]] = None,
+) -> None:
     """Run the stdio proxy until stdin closes.
 
     A connected ``client`` may be supplied (useful for tests); otherwise the
     default Studio MCP launch command is used and connected eagerly.
+
+    ``disabled_tools`` names tools to hide from ``tools/list`` and refuse on
+    ``tools/call``. It only applies when this function constructs the client; a
+    supplied client carries its own set (``MCPClient(..., disabled_tools=...)``)
+    and that is the one used.
     """
     owns_client = client is None
     if client is None:
-        client = MCPClient(default_command(), default_args(), shell=default_shell())
+        client = MCPClient(
+            default_command(),
+            default_args(),
+            shell=default_shell(),
+            disabled_tools=disabled_tools,
+        )
         await client.connect()
 
     try:
