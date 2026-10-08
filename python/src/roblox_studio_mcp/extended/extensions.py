@@ -199,8 +199,29 @@ async def script_search_and_read(
 
     An empty ``keywords`` is what the underlying tool takes for "no filter",
     which is what the schema already promised by making the parameter optional.
+
+    Shape faults fail here, before any Studio call: a ``root_path`` that is
+    not a game-tree path raises ``INVALID_ARGUMENT`` rather than returning
+    whatever the tree search happens to do with it, and a non-integer or
+    out-of-range ``max_results`` raises too. ``[]`` therefore means "the query
+    was well-formed and nothing matched" (or the payload was unparseable) -
+    with one known blind spot: a well-formed path that names nothing that
+    exists also returns [], because non-existence is not decidable without
+    the round trip whose error shape is unverified without live Studio.
     """
     import json as _json
+
+    from .grep import _bounded_int
+
+    if not isinstance(root_path, str) or not root_path.startswith(
+        _GAME_TREE_PREFIX
+    ):
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"root_path must be a game-tree path starting with "
+            f"{describe(_GAME_TREE_PREFIX)}; got {describe(root_path)}.",
+        )
+    max_results = _bounded_int("max_results", max_results, 1, 100)
 
     # Use search_game_tree to find scripts (requires datamodel_type for Edit mode).
     tree_result = await studio.search_game_tree(
