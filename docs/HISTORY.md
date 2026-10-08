@@ -38,7 +38,7 @@ gives the old→new mapping for all 44 shas cited here.
 | Tracked files on `parity` | **168**, of which **56** under `node/` | `git ls-tree -r --name-only parity` |
 | Live gate | **744 passed, 2 skipped, 206 subtests** | `python -m pytest tests -q` from `python/` |
 | Contract surface | 16 tools, 3,025 of 3,200 description chars, 450 per tool | `contract/tools.json` |
-| Open work | **44** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
+| Open work | **48** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
 | `docs/EVIDENCE.md` | 1,570 lines, 26 `##` sections | `wc -l`, `grep -c '^## '` |
 | `AGENTS.md` | **2,250** words against a 2,259 ceiling — **9 to spare** | `python -c "print(len(open('AGENTS.md').read().split()))"` |
 | Remote | `https://github.com/bdidk235/RobloxStudioMCP_Full.git` (private) | `git config --get remote.origin.url` |
@@ -455,14 +455,15 @@ lines from that fix and re-proved the same mutation ladder.
 
 ## 8. What is deliberately still open
 
-**44** top-level `- [ ]` items in `TODO.md`, distributed:
+**48** top-level `- [ ]` items in `TODO.md`, distributed:
 
 | section | open |
 |---|---|
 | Open items: skills and guards, reviewed 2026-10-01 | 2 |
 | Remaining | 7 |
 | macOS | 5 |
-| Found by all-mcprevs verification 2026-10-08 | 18 |
+| Found by all-mcprevs verification 2026-10-08 | 16 |
+| Security audit 2026-10-08: fix in severity order, A1 first | 6 |
 | `extended_wait_for`'s probe only works in Edit mode | 4 |
 | To do (recorded 2026-09-30, not yet built) | 3 |
 | Corrections to earlier notes in this file | 2 |
@@ -753,6 +754,7 @@ overwrites anything; the sources still say what they say.
 | 8 | §3 of this file: "`parity` **is an ancestor of `main`** … `main..parity` returns 0" | ancestor, 0 | **no longer related**: `git merge-base main parity` is **empty**, `main..parity` is **67** | 2026-10-06, by the rewrite |
 | 9 | §9.5 first draft: "Publishing is a push of the **two clean refs** … *Unverified: that push had not happened, and was still `size_kb=0`*" | pending, 2 refs | **published, `main` only**; 94 commits, **1.2 MB**, 0 blobs, 0 trailers, 0 secrets, suite green from a fresh clone of the public URL. `parity` omitted by decision | 2026-10-06, same day |
 | 10 | The working claim of 2026-10-06 that CI was red "account-side, not code" and "**nothing today is CI-verified**" | red everywhere; nothing verified | first half **right but not scoped**: it was never account-wide — it is private-only, proven by `06446a4` running **green** on the public repo (8 steps/job) while failing with **0** steps on `_Full`. Second half **wrong**: that public run *is* today's CI verification | 2026-10-06, same day |
+| 11 | §1/§8/§12 as committed in "Document the mcprevs verification residue": **44** open items, all-mcprevs section **18** | 44 / 18 | **42** at HEAD (`git show HEAD:TODO.md`), all-mcprevs section **16** — the count was taken sloppily and the file recorded it. Now 48 with the 6 security items. | 2026-10-08 |
 
 Rows 9 and 10 were both written into this file earlier the same day and were
 outgrown within the hour. They are kept rather than deleted so a reader who saw
@@ -832,7 +834,7 @@ Four files, four jobs, deliberately not merged:
 
 | file | holds | do not put there |
 |---|---|---|
-| `TODO.md` | open work (44 items) and the 6 withdrawals | closed research |
+| `TODO.md` | open work (48 items) and the 6 withdrawals | closed research |
 | `docs/EVIDENCE.md` | closed research, provenance tagged `MEASURED` / `DOCUMENTED` / `INFERRED` / `UNVERIFIED` | open work |
 | `AGENTS.md` | standing rules and the gates table | any figure that a generated artefact owns |
 | `contract/tools.json` | the generated surface and its budget | hand-edits — it is generated |

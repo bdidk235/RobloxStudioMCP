@@ -1670,3 +1670,46 @@ elsewhere - the two environments a checkout cannot fake.
 *Settles against:* a wheel built from this tree whose listing lacks
 `roblox_studio_mcp/skills/`, or an install from that wheel for which
 `load_skills()` returns something other than those 7 skills.
+
+---
+
+## External security audit (2026-10-08): 3 shippable findings, 10 lesser ones
+
+An external auditor read all of `python/src` plus tests, contract, `pyproject.toml`
+and CI, ran the suite (793 passed), and confirmed five findings with throwaway
+PoCs under `/tmp/opencode` — no repo files touched, no Studio contacted. Method
+and full text: the auditor's report is the record; what follows is the verdict
+table with independent re-verification where it was re-done here.
+
+**Independently re-verified here before recording:** A1 (zero `_confined` refs
+in `capture.py`; `extended_capture` in `_READONLY_TOOLS`) and A3 (only a
+`startswith("game.")` check, then `local parent = {container}` spliced raw).
+Both hold as stated.
+
+| # | severity | finding | status |
+|---|---|---|---|
+| A1 | HIGH | `extended_capture` writes any host file via unconfined `save_path`, while marked `readOnlyHint: true` | open |
+| A2 | HIGH | `allow_outside` turns confinement into a disclosure primitive (`~/.ssh/id_rsa` → `ModuleScript.Source` → model context in two calls) | open |
+| A3 | MEDIUM | game-tree paths splice raw into Luau (`local parent = {container}`); place content becomes executed code via search→write | open |
+| A4 | MEDIUM | `stop`: no confirm/dry-run, force-only kill, console-token fallback touches unnamed Studios, `studio_id` is a transport token | open (revalidation already landed) |
+| A5 | MEDIUM | kill target derived from user-writable log files; revalidation re-reads the same spoofable file | open |
+| A6 | LOW | `disabled_tools` honoured by `server.py`, silently ignored by `extended_server.py` | open |
+| A7 | LOW | unbounded reads (`_readline_unbounded`, full-file `read_identity` fallback) | open |
+| A8 | LOW | progress-token deadline extensions unbounded; relayed descriptions unmarked by origin | open |
+| A9 | LOW | `extended_list_studios` spawns a second proxy per call | open |
+| A10 | LOW | `wait_seconds` the one unbounded numeric (`1e9` self-terminates; weak DoS) | open |
+| A11 | LOW | `_reject_unknown_arguments` exemption covers all relayed tools, not just `screen_capture` as `AGENTS.md` states | open |
+| A12 | — | supply chain clean: stdlib-only true, no secrets/tokens, no install scripts; `apis.roblox.com` fetch validated, agent-unreachable | nothing to do |
+| A13 | — | no network surface of its own: no socket/bind/listen anywhere in `src` | nothing to do |
+
+**Deliberately not re-verified here:** B1 (mesh-name attacker control), B2 (macOS log parse), B3 (planted-log-to-kill end to end), B4 (`python/mac_live/`, uncommitted at audit time). Each names its own settling experiment in the report.
+
+**Credit the audit gives that checks out:** `resolve_studio_id` refuses to guess
+with candidates (`roblox.py:320-339`); unknown arguments refused before dispatch;
+extended names take dispatch priority so upstream cannot shadow them
+(`extended_server.py:1684`); the relay guard is awaited and wired (`:1737`); PID
+revalidation between resolve and kill is real.
+
+*Settles against:* a `save_path` outside the working directory being refused;
+`extended_capture` absent from `_READONLY_TOOLS`; a `target_path` containing a
+newline being refused rather than executed.

@@ -208,6 +208,19 @@ Eight defects and two stale figures, every one reproduced at the line cited. Ver
 
 - [x] **DONE 2026-10-08 — the rotted figure is gone.** The comment now says "unchanged pass count" with no number. Residual, needs a decision: `requires-python = ">=3.9"` is declared while CI pins 3.12, so the floor is never exercised — left alone as potentially breaking.
 
+### Security audit 2026-10-08: fix in severity order, A1 first
+
+External audit, PoC-confirmed where stated, verdicts in `docs/EVIDENCE.md`
+(*External security audit*). Severity is the auditor's; the file:line pointers
+were re-verified here for A1 and A3 before recording.
+
+- [ ] **A1 HIGH — confine `extended_capture`'s `save_path`, un-mark it read-only.** Today one call truncates any user-writable file with PNG bytes (no `_confined()` anywhere in `capture.py`), while `readOnlyHint: true` tells clients it is safe to parallelise. Route it through the same `_confined()` as the other file tools, drop it from `_READONLY_TOOLS`, add it to the `writes` set in `test_readonly_hints.py`.
+- [ ] **A2 HIGH — make confinement a policy, not a parameter.** `allow_outside` is a model-settable boolean with no gate; `file_type="script"` + read-back discloses any readable file into model context in two calls. Make the root a configured constant (`ROBLOX_STUDIO_MCP_FILE_ROOT`) instead of `Path.cwd()`, and treat `allow_outside` as operator configuration rather than a tool argument.
+- [ ] **A3 MEDIUM — one shared game-tree path validator.** `target_path`, `parent_path` and `root_path` get `^game(\.[A-Za-z_][A-Za-z0-9_]*)+$` with the received value in the error; anything with whitespace or a newline is refused outright. Place content must not become executed code through the search→write loop.
+- [ ] **A4 MEDIUM — scope guard + graceful path in front of `stop`.** Add `dry_run`/`confirm`; restrict the console-token fallback to the pool the caller's `studio_id` resolves to, never all live processes; `SIGTERM`-then-`SIGKILL` on POSIX, `Stop-Process` without `-Force` first on Windows.
+- [ ] **A5 MEDIUM — independent witness before a kill.** Don't take the target from log files alone: cross-check the AutoSaves `.lock` session GUID and require the attachment set to contain the PID.
+- [ ] **A6–A11 LOW — in one pass, lowest priority.** `disabled_tools` on the extended proxy; read caps; deadline-extension ceiling + relay origin marks; second proxy per `list_studios`; bound `wait_seconds`; state the relay exemption's true scope.
+
 ### Found by all-mcprevs verification 2026-10-08
 
 Four verifiers (one per review source, model `step-5-preview-free`, live-Studio access under read-mostly rules) re-checked every claim in `mcprev1/`, `mcprev2/IMPROVEMENT.md`, `mcprev3/full.txt` and `mcprev3-new/`. Most of the reviews are stale where this week obsoleted them; what follows is only what survives re-derivation. Verdicts, evidence and refutations: the verifier reports are the record — this list is the actionable residue.
