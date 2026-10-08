@@ -136,9 +136,10 @@ logpoints only: a halting breakpoint halts the scheduler that would have
 returned the result, measured as a 120 s timeout with the breakpoint working
 perfectly. For pausing it is `rbx-debug`, full stop.
 
-The routing is now written down where it will be read: `skills/README.md`, a
-routing table in `AGENTS.md`, and a "see also" in each skill with a real
-boundary (`rsx-breakpoints`, `rsx-capture`, `rsx-discovery`, `rsx-playtest`).
+The routing is now written down where it will be read:
+`src/roblox_studio_mcp/skills/README.md`, a routing table in `AGENTS.md`, and a
+"see also" in each skill with a real boundary (`rsx-breakpoints`, `rsx-capture`,
+`rsx-discovery`, `rsx-playtest`).
 
 ## Built and proven
 
@@ -159,13 +160,17 @@ boundary (`rsx-breakpoints`, `rsx-capture`, `rsx-discovery`, `rsx-playtest`).
 - [x] **Tool description budget** - prose cut 4,921 -> 2,361 chars (-52%),
       extended total 12,062 -> 9,502. Enforced by tests in both languages
       (per-description <= 450, total <= 2700).
-- [x] **`extended_skill`** - Python + Node. Serves `skills/*.md` from the repo
-      root. Seven skills, `rsx-*` prefixed so they cannot be confused with
+- [x] **`extended_skill`** - Python. Serves the `rsx-*` skills from
+      `python/src/roblox_studio_mcp/skills/`, packaged into the wheel as package
+      data. Seven skills, `rsx-*` prefixed so they cannot be confused with
       Roblox's `rbx-*`: `rsx-transport`, `rsx-console`, `rsx-targeting`,
       `rsx-breakpoints`, `rsx-playtest`, `rsx-capture`, `rsx-discovery`.
-      Index 1,935 chars against 27,525 of bodies, so 7% is always-on and 93% is
-      on demand. Verified over real stdio: 41 tools served, 13 extended, typo
-      suggestions work.
+      Index 1,984 chars against 75,377 of bodies, so ~2.6% is always-on and the
+      rest is on demand. Verified over real stdio on a wheel installed into a
+      clean venv: 7 skills loaded, both arms (`index` and `skill_name`) answered
+      with `isError: false`. **The earlier entry here said "Serves `skills/*.md`
+      from the repo root" and was wrong in the way that mattered** - see below,
+      *The skills were not in the wheel at all*.
 
 ## Settled by measurement
 
@@ -1568,3 +1573,100 @@ by asking *which function owns the line*, not by re-reading either answer.
 
 *Settles against:* a run on macOS where `stop` returns `stopped: true`. That
 would make defect 1 a harness artefact rather than a real failure.
+
+## The skills were not in the wheel at all (2026-10-08)
+
+`extended_skill` loaded **zero** skills from an installed wheel. Reproduced
+before anything was changed: build the wheel, install it into a clean venv,
+import and ask.
+
+```
+find_skills_dir() -> None
+skills loaded: 0
+skill names: []
+```
+
+The wheel was not broken in an interesting way. It was **correct for what it was
+told to package**: `[tool.setuptools.packages.find] where = ["src"]` picks up
+`roblox_studio_mcp` and its subpackages, and `[tool.setuptools.package-data]`
+named one entry, `py.typed`. The skills lived at the repository root, *outside*
+the package, so nothing in the configuration could reach them. The built wheel
+had **29 entries, 25 of them under `roblox_studio_mcp/`, and not one markdown
+file**.
+
+### Why it was silent, which is the part that matters
+
+`find_skills_dir()` walked up from its own source file looking for a folder
+named `skills`. In a checkout that works. In site-packages it walks up out of
+the install and finds nothing, so it returned `None` - and `load_skills()`
+turned that into `[]`:
+
+```python
+root = directory or find_skills_dir()
+if not root or not os.path.isdir(root):
+    return []          # the shipped behaviour
+```
+
+So the tool answered a successful `tools/call` with an empty catalogue. The
+docstring directly above it claimed the opposite: *"Walking up rather than using
+a fixed relative path is what lets one copy of the skills ship with the package,
+and keeps working whether it is imported from the source tree or from
+site-packages."* Both halves are false. A walk-up cannot ship anything; only
+`package-data` put the files in the wheel, and it was not configured to.
+
+**This is the project's own failure class, not a new one.** An empty result that
+reads as a working answer is what `AGENTS.md` exists to prevent, and the suite
+had no gate over it because every test ran against the source tree, where the
+walk-up always succeeds. A checkout cannot see an install bug. That is the
+general lesson: the tests were not wrong, they were **run in the only
+environment where the bug is invisible**.
+
+### The fix, and why that layout
+
+The skills moved to `python/src/roblox_studio_mcp/skills/` - inside the package -
+with `package-data` extended to `["py.typed", "skills/*.md"]`. One copy, one
+place, and it is the place that ships. `find_skills_dir()` now checks the
+package's own folder first and keeps the upward walk only as a source-tree
+fallback.
+
+**Rejected alternatives, and why:**
+
+| alternative | why not |
+|---|---|
+| keep `skills/` at the root, add `MANIFEST.in` | `MANIFEST.in` drives the **sdist**, not the wheel. The data would still be absent from the wheel. |
+| keep it at the root, use `data-files` | installs to `sys.prefix`, not beside the module. The loader would then need the interpreter's prefix, and a venv and a system install disagree. |
+| symlink `python/src/roblox_studio_mcp/skills` -> `../../../skills` | one copy on disk, but setuptools' `package_data` glob does not reliably follow a symlinked directory, and a symlink is the first thing to break on a Windows checkout. |
+| copy `skills/` into the package at build time | two copies, and the sync is exactly the failure this project keeps paying for. |
+
+The Reader's note about "no second copy to keep in sync" **survives** the move,
+but only because the location moved with it: one copy, inside the package, and
+the wheel is built from the package. What does not survive is the claim that a
+walk-up could ship it.
+
+### Verified, not asserted
+
+Built with `python -m build --wheel` after the move: **37 entries, 8 of them
+markdown**, all under `roblox_studio_mcp/skills/`. Installed into a fresh venv
+and imported from outside the repository:
+
+```
+find_skills_dir() -> .../site-packages/roblox_studio_mcp/skills
+skills loaded: 7
+skill names: ['rsx-breakpoints', 'rsx-capture', 'rsx-console',
+              'rsx-discovery', 'rsx-playtest', 'rsx-targeting',
+              'rsx-transport']
+```
+
+Then the failure mode was re-armed to check the second half of the fix: deleting
+`skills/` from the installed package and dispatching `extended_skill` through
+the real handler. It answers a JSON-RPC **error** naming both locations it
+looked in, where the old code answered `skill names: []` with `isError: false`.
+
+The gates now cover both halves from inside the suite: `test_skills.py` builds a
+real wheel from a copy of the tree and reads its listing, and imports the
+package alone from outside the repository with `PYTHONPATH` stripped and the CWD
+elsewhere - the two environments a checkout cannot fake.
+
+*Settles against:* a wheel built from this tree whose listing lacks
+`roblox_studio_mcp/skills/`, or an install from that wheel for which
+`load_skills()` returns something other than those 7 skills.

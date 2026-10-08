@@ -83,7 +83,9 @@ anything stored in the game.
 
 This file itself is **not** served. `skills.py` ignores `README.md`
 (`SKILL_IGNORED`), so `extended_skill` serves the skills, never this index
-document — treat a fetched skill as the entry point, not this page.
+document — treat a fetched skill as the entry point, not this page. It *is*
+packaged, because it shares the folder's `*.md` glob, so the routing tables
+above travel with the skills they route between.
 
 ## Why a skill and not a longer tool description
 
@@ -148,14 +150,54 @@ checked rather than trusted: the suite fails a skill that breaks either.
 
 ## Adding one
 
-1. Create `skills/rsx-<name>.md` with frontmatter whose `name` matches the
-   filename.
+1. Create `rsx-<name>.md` in this folder, with frontmatter whose `name` matches
+   the filename.
 2. Run the Python tests (`python -m pytest tests -q` from `python/`).
-   They parse the real files, so a malformed one fails the suite.
+   They parse the real files, so a malformed one fails the suite, and
+   `test_skill_refs.py` checks every `file:line` pointer in the body.
 3. The index is rebuilt from the files, so there is nothing to register.
+4. Nothing to add to the packaging: `[tool.setuptools.package-data]` already
+   globs `skills/*.md`, and a test fails if a file here is not covered by that
+   glob.
 
-## Sharing between implementations
+## Where these live, and why inside the package
 
-The skills live once, here at the repository root, and the Python
-loader finds them by walking up from its own source file. There is no second
-copy to keep in sync.
+This folder **is** the shipped copy: `python/src/roblox_studio_mcp/skills/`,
+inside the package, declared in `pyproject.toml` as
+
+```toml
+[tool.setuptools.package-data]
+roblox_studio_mcp = ["py.typed", "skills/*.md"]
+```
+
+so one copy is what lands in the wheel and what an install loads. The loader
+resolves it beside itself - `find_skills_dir()` checks
+`roblox_studio_mcp/skills` first and only walks up as a source-tree fallback -
+and raises `SkillError` when neither exists, because an empty catalogue reads
+exactly like a working one.
+
+**The layout used to be the wrong way round, and it failed silently.** The
+skills sat at the repository root, outside the package, with a loader that
+walked up from its own source file looking for them. That works in a checkout
+and nowhere else: the wheel is built from the package, so it contained 24
+modules and none of these 8 files. Measured in a clean venv on the wheel built
+before the move:
+
+```
+find_skills_dir() -> None
+skills loaded: 0
+skill names: []
+```
+
+No error, no warning - a successful answer with nothing in it. Two things were
+wrong there and both had to be fixed: the data was not packaged, and the loader
+answered `[]` instead of complaining. `test_skills.py` now builds a real wheel
+and reads its listing, and imports the package alone from outside the repository,
+so a repeat of either half fails the suite rather than shipping.
+
+So the argument that used to close this section - "the skills live once, at the
+repository root, and there is no second copy to keep in sync" - survives, but
+only because the location moved. One copy, one place, and it is the place that
+ships. What does **not** survive is the claim that a walk-up could ship it: it
+cannot, and the measured listing above is the proof.
+

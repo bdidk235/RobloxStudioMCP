@@ -1,4 +1,5 @@
-"""Skill library for this MCP, loaded from the repository's ``skills/`` folder.
+"""Skill library for this MCP, loaded from the ``skills/`` folder shipped
+inside this package.
 
 Why this exists
 ---------------
@@ -30,7 +31,13 @@ Skill files are markdown with a small frontmatter block::
 
 A file whose frontmatter is missing or whose ``name`` disagrees with the
 filename is reported as an error rather than skipped, so a typo is visible
-instead of silently reducing the library.
+instead of silently reducing the library. The same rule applies one level up:
+a missing ``skills/`` folder **raises** instead of yielding an empty list,
+because an empty catalogue reads exactly like a working one with nothing in it.
+That was the shipped behaviour, measured: the wheel built from this repository
+carried all 24 modules and none of the 8 skill files, ``find_skills_dir()``
+returned ``None``, ``load_skills()`` returned ``[]`` and the tool served
+``skill names: []`` as a successful answer.
 """
 
 from __future__ import annotations
@@ -39,7 +46,7 @@ import os
 import re
 from typing import Dict, List, Optional, Tuple, TypedDict, Union
 
-#: Folder name, searched for from this file upwards.
+#: Folder name, relative to the package root.
 SKILLS_DIRNAME = "skills"
 
 #: Suffix. A skill is a markdown file; nothing else in the folder is loaded.
@@ -48,12 +55,33 @@ SKILL_SUFFIX = ".md"
 #: Files in the skills folder that are not skills.
 SKILL_IGNORED = {"README.md"}
 
+#: This file: ``.../roblox_studio_mcp/extended/skills.py``.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+#: The package root: ``.../roblox_studio_mcp``. One level above this file, so
+#: it is the same whether the package was imported from a source tree, an
+#: editable install or a wheel.
+_PACKAGE_ROOT = os.path.dirname(_HERE)
+
+#: Where the skills live in an install. Declared in ``pyproject.toml`` under
+#: ``[tool.setuptools.package-data]``, which is what puts the folder in the
+#: wheel. Resolved at import time from ``__file__`` rather than from the
+#: process CWD, because a server's working directory is its launcher's, not the
+#: package's.
+_PACKAGED_SKILLS = os.path.join(_PACKAGE_ROOT, SKILLS_DIRNAME)
+
 _FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
 _FIELD = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
 
 
 class SkillError(RuntimeError):
-    """A skill file exists but cannot be used as written."""
+    """The skills cannot be used as they are.
+
+    Two shapes, deliberately one exception: a skill file is malformed, or the
+    folder holding them is missing or empty. The second is a packaging fault
+    rather than a caller fault, and it must not be answerable by a caller that
+    reads an empty catalogue as "there are no skills".
+    """
 
 
 class Skill(TypedDict):
@@ -96,14 +124,9 @@ class SkillDetailResult(TypedDict):
 SkillCallResult = Union[SkillIndexResult, SkillDetailResult]
 
 
-def find_skills_dir(start: Optional[str] = None) -> Optional[str]:
-    """Walk up from ``start`` looking for a ``skills/`` folder.
-
-    Walking up rather than using a fixed relative path is what lets one copy of
-    the skills ship with the package, and keeps working whether it is imported
-    from the source tree or from site-packages.
-    """
-    here = os.path.abspath(start or __file__)
+def _walk_up(start: str) -> Optional[str]:
+    """Return the first ``skills/`` folder at or above ``start``."""
+    here = os.path.abspath(start)
     current = here if os.path.isdir(here) else os.path.dirname(here)
     while True:
         candidate = os.path.join(current, SKILLS_DIRNAME)
@@ -113,6 +136,36 @@ def find_skills_dir(start: Optional[str] = None) -> Optional[str]:
         if parent == current:
             return None
         current = parent
+
+
+def find_skills_dir(start: Optional[str] = None) -> Optional[str]:
+    """Return the folder holding the skills, or ``None`` if there is none.
+
+    With no ``start``:
+
+    1. **The package's own folder** - ``.../roblox_studio_mcp/skills``, the one
+       ``[tool.setuptools.package-data]`` puts in the wheel. In an install it is
+       the only place the skills can be, and it is checked before any walk so
+       that a ``skills/`` directory elsewhere in the tree cannot answer in its
+       place.
+    2. **A walk up from the package root** - a source-tree fallback, for a
+       checkout that has never been installed at all. It is the *only* thing the
+       walk is for.
+
+    An earlier version of this function walked up and did nothing else, with a
+    docstring claiming that walking up "is what lets one copy of the skills ship
+    with the package, and keeps working whether it is imported from the source
+    tree or from site-packages". Both halves were false and measured to be
+    false: the wheel contained no ``skills/`` directory at all, so the walk
+    found nothing in an install and ``load_skills()`` returned ``[]``. The copy
+    ships because of the ``package-data`` glob in ``pyproject.toml``; the walk
+    only ever finds a source tree.
+    """
+    if start is not None:
+        return _walk_up(start)
+    if os.path.isdir(_PACKAGED_SKILLS):
+        return _PACKAGED_SKILLS
+    return _walk_up(_PACKAGE_ROOT)
 
 
 def _parse_frontmatter(text: str, path: str) -> Tuple[Dict[str, str], str]:
@@ -142,10 +195,33 @@ def load_skills(directory: Optional[str] = None) -> List[Skill]:
 
     Sorting is not cosmetic: the index is what a caller sees, and a stable order
     means the same skill always appears in the same place.
+
+    **Raises rather than returning an empty list.** A catalogue that comes back
+    empty is indistinguishable from a catalogue that is empty because the install
+    lost its data, and the second case is a packaging fault the caller cannot fix
+    and must be told about. So the invariant is: *a list this returns is never
+    empty*. ``skill_index`` still has an "No skills given to render" arm, but it
+    is only reachable from a caller that passes an empty list in itself.
     """
-    root = directory or find_skills_dir()
-    if not root or not os.path.isdir(root):
-        return []
+    if directory is not None:
+        root: Optional[str] = directory
+        if not os.path.isdir(root):
+            raise SkillError(
+                f"no such skills directory: {root!r}. Pass a folder holding "
+                f"'*{SKILL_SUFFIX}' files, or omit the argument to load the "
+                f"skills shipped with the package ({_PACKAGED_SKILLS})."
+            )
+    else:
+        root = find_skills_dir()
+        if root is None:
+            raise SkillError(
+                "no skills folder exists. Looked for "
+                f"{_PACKAGED_SKILLS} (where [tool.setuptools.package-data] "
+                f"ships them) and in every parent of {_HERE}. A wheel built "
+                "without that glob installs the modules and none of the data, "
+                "which is what this error reports - it is not an empty "
+                "catalogue."
+            )
     out: List[Skill] = []
     for entry in sorted(os.listdir(root)):
         if not entry.endswith(SKILL_SUFFIX) or entry in SKILL_IGNORED:
@@ -171,16 +247,27 @@ def load_skills(directory: Optional[str] = None) -> List[Skill]:
             }
         )
     out.sort(key=lambda s: s["name"])
+    if not out:
+        raise SkillError(
+            f"{root} holds no '*{SKILL_SUFFIX}' files. It is the right folder "
+            "but the data is missing from it, so treat this as a broken "
+            "install rather than a catalogue with nothing in it."
+        )
     return out
 
 
 def skill_index(skills: Optional[List[Skill]] = None) -> str:
     """Render the catalogue. Deliberately without bodies, to stay cheap."""
-    entries = skills if skills is not None else load_skills()
+    entries = load_skills() if skills is None else skills
     if not entries:
+        # Unreachable through `load_skills()`, which raises instead. Kept for a
+        # caller that hands an empty list in directly, because rendering that as
+        # an empty `<available_skills></available_skills>` block would read as
+        # "there are none anywhere" rather than "you gave me none".
         return (
-            "No skills found. Expected a 'skills/' folder beside the package, "
-            "with one markdown file per skill."
+            "No skills given to render. load_skills() raises rather than "
+            "returning an empty catalogue; expected a 'skills' folder beside "
+            "the package at %s." % _PACKAGED_SKILLS
         )
     lines = ["<available_skills>"]
     for skill in entries:
