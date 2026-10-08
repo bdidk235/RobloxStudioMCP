@@ -28,6 +28,9 @@ two apart is what stops an engine fact and a transport fact being confused.
 **These are two separate skill systems reached by two different tools.**
 `extended_skill` serves the table above. The relayed `skill` tool serves
 Roblox's, and those are the ones to consult for anything about the engine.
+Neither tool serves the other's names: asking `extended_skill` for an `rbx-*`
+name, or the relayed `skill` for an `rsx-*` name, gets you a near-miss
+suggestion at best, not the document.
 
 **No plugin is involved in either.** `extended_*` is not a Studio plugin — it is
 this project's client in front of the MCP Studio already ships and already has
@@ -65,6 +68,22 @@ The most common wrong turn is reaching for `extended_breakpoints` when you want
 to *pause*. `rsx-breakpoints` is non-halting logpoints only, because a halting
 breakpoint blocks the very tool call that sets it. For pausing, it is
 `rbx-debug`.
+
+A skill can also document something you cannot reach from where you are.
+`rbx-debug` prescribes `OnStopped`/`GetVariables`, but `OnStopped` is per
+DataModel and does **not** propagate from edit to play (`rsx-breakpoints`
+records both constraints) — so the recipe works and the default DataModel
+does not. Read the reachability alongside the recipe. And read before driving
+in general (`AGENTS.md`: read the skill before touching the transport): the
+trap sections exist because the failure they describe has already happened.
+
+Identity state lives host-side, never in the place: the registry this project
+keeps is in its own state directory, and a `studio_id` names a mesh row, not
+anything stored in the game.
+
+This file itself is **not** served. `skills.py` ignores `README.md`
+(`SKILL_IGNORED`), so `extended_skill` serves the skills, never this index
+document — treat a fetched skill as the entry point, not this page.
 
 ## Why a skill and not a longer tool description
 

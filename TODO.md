@@ -27,7 +27,7 @@
 
 - [x] **DONE 2026-10-05 — the "never raise the cap" policy line was already gone.** `:110` already reads "The total was 2,700 until 2026-10-01, when it was raised to 3,200 by decision", and `:104-108` already points at `contract/tools.json` for the live figures rather than quoting them. Closed by reading the section, not the single line the item named — which is why this took a second pass.
 
-- [ ] **`skills/README.md` routing gaps:** missing the *reachability exception* (a skill may document something this transport cannot reach — `rbx-debug` prescribes `OnStopped`/`GetVariables`, and `OnStopped` does not propagate edit → play); missing the "read it, don't build it" rule that the global `AGENTS.md` now carries; missing "neither tool serves the other's names"; missing the registry-is-host-side fact; and it is `SKILL_IGNORED`, so it is NOT the file `extended_skill` serves — an agent will treat it as the index.
+- [x] **DONE 2026-10-08 — all five gaps closed in `skills/README.md`.** Reachability exception (OnStopped per-DataModel, verified at `rsx-breakpoints.md:164`), the read-before-driving rule (`AGENTS.md:195`), neither-tool-serves-the-other's-names, host-side identity state (`registry.py:1,60`), and the explicit `SKILL_IGNORED` note (`skills.py:49`). Each verified against source before writing.
 
 - [x] **`rsx-playtest.md` — the file's only recipe is the call it says wedges.** Steps 2-4 instruct `ExecuteMultiplayerTestAsync` called directly, while the same file records that it blocks past 120 s and that the timeout is the exact condition that wedges the test service permanently. It also never mentions the confirmed `-task StartServer` route. **An agent following it ends up needing a Studio restart.**
 
@@ -97,7 +97,7 @@
 
   > **Resolved 2026-10-03** - **fixed here** - the snippet now `pcall`s the call and iterates `ok and methods or {}`.
 
-- [ ] **`rsx-discovery.md` — a "useful services" table mixes evidence classes.** `ExecuteMultiplayerTestAsync` is documented-but-**unverified** (calling it is what wedges the test service) yet sits in a table whose neighbours are confirmed; `GetTestArgs` has no source anywhere.
+- [x] **DONE 2026-10-08 — evidence classes separated inline; sourceless member deleted.** The `StudioTestService` row now marks confirmed members vs `ExecuteMultiplayerTestAsync` (unconfirmed, with pointer to the note). `GetTestArgs` appeared nowhere else in the repo (verified by grep), so it was deleted per the delete-rather-than-correct precedent.
 
 - [ ] **`rsx-discovery.md` — missing, partly fixed.** Re-measured 2026-10-05: the capability gate **is** now documented (`rsx-discovery.md:128-134` — `game.UniqueId`, the `RobloxScript` capability, and why reflection cannot answer it either), and the telemetry duplication is gone (no `telemetryLog` in `rsx-targeting.md`). Still missing: the array/`Vector2` return shapes, in the one skill that pushes APIs returning arrays; any `see also` boundary; and `settings()` still sits under the reflection heading at `:38` rather than in the capability story, so the no-process-id ruling is incomplete.
 
@@ -121,7 +121,7 @@
 
 - [x] **`extended_capture`'s `save_path` failure raised an undeclared code.** **Fixed before this pass** — re-measured 2026-10-05 at `capture.py:415-439`: it raises `INVALID_ARGUMENT` (in `ALL_CODES`) and the `CAPTURE_OK_RECOVERY` message survives, with `capture.py:416-426` recording why. The tracker was stale on all three counts — the code, the discarded message, and the `UNKNOWN` the caller saw.
 
-- [ ] **`rsx-playtest.md`'s "confirmed" claims need the same treatment** — three unsourced, listed above.
+- [x] **CLOSED 2026-10-08 — premise does not survive reading, nothing to fix.** None of the unsourced-figures item's figures (`640`, `50 methods`, `GetClass`, `0.002`, ViewportFrame, `139`) appears in `rsx-playtest.md` (verified by grep: all zero), and every *confirmed* marker in the file carries adjacent evidence — the AddPlayers 1→2 transcript, the refusal output, the up-front evidence-status section separating confirmed from unverified. The file already meets the standard the item asks for.
 
 - [x] **DONE 2026-10-08 — both keys are documented in the skill.** `hit_prefix` and `how_to_read_hits` (returned at `extended_server.py:1053-1054`) now appear in `rsx-breakpoints.md` with their literal values, so callers stop re-deriving them.
 

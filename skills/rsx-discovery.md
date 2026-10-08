@@ -60,7 +60,7 @@ Always guard member reads in a loop over names you did not write yourself.
 
 | service | members worth knowing |
 |---|---|
-| `StudioTestService` | `AddPlayers`, `EndTest`, `LeaveTest`, `CanLeaveTest`, `GetTestArgs`, `EditModeActive`, and `ExecuteMultiplayerTestAsync` (**documented, unverified**) |
+| `StudioTestService` | `AddPlayers`, `EndTest`, `LeaveTest`, `CanLeaveTest`, `EditModeActive` — all confirmed by use — plus `ExecuteMultiplayerTestAsync`, which is **not** (see below) |
 | `ScriptDebuggerService` | `AddBreakpoint`, `RemoveBreakpoint`, `ClearBreakpoints`, `OnStopped` |
 | `StudioDeviceSimulatorService` | `GetDeviceListAsync` (45 devices), `SetDeviceAsync`, `SetResolutionAsync`, `SetOrientationAsync`, `GetPixelDensityAsync`, `StopSimulationAsync` |
 | `CaptureService` + `AssetService` | `CaptureScreenshot` then `CreateEditableImageAsync` |
