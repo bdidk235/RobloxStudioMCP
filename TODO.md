@@ -219,7 +219,7 @@ were re-verified here for A1 and A3 before recording.
 - [ ] **A3 MEDIUM — one shared game-tree path validator.** `target_path`, `parent_path` and `root_path` get `^game(\.[A-Za-z_][A-Za-z0-9_]*)+$` with the received value in the error; anything with whitespace or a newline is refused outright. Place content must not become executed code through the search→write loop.
 - [ ] **A4 MEDIUM — scope guard + graceful path in front of `stop`.** Add `dry_run`/`confirm`; restrict the console-token fallback to the pool the caller's `studio_id` resolves to, never all live processes; `SIGTERM`-then-`SIGKILL` on POSIX, `Stop-Process` without `-Force` first on Windows.
 - [ ] **A5 MEDIUM — independent witness before a kill.** Don't take the target from log files alone: cross-check the AutoSaves `.lock` session GUID and require the attachment set to contain the PID.
-- [ ] **A6–A11 LOW — in one pass, lowest priority.** `disabled_tools` on the extended proxy; read caps; deadline-extension ceiling + relay origin marks; second proxy per `list_studios`; bound `wait_seconds`; state the relay exemption's true scope.
+- [x] **DONE 2026-10-09 — all six closed in one pass.** `disabled_tools` honoured on both proxies plus `serve()` propagation (non-set reads as empty); 64 MiB inbound line cap and 4 MiB `read_identity` ceiling with a `read_truncated` mark; absolute 600 s request ceiling with relay origin marks (a fixed extension *count* was tried and removed — it broke the pinned progress semantic, the ceiling bounds the threat alone); `list_instances` reuses the server's client; `wait_seconds` clamped 0–120; AGENTS.md states the relay exemption's true scope with a second relayed tool pinning it.
 
 ### Found by all-mcprevs verification 2026-10-08
 
