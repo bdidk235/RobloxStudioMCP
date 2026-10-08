@@ -384,6 +384,8 @@ class TestListInstances(RegistryTestCase):
 class TestRegistryPath(unittest.TestCase):
     def test_env_override_wins(self):
         with mock.patch.dict(os.environ, {"ROBLOX_STUDIO_MCP_REGISTRY": "C:/tmp/x.json"}):
+            # spelling-ok: registry_path returns the override verbatim
+            # (no resolution), so this asserts passthrough, not a file.
             self.assertEqual(registry.registry_path(), "C:/tmp/x.json")
 
     def test_default_is_outside_the_project(self):

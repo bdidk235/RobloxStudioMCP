@@ -426,6 +426,41 @@ class TestSearchAndRead(unittest.IsolatedAsyncioTestCase):
         out = await script_search_and_read(studio, "game.S")
         self.assertEqual(out, [])
 
+    async def test_well_formed_but_nonexistent_path_returns_empty(self):
+        """`game.NoSuchService123` passes the shape check: non-existence is
+        not decidable without a Studio round trip, and the error shape of
+        that round trip is unverified without live Studio. So a well-formed
+        path that matches nothing returns [], exactly like a service that
+        genuinely has no scripts. Recorded, not solved: telling those apart
+        needs a second existence probe against live behaviour."""
+        studio = FakeStudio()
+        studio._tree_payload = []
+
+        async def empty_tree(**k):
+            import json as _json
+
+            return _text_result(_json.dumps([]))
+
+        studio.search_game_tree = empty_tree
+        out = await script_search_and_read(studio, "game.NoSuchService123")
+        self.assertEqual(out, [])
+
+    async def test_root_path_must_start_with_game_prefix(self):
+        studio = FakeStudio()
+        studio.search_game_tree = None
+        for bad in ("Workspace", "", "Game.S", "game"):
+            with self.assertRaises(ToolError, msg=bad) as caught:
+                await script_search_and_read(studio, bad)
+            self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
+
+    async def test_max_results_out_of_range_is_invalid(self):
+        studio = FakeStudio()
+        studio.search_game_tree = None
+        for bad in (0, -5, 101, True, "10", 2.5):
+            with self.assertRaises(ToolError, msg=repr(bad)) as caught:
+                await script_search_and_read(studio, "game.S", max_results=bad)
+            self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
+
     async def test_truncates_long_sources_by_default(self):
         studio = FakeStudio()
         studio._tree_payload = [

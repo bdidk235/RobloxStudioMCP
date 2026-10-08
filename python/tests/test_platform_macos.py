@@ -240,6 +240,8 @@ class Basename(unittest.TestCase):
         )
 
     def test_handles_both_separators_in_one_path(self):
+        # spelling-ok: the literal is input fixture; the asserted output
+        # is a bare filename, independent of path spelling.
         self.assertEqual(platform.basename(r"C:/tmp\a/Baseplate-1.rbxl"),
                          "Baseplate-1.rbxl")
 
