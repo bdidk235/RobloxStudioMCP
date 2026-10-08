@@ -1192,7 +1192,19 @@ async def _call_manage_instance(
                 "studio_id is required for action='stop'. Call action='list' "
                 "with this tool - its mesh rows carry one.",
             )
-        found = await inst.resolve_pid_for_studio(studio, studio_id, True)
+        # THE AUTHORISATION POINT. Named rather than passed as a bare `True`
+        # because the flag is a grant, not a tuning knob: it lets the resolver
+        # fall back to printing a random RBXPID join token into the console of
+        # the Studio named by studio_id, then read Studio's logs to see which
+        # process echoed it. One line, in this caller's own Studio, but a
+        # visible side effect on the user's session that they did not ask for.
+        # `stop` grants it because the alternative is the refusal just below
+        # (`needs_console_write: True`) stranding a destructive request - this
+        # path would rather print one line than guess a PID and kill it.
+        # Behaviour is unchanged: the flag was already `True` here.
+        found = await inst.resolve_pid_for_studio(
+            studio, studio_id, allow_console_write=True
+        )
         if not found.get("resolved"):
             result = {"action": action, **found}
         else:

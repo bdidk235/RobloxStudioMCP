@@ -54,6 +54,33 @@ class MakeThrowawayPlace(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 inst.make_throwaway_place()
 
+    def test_every_call_mints_a_name_no_other_call_can_have(self):
+        """Two copies are two *names*, and that is load-bearing, not incidental.
+
+        A pooled or recycled scratch path was proposed to bound the file count and
+        **analysed out** (see ``TODO.md``, *the §0 pooled-scratch proposal was
+        analysed and REJECTED*). The invariant it would have broken is this one:
+        for a file launch the mesh name **is** the opened file's basename
+        (``logid.match_mesh_name:1167-1189``), so ``resolve_pid_for_studio`` - the
+        front door of the destructive ``stop`` action - resolves a place name to
+        exactly one PID only while no two live Studios share it. Measured: two
+        Studios on one path return **2** candidates and set ``needs_console_write``;
+        two Studios on two unique paths return **1**, exactly. Unique-per-call is
+        what keeps ``stop`` off its console-token last resort.
+
+        Replace a pool with this test failing and the cost is yours to argue.
+        """
+        with tempfile.TemporaryDirectory() as home:
+            source = _source_file(home)
+            with mock.patch.object(inst, "find_baseplate", return_value=source):
+                made = [inst.make_throwaway_place() for _ in range(25)]
+            try:
+                names = [os.path.basename(path) for path in made]
+                self.assertEqual(len(set(names)), len(names), names)
+            finally:
+                for path in made:
+                    inst.cleanup_throwaway_place(path)
+
 
 class CleanupThrowawayPlace(unittest.TestCase):
     def test_removes_its_own_copy_and_reports_true(self):
