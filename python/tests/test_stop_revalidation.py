@@ -153,6 +153,43 @@ class StopDispatchRevalidates(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(got["stopped"], got)
         self.assertEqual(got["pid"], 4242)
 
+    async def test_the_console_write_authorisation_is_named_at_the_call_site(self):
+        """``stop`` grants console-write, and says so in the call, not in a literal.
+
+        The flag is an authorisation point: it permits the last-resort join to
+        print a random token into the console of the Studio named by
+        ``studio_id`` and read it back out of Studio's logs. A bare positional
+        ``True`` grants that invisibly, which is what two independent reviewers
+        flagged - and what a later tidy-up would quietly restore, since removing
+        the keyword changes nothing observable.
+
+        So the *keyword* is what is pinned, and the spy declares
+        ``allow_console_write`` keyword-only: the real signature takes it
+        positionally, and a call that passes it positionally does not reach the
+        body at all. First version of this test took the argument
+        positionally-or-keyword and **passed against the unfixed code** - a guard
+        that cannot fail is not a guard. Behaviour is unchanged either way: the
+        flag is already ``True`` today.
+        """
+        from roblox_studio_mcp import extended_server as srv
+
+        seen = {}
+
+        async def spy(client, studio_id, *, allow_console_write=None):
+            seen["allow_console_write"] = allow_console_write
+            return _resolved()
+
+        with mock.patch.object(inst, "resolve_pid_for_studio", new=spy), \
+             mock.patch.object(inst, "revalidate_pid_for_stop",
+                               new=mock.AsyncMock(return_value={"ok": True})), \
+             mock.patch.object(inst, "terminate_process",
+                               mock.Mock(return_value={"stopped": True})):
+            await srv._call_manage_instance(
+                mock.Mock(), {"action": "stop", "studio_id": "sid-1"}
+            )
+
+        self.assertTrue(seen["allow_console_write"], seen)
+
 
 if __name__ == "__main__":
     unittest.main()
