@@ -231,7 +231,7 @@ def full_tree():
     return ids
 
 
-class Children:
+class Children(unittest.TestCase):
     def setUp(self):
         self.identities = full_tree()
         self.live = set(self.identities)

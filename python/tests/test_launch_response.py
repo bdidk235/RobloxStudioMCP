@@ -21,16 +21,13 @@ Host-side effects are stubbed; what runs is the code that assembles the response
 import asyncio
 import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
 from roblox_studio_mcp.extended import instance as inst  # noqa: E402
-
-PLACE_DIR = os.path.join(
-    os.environ.get("TEMP", "."), "roblox-studio-mcp-baseplates"
-)
 
 
 def _client():
@@ -80,18 +77,23 @@ def _patches(proc, identified=None, existing=None, asleep=None):
     return patches, identify
 
 
-def _run(proc, identified=None, existing=None, asleep=None):
+def _run(place_dir, proc, identified=None, existing=None, asleep=None):
     patches, identify = _patches(proc, identified, existing, asleep)
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
-        return asyncio.run(inst.launch_instance(PLACE_DIR + "/Baseplate-1.rbxl",
+        return asyncio.run(inst.launch_instance(os.path.join(place_dir, "Baseplate-1.rbxl"),
                                                 studio_client=_client())), identify
 
 
 class LaunchResponse(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        os.makedirs(PLACE_DIR, exist_ok=True)
-        with open(os.path.join(PLACE_DIR, "Baseplate-1.rbxl"), "wb") as handle:
+        # A temp dir, not %TEMP% with a "." fallback: on a host without TEMP
+        # that fallback wrote a stub place file into the checkout and left it
+        # there. The launch only needs an existing path, not a real Studio.
+        cls._tmp = tempfile.TemporaryDirectory(prefix="launch-response-")
+        cls.addClassCleanup(cls._tmp.cleanup)
+        cls.place_dir = cls._tmp.name
+        with open(os.path.join(cls.place_dir, "Baseplate-1.rbxl"), "wb") as handle:
             handle.write(b"stub")
 
     def _alive(self):
@@ -104,7 +106,7 @@ class LaunchResponse(unittest.TestCase):
     def test_a_successful_launch_reports_success(self):
         proc = self._alive()
         got, _ = _run(
-            proc,
+            self.place_dir, proc,
             identified={"studio_id": "abc-123", "mesh_name": "Baseplate-1.rbxl"},
             existing=[{"pid": 999, "created": "/Date(0)/"},
                       {"pid": 4242, "created": "/Date(0)/"}],
@@ -118,7 +120,7 @@ class LaunchResponse(unittest.TestCase):
         the path is what a dict used to be substituted into."""
         proc = self._alive()
         got, _ = _run(
-            proc,
+            self.place_dir, proc,
             identified={"studio_id": "abc", "mesh_name": "Baseplate-1.rbxl"},
             existing=[{"pid": 999, "created": "/Date(0)/"},
                       {"pid": 4242, "created": "/Date(0)/"}],
@@ -126,14 +128,8 @@ class LaunchResponse(unittest.TestCase):
         self.assertIsInstance(got.get("opened"), str, got)
         self.assertEqual(got["opened"], "Baseplate-1.rbxl")
 
-    def test_the_shape_that_threw(self):
-        """What the old code did, pinned so the failure cannot come back quietly:
-        basename applied to the identification result is a TypeError."""
-        with self.assertRaises(TypeError):
-            os.path.basename({"studio_id": "abc"})
-
     def test_a_launch_that_never_attaches_says_so_plainly(self):
-        got, _ = _run(self._alive(), identified={"studio_id": None, "mesh_name": None})
+        got, _ = _run(self.place_dir, self._alive(), identified={"studio_id": None, "mesh_name": None})
         self.assertFalse(got["launched"])
         self.assertIn("did not attach", got["error"])
 
@@ -142,7 +138,7 @@ class LaunchResponse(unittest.TestCase):
         proc.pid = 4242
         proc.poll.return_value = 1
         proc.returncode = 1
-        got, identify = _run(proc, identified={"studio_id": "abc"})
+        got, identify = _run(self.place_dir, proc, identified={"studio_id": "abc"})
         self.assertFalse(got["launched"])
         self.assertEqual(got["exit_code"], 1)
         identify.assert_not_called()
@@ -156,7 +152,7 @@ class LaunchResponse(unittest.TestCase):
         proc.poll.return_value = 1
         proc.returncode = 1
         got, identify = _run(
-            proc,
+            self.place_dir, proc,
             identified={"studio_id": "abc", "mesh_name": "Baseplate-1.rbxl"},
             existing=[{"pid": 999, "created": "/Date(0)/"},
                       {"pid": 4242, "created": "/Date(0)/"}],
@@ -172,7 +168,7 @@ class LaunchResponse(unittest.TestCase):
         asleep = mock.AsyncMock()
         with mock.patch.object(inst.time, "sleep",
                               side_effect=AssertionError("blocked the loop")):
-            got, _ = _run(self._alive(),
+            got, _ = _run(self.place_dir, self._alive(),
                           identified={"studio_id": None, "mesh_name": None},
                           asleep=asleep)
         self.assertFalse(got["launched"], got)

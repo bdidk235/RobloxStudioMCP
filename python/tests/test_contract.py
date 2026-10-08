@@ -110,9 +110,10 @@ class DescriptionBudget(unittest.TestCase):
             self.assertLessEqual(len(tool.description), cap, name)
 
     def test_the_total_is_within_the_cap(self):
-        """The binding constraint. 303 characters of headroom at last measure, so
-        this is the test that makes a new tool a deliberate decision rather than
-        an accident."""
+        """The binding constraint. Headroom is read off contract/tools.json, not
+        quoted here: a number in this docstring would rot the way the prose
+        figures did. This is the test that makes a new tool a deliberate
+        decision rather than an accident."""
         total = sum(len(t.description) for t in _EXTENDED_TOOLS)
         self.assertLessEqual(
             total, CONTRACT["total_description_cap"],

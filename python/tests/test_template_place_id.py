@@ -15,10 +15,13 @@ hand.
 import asyncio
 import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
+from roblox_studio_mcp.extended import instance as inst_mod  # noqa: E402
 from roblox_studio_mcp.extended.instance import (  # noqa: E402
     URI_UNIVERSE_ID, build_launch_uri, template_place_id,
 )
@@ -66,12 +69,47 @@ class TemplatePlaceId(unittest.TestCase):
 
     def test_every_candidate_row_carries_an_id_or_none(self):
         """A row must not invent one. A file the caller made has none, and the
-        honest value there is ``None`` so the caller knows not to launch it by id."""
+        honest value there is ``None`` so the caller knows not to launch it by id.
+
+        Driven against a seeded autosave dir, not the machine's own: on a host
+        without Roblox autosaves the real call returns ``[]`` and the loop below
+        checks nothing - a green test guarding no rows. The seeded dir covers
+        both arms: numeric ids come through as ints, and a non-numeric
+        Template name honestly reports ``None``."""
         from roblox_studio_mcp.extended.instance import list_place_candidates
 
-        for row in list_place_candidates():
-            self.assertIn("place_id", row, row["path"])
-            self.assertTrue(row["place_id"] is None or isinstance(row["place_id"], int))
+        with tempfile.TemporaryDirectory() as folder:
+            for name in (
+                "Template_95206881_AutoRecovery_3.rbxl",
+                "Template_6560363541_AutoRecovery_0.rbxl",
+                "Template_notanumber_AutoRecovery_1.rbxl",
+            ):
+                with open(os.path.join(folder, name), "wb") as handle:
+                    handle.write(b"stub")
+            with mock.patch.object(inst_mod, "_autosave_dirs", return_value=[folder]):
+                rows = list_place_candidates()
+        by_name = {os.path.basename(row["path"]): row for row in rows}
+        self.assertEqual(
+            set(by_name),
+            {
+                "Template_95206881_AutoRecovery_3.rbxl",
+                "Template_6560363541_AutoRecovery_0.rbxl",
+                "Template_notanumber_AutoRecovery_1.rbxl",
+            },
+        )
+        for name, row in by_name.items():
+            with self.subTest(name=name):
+                self.assertIn("place_id", row, row["path"])
+                self.assertTrue(
+                    row["place_id"] is None or isinstance(row["place_id"], int),
+                    row,
+                )
+        self.assertEqual(
+            by_name["Template_95206881_AutoRecovery_3.rbxl"]["place_id"], 95206881
+        )
+        self.assertIsNone(
+            by_name["Template_notanumber_AutoRecovery_1.rbxl"]["place_id"]
+        )
 
 
 if __name__ == "__main__":

@@ -251,14 +251,6 @@ class Basename(unittest.TestCase):
     def test_empty_is_empty_not_an_error(self):
         self.assertEqual(platform.basename(""), "")
 
-    def test_it_agrees_with_os_path(self):
-        """It is an explicitness wrapper, not a correction.
-
-        Recorded because this test previously asserted the opposite - that the
-        helper *differs* from ``os.path.basename`` on Windows - and that assertion
-        was false: ``ntpath`` already treats both separators. A test that pins a
-        false claim is worse than no test.
-        """
     def test_it_handles_both_separators_whatever_the_host(self):
         """The host's separator must not decide how a *logged* path is split.
 
@@ -272,6 +264,11 @@ class Basename(unittest.TestCase):
         **must** disagree - and this helper disagreeing is the correct
         behaviour, not a bug. Measured on the ``macos-latest`` runner, where the
         old assertion failed with the whole path returned unchanged.
+
+        (An earlier version asserted the reverse - that the helper *differs*
+        from ``os.path.basename`` on Windows - and that was false too:
+        ``ntpath`` already treats both separators. Both directions are now
+        pinned above instead of in a test of their own.)
         """
         for path in ("/Users/me/Library/Application Support/Baseplate-1.rbxl",
                      r"C:\Users\User\AppData\Local\Temp\Baseplate-1.rbxl",

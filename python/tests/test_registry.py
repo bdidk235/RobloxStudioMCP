@@ -273,7 +273,7 @@ class TestRecord(RegistryTestCase):
         # still one entry: the identity did not change, only the proxy id
         self.assertEqual(len(self.read()["instances"]), 1)
 
-    def test_preserves_a_unrelated_version(self):
+    def test_preserves_an_unrelated_version(self):
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with open(self.path, "w", encoding="utf-8") as handle:
             json.dump({"version": 999, "instances": {"x": {}}}, handle)
@@ -389,9 +389,22 @@ class TestRegistryPath(unittest.TestCase):
             self.assertEqual(registry.registry_path(), "C:/tmp/x.json")
 
     def test_default_is_outside_the_project(self):
+        # The invariant is "not inside this checkout", not "not under a path
+        # that happens to read a certain way". An earlier version asserted
+        # ``"Source" not in path``, which passed on the dev machine only
+        # because of where that checkout sat - a home directory containing
+        # "Source" would fail it while the code was right.
+        root = os.path.abspath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+        )
         path = registry.registry_path()
         self.assertTrue(path.endswith(os.path.join("roblox-studio-mcp", "studios.json")))
-        self.assertNotIn("Source", path)
+        self.assertFalse(
+            os.path.normcase(os.path.abspath(path)).startswith(
+                os.path.normcase(root) + os.sep
+            ),
+            "default registry must not live inside the checkout: %r" % path,
+        )
 
 
 if __name__ == "__main__":
