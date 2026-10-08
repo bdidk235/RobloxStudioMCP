@@ -195,6 +195,50 @@ Eight defects and two stale figures, every one reproduced at the line cited. Ver
 
 - [x] **DONE 2026-10-08 — the rotted figure is gone.** The comment now says "unchanged pass count" with no number. Residual, needs a decision: `requires-python = ">=3.9"` is declared while CI pins 3.12, so the floor is never exercised — left alone as potentially breaking.
 
+### Found by all-mcprevs verification 2026-10-08
+
+Four verifiers (one per review source, model `step-5-preview-free`, live-Studio access under read-mostly rules) re-checked every claim in `mcprev1/`, `mcprev2/IMPROVEMENT.md`, `mcprev3/full.txt` and `mcprev3-new/`. Most of the reviews are stale where this week obsoleted them; what follows is only what survives re-derivation. Verdicts, evidence and refutations: the verifier reports are the record — this list is the actionable residue.
+
+**Still open, worth doing:**
+
+- [ ] **§0 scratch place, not a mkstemp per place.** `make_place` still mints one `roblox-studio-*.rbxl` per call (`instance.py:602`). `cleanup_throwaway_place` exists (`:610-637`) but **nothing in `src` calls it** — accumulation persists. Preferred fix eliminates the class rather than managing it: one reusable scratch path (`ROBLOX_STUDIO_MCP_SCRATCH` env override) with a bounded suffix pool (≤4), so 100 calls leave ≤4 files and no sweeper, threshold or lifetime rule is needed. The review's own framing: "never mint a file per place, then there is nothing to sweep." Measured today: 1 file in temp — small volume, right design.
+
+- [ ] **Proxy leak, and the repo's own figure is wrong.** Live-measured 2026-10-08: **8 `StudioMCP.exe` proxies for 1 attached Studio**, and a `RobloxStudio.connect()` added one that **survived the client closing**. Per-proxy memory is **11.9–15.6 MB** by `tasklist`, not the "~40 MB each" TODO records — fix that figure wherever it is quoted. No reaper exists; singleton only dedupes within one host process. Exit: 20 client opens → 1 proxy.
+
+- [ ] **`stop` path still hardcodes `allow_console_write=True` — and it is the one review claim never admitted.** `extended_server.py:1195` passes a bare positional `True` into `resolve_pid_for_studio`, the authorisation point, with no comment saying so. Two independent verifiers raised it; the sentence never contradicted the code, but the authorisation is implicit in a literal. Options: pass the caller's decision explicitly, or name it in a comment. Related and still open: no `dry_run`/`confirm` on the stop schema (deliberate non-break, recorded at TODO:191); the "no-brainer" alternative is docs + example, not surface.
+
+- [ ] **`locks.py` is dead code, and a cheaper join sits unused in it.** Nothing in `python/src` imports it — only `tests/test_locks.py`. It documents a non-log join (`studio_id → mesh name → <name>.lock → first field`) that would take pressure off `logid`'s log scraping. Decide: wire it into the resolver, or delete it. Note `stop` now depends on the log-resolution chain (`instance.py:1440-1456` revalidates between resolve and kill), so a log-format break sits under a destructive path, not only a convenience one.
+
+- [ ] **Upstream tool surface unpinned (biggest silent risk).** `contract/tools.json` covers only the 16 `extended_*`; a live `tools/list` returned **28** upstream tools and nothing asserts them. A rename surfaces as a user-session failure, not CI red. Measured today: zero drift — `docs/catalog.js` carries the 28 and matches exactly, unasserted and hand-maintained. Fix: check in an upstream snapshot and assert on it, separating `proxied_upstream` from `extended`, warning rather than failing on a transient disappearance.
+
+- [ ] **`wait_for` per-request queue, and the emitter audit.** Poll bounds landed (`POLL_TIMEOUT=30`, `MAX_HUNG_POLLS=3`, abort naming a Studio restart), so a single hang no longer wedges — but the serve loop is still sequential (`extended_server.py` `await _handle_message(...)`), so a sequence of hangs still aborts, and no host-side parse validation exists. Same blind spot un-audited for the chunked writer, breakpoint `log_expression` and capture encoder: all tested by asserting on text, none executed.
+
+- [ ] **Release story.** Not on PyPI (404), no tags, no CHANGELOG, no `doctor`. One verified denominator: a fresh-venv `pip install .` succeeds and imports — but `python -m examples.list_tools` **fails from outside `python/`** (`ModuleNotFoundError: No module named 'examples'`; `examples/` has no `__init__.py` and pyproject packages only `src/`). README's install section should either fix the path or state the `python/` cwd requirement.
+
+- [ ] **Operator runbook and error-code recovery.** No runbook exists anywhere (`grep -rln runbook` → no files). The six-step chain launch → attach → resolve → capture → play → stop, with every declared code's recovery, is the missing "first 10 minutes" doc. Codes live in `contract/errors.json` and `extended/errors.py`; the pieces exist, the runbook does not.
+
+- [ ] **Upstream bug links + removal conditions.** Both kept workarounds ("never bulk-print", "JSONEncode at source") have reasoning shipped, but no "Studio bug, workaround pending upstream" label, no bug-report link, no removal condition — `rsx-transport` is the closest and names no report.
+
+- [ ] **Docs site drift.** `docs/catalog.js` is hand-maintained and matches the contract exactly today — zero drift by luck. No test reads `docs/`. Generate it from the contract, or assert every contract tool appears.
+
+**Doc defects our own wording caused (each misled a reviewer, verified):**
+
+- [ ] **`extended_server.py:1288` contradicts the repo's own measurement.** The live `extended_studio_identity` tool still emits *"Whether it survives a Studio restart is unverified"* — while `registry.py:30-33` records it **measured**: same place, same machine, `0_186696` before → `0_186502` after. The review read the tool output and concluded "currently UNVERIFIED"; the doc lies to callers in the conservative direction. Fix the tool string.
+
+- [ ] **Breakpoint descriptions are asymmetric, and the asymmetry is wording, not behaviour.** `extended_clear_breakpoints` says *"Needs a play session."*; `extended_breakpoints` says only *"on a running server script"*. A reviewer concluded clear needs a session and set does not. Code refutes it: both go through the same `execute_luau` with `datamodel_type="Server"`, and live in Edit mode both return the identical `DATAMODAL_UNAVAILABLE`. (The *remedy* — success-with-note when the session has ended — is genuinely missing; `clear_breakpoints` raises on any non-`ok` status.) Doc fix: same precondition on both.
+
+- [ ] **README names `EnumWindows`, which is not in the shipped code.** README:271 lists it alongside `os.startfile`/`%LOCALAPPDATA%` as a transport primitive. It appears only in `python/scripts/verify_*.ps1` and a skill describing a `PrintWindow` path the repo's own TODO says is unimplemented. The real primitives are `Get-CimInstance`, `lsof` and `os.startfile`. A reviewer sizing the POSIX port from this doc enumerated the wrong blockers.
+
+- [ ] **README:274 "every platform difference is confined to one file" is false.** There are three: `roblox.py:43` (`cmd.exe /c mcp.bat` per non-darwin platform, i.e. Linux raises before handshake), `platform.py:132-149`, and `registry.py:285-296` (the tree's only XDG path). The "bounded, not open-ended" port estimate rests on this.
+
+- [ ] **README "762 tests" is stale** — the Windows suite with the pyright gate is **781 passed, 2 skipped**.
+
+- [ ] **A dead `REQUEST-luau-return-shapes.md` pointer survives outside `skills/`.** `extensions.py:769` and `tests/test_array_escape.py:5` still cite the report as being "in this repo"; `git log --all` shows it was never committed. I removed it from the skill and missed these two. `test_skill_refs.py` only scans `skills/*.md`, so nothing guards `python/src` or `python/tests` — widen the gate or drop the pointer.
+
+- [ ] **`test_integration_studio.py:5` cites a CI job that does not exist.** It names `python-studio` in `ci.yml`; the workflow has one job, `python-test`, and installs no Studio.
+
+- [ ] **`TODO.md`'s delete-tool blocker is stale.** It records "the audit freed net -2 (headroom 8); a ~150-char delete tool still does not fit" while `contract/tools.json` measures **175 chars of headroom** and per-tool max 383/450 — a ~150-char `delete_instance` fits today with no trimming.
+
 ### `extended_wait_for`'s probe only works in Edit mode
 
 - [ ] **Audit every emitted-code path for the same blind spot** — still open, and no longer about `datamodel_type`. The chunked writer, the breakpoint `log_expression`, and the capture encoder all emit Luau and are all tested by asserting on *text*, which cannot tell executing code from echoed text. The narrower question is the one worth asking: **does each remain correct in Client/Server, or does any of them assume Edit?** That is a runtime check, not a text assertion.

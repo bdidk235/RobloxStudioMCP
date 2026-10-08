@@ -38,7 +38,7 @@ gives the old→new mapping for all 44 shas cited here.
 | Tracked files on `parity` | **168**, of which **56** under `node/` | `git ls-tree -r --name-only parity` |
 | Live gate | **744 passed, 2 skipped, 206 subtests** | `python -m pytest tests -q` from `python/` |
 | Contract surface | 16 tools, 3,025 of 3,200 description chars, 450 per tool | `contract/tools.json` |
-| Open work | **26** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
+| Open work | **44** top-level `- [ ]` items | `grep -c '^- \[ \]' TODO.md` |
 | `docs/EVIDENCE.md` | 1,570 lines, 26 `##` sections | `wc -l`, `grep -c '^## '` |
 | `AGENTS.md` | **2,250** words against a 2,259 ceiling — **9 to spare** | `python -c "print(len(open('AGENTS.md').read().split()))"` |
 | Remote | `https://github.com/bdidk235/RobloxStudioMCP_Full.git` (private) | `git config --get remote.origin.url` |
@@ -455,13 +455,14 @@ lines from that fix and re-proved the same mutation ladder.
 
 ## 8. What is deliberately still open
 
-**26** top-level `- [ ]` items in `TODO.md`, distributed:
+**44** top-level `- [ ]` items in `TODO.md`, distributed:
 
 | section | open |
 |---|---|
 | Open items: skills and guards, reviewed 2026-10-01 | 2 |
 | Remaining | 7 |
 | macOS | 5 |
+| Found by all-mcprevs verification 2026-10-08 | 18 |
 | `extended_wait_for`'s probe only works in Edit mode | 4 |
 | To do (recorded 2026-09-30, not yet built) | 3 |
 | Corrections to earlier notes in this file | 2 |
@@ -536,8 +537,11 @@ See [§9.4](#94-the-history-rewrite-of-2026-10-06).
 
 **15** commits on `main` — exactly the **15 most recent**, dated 2026-10-04 and
 2026-10-05 — carried `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>`.
-The trailer was **false**: the work in those commits was done by a different
-model family. It was known and uncorrected when this file was written, recorded
+The co-authorship happened: those commits were made driving Claude Code with
+its co-authorship on. What has no evidence is the model name — nearby work
+from the same hand was Haiku 5.5, and nothing records which model assisted
+which commit. The defect was a misnamed co-author, not an invented one.
+It was known and uncorrected when this file was written, recorded
 here rather than fixed, because correcting it is a history rewrite and this
 file's job is the record.
 
@@ -594,7 +598,7 @@ installed (`git filter-repo --version` → *not a git command*).
 
 | # | what | how | verified after |
 |---|---|---|---|
-| 1 | Remove 15 false `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>` trailers | `--msg-filter`, a `sed` deleting lines matching `^Co-Authored-By: Claude Opus 4\.5 <noreply@anthropic\.com>$` | 96 → 96 commits; **15** messages changed, **81** untouched |
+| 1 | Remove 15 misnamed `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>` trailers | `--msg-filter`, a `sed` deleting lines matching `^Co-Authored-By: Claude Opus 4\.5 <noreply@anthropic\.com>$` | 96 → 96 commits; **15** messages changed, **81** untouched |
 | 2 | Remove 2,573 vendored `node/node_modules/` files | `--index-filter 'git rm -r --cached --ignore-unmatch -q node/node_modules'` | 96 → 93 commits; **0** `node_modules` objects |
 | 3 | Remove 92 compiled `node/dist/` files | `--index-filter '… -q node/dist'` | **0** `node/dist` objects |
 
@@ -828,7 +832,7 @@ Four files, four jobs, deliberately not merged:
 
 | file | holds | do not put there |
 |---|---|---|
-| `TODO.md` | open work (26 items) and the 6 withdrawals | closed research |
+| `TODO.md` | open work (44 items) and the 6 withdrawals | closed research |
 | `docs/EVIDENCE.md` | closed research, provenance tagged `MEASURED` / `DOCUMENTED` / `INFERRED` / `UNVERIFIED` | open work |
 | `AGENTS.md` | standing rules and the gates table | any figure that a generated artefact owns |
 | `contract/tools.json` | the generated surface and its budget | hand-edits — it is generated |
