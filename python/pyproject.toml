@@ -36,4 +36,10 @@ addopts = "-n 4"
 where = ["src"]
 
 [tool.setuptools.package-data]
-roblox_studio_mcp = ["py.typed"]
+# Data, not modules: `skills/` has no __init__.py, so this glob is the only
+# thing that puts it in the wheel. It is not decoration - the wheel built
+# without it carried all 24 modules and none of the 8 skill files, and
+# `extended_skill` served an empty catalogue with no error. See
+# tests/test_skills.py::TestPackaging, which builds a wheel and reads its
+# listing, so this line cannot silently lapse again.
+roblox_studio_mcp = ["py.typed", "skills/*.md"]

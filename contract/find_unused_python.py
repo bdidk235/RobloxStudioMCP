@@ -28,7 +28,11 @@ from typing import Dict, List, Set, Tuple
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "python", "src")
 TESTS = os.path.join(ROOT, "python", "tests")
-EXTRA = [os.path.join(ROOT, "contract"), os.path.join(ROOT, "skills")]
+EXTRA = [
+    os.path.join(ROOT, "contract"),
+    os.path.join(SRC, "roblox_studio_mcp", "skills"),
+]
+
 
 SKIP_DIRS = {"__pycache__", "node_modules", ".git", "dist"}
 

@@ -77,12 +77,12 @@ The client follows this shape around that protocol:
 ```text
 python/                 Python client
   src/roblox_studio_mcp/  MCPClient, RobloxStudio, servers, extended/
+    skills/              rsx-* transport skills, served by extended_skill
   tests/                  unittest suites (no Studio needed)
   examples/               runnable Python examples (python -m examples.<name>)
 docs/                   docs site, opens from disk (docs/index.html)
   EVIDENCE.md             closed research, moved out of TODO.md — look a "why" up here
 contract/               generated tool contract (tools.json) the suite asserts
-skills/                 rsx-* transport skills, served by extended_skill
 CONTRIBUTING.md         how to work on this: setup, gates, conventions, evidence rules
 AGENTS.md               standing rules and gates
 TODO.md                 open work and withdrawn claims — and nothing else
@@ -115,7 +115,8 @@ extended/
   breakpoints.py    non-halting logpoints
   grep.py
   registry.py       host-side identity state (never in the place)
-  skills.py         the rsx-* transport skills
+  skills.py         loads the rsx-* transport skills
+skills/             those skills, packaged into the wheel as data
 ```
 
 ## Install
@@ -330,8 +331,8 @@ with the one to reach for first.
 `docs/index.html` has a catalog, `contract/tools.json` is the generated contract,
 and `extended_skill` serves the seven `rsx-*` skills covering this transport's
 traps. Roblox ships its own `rbx-*` skills through the relayed `skill` tool for
-**engine** questions; `skills/README.md` has the routing table for which wire a
-question is actually on.
+**engine** questions; `src/roblox_studio_mcp/skills/README.md` has the routing
+table for which wire a question is actually on.
 
 ## Traps
 
