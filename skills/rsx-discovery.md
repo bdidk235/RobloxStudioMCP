@@ -187,6 +187,14 @@ would silently report "no outcome". `Running instance count at launch N` is a
 real line in the log and is worth reading: it says how many Studios were already
 running when this one started.
 
+## Return shapes: arrays and Vector2
+
+`execute_luau` and `extended_execute_luau_from_file` both return values through
+Studio's serialiser, which converts Luau arrays to string-keyed objects and
+Vector2 to a comma-separated string. This is not repairable — the two shapes
+are indistinguishable on the wire. See `rsx-transport` for the full table and
+the `HttpService:JSONEncode` workaround.
+
 ## Reflect last, and only for what a lookup cannot answer
 
 Roblox's own `rbx-docs-search` skill — the relayed `skill` tool, no plugin —
@@ -201,3 +209,10 @@ wrong note that this skill opens with), and what a service returns today.
 The habit worth keeping from that failure: reflection gave a confident `no`, and
 confidence was the problem. When a lookup and a reflection disagree, believe the
 lookup.
+
+## See also
+
+- `rsx-transport` — return truncation, array-ness loss, scratch-module ceiling, base64, and the `extended_wait_for` unparseable-condition abort.
+- `rsx-playtest` — `extended_wait_for` in the context of play testing, and the `-task StartServer` route.
+- `rsx-targeting` — instance identity, `studio_id` resolution, and the log-based launch diagnosis.
+- `rsx-console` — the console channel and its own truncation behaviour.

@@ -48,6 +48,13 @@ to the result when it sees an object whose keys are exactly `"1".."n"` with `n
 above. If you see that note, the shape is present; deciding whether it was
 meant to be an array is a question only the source can answer.
 
+**The note rides a second content block.** `_annotate_array_escape` appends it
+as a new `{"type": "text", ...}` block (`extensions.py:796-798`), and `text()`
+joins all blocks with `\n` (`types.py:115-123`). So the note appends prose after
+the JSON, and a caller that trims to parse discards it. The `json()` method
+handles this by extracting the first balanced object (`types.py:150-163`), but
+a naive `json.loads(result.text())` fails.
+
 This came from a 165-row driver run (the originating note is not in this
 repo, and no pointer to it survives — so this paragraph is the record), where
 the driver returned `{}` with **no error** - caught only because the next probe
@@ -158,6 +165,32 @@ tool for anything too long to inline, it keeps the code under version control,
 and it returns values reliably on both paths. Note that its `execute_luau`
 parser rejects `declare` blocks, so `.d.luau` definition files belong in the
 typechecker, not the DataModel.
+
+## `extended_wait_for` and the unparseable condition
+
+`extended_wait_for` polls a condition by splicing it into a Luau probe
+(`waiting.py:142-177`). A condition that does not parse is compiled into the
+command **before any handler runs**, so the entire command fails at the parse
+step. The `await` on that call never resolves, and because requests are served
+sequentially, the wedged call blocks every later one.
+
+Measured 2026-09-30: `extended_wait_for({condition: "this is not lua(((", timeout_seconds: 4})`
+never returned. The MCP required a reconnect to recover. A second probe with the
+capture half removed hung identically, so the capture is exonerated and the
+condition is the whole cause. `timeout_seconds: 4` was bypassed entirely — the
+hang is in the first poll's await, before any deadline logic runs.
+
+The fix is two constants in `waiting.py`:
+
+- `POLL_TIMEOUT` (30 s, `waiting.py:78`) bounds each poll's await. Cancelling
+  frees this end only; Studio-side execution is unaffected.
+- `MAX_HUNG_POLLS` (3, `waiting.py:85`) consecutive hangs abort with `TIMEOUT`
+  naming a Studio restart (`waiting.py:335-344`). Any reply at all resets the
+  counter.
+
+Three hangs in a row means Studio is wedged, not slow. Retrying burns the
+budget on polls that cannot return. Only a Studio restart clears it. Keep
+conditions to simple comparisons.
 
 ## Writing past a size limit fails, assigning does not
 
