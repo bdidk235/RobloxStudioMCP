@@ -316,3 +316,39 @@ Four verifiers (one per review source, model `step-5-preview-free`, live-Studio 
 
 
   > **Resolved 2026-10-03** - **fixed here** - all four: `save_path` failure mode (with the `CAPTURE_OK_RECOVERY` message and the arithmetic showing the base64 route is ~50x over the return ceiling), the reported `studio_id`, PrintWindow measured-not-built, and chunk size not a caller knob.
+## Incomplete, salvaged but NOT merged: the upstream-surface feature (2026-10-09)
+
+Lives uncommitted in the `wt-upstream` worktree (branch `fix/upstream-release`,
+based on `9e3f7a0`). ~1,600 lines across `python/src/roblox_studio_mcp/doctor.py`,
+`python/src/roblox_studio_mcp/upstream.py`, `contract/build_upstream.py`,
+`python/tests/test_doctor.py`, `python/tests/test_upstream_surface.py`,
+`python/tests/fake_proxy.py`. Written before the rate-limit die-off and never
+completed or verified.
+
+**What does work, measured.** `upstream.build_snapshot` normalised a **live**
+`tools/list` captured here (handshake + one `tools/list`, no tool call, so the
+DataModel is never reached) into a 30-tool snapshot with `tool_count: 30` and
+`trust: proxied_upstream`. Both contract files were written from that capture and
+committed to the worktree.
+
+**What blocks it, in order:**
+
+1. **4 of 20 surface tests fail against the real snapshot.**
+   `test_a_flipped_read_only_hint_warns` and `test_a_changed_property_type_fails`
+   look for the graded field at a shape the real snapshot does not have, and
+   `test_every_steer_names_a_pinned_upstream_tool` /
+   `test_the_docs_catalog_covers_the_pinned_surface` need the snapshot to agree
+   with `docs/catalog.js` and the steers, which were never regenerated. The
+   grader was written against an assumed capture, not a real one.
+2. **`build_upstream.py --live` cannot run on Linux.** `roblox.platform_defaults`
+   returns the Windows `cmd.exe /c ...mcp.bat` pair on every non-darwin platform,
+   and `cmd.exe` is not on PATH here - so the capture fails with
+   `MCPConnectionError: connection closed unexpectedly`. The proxy *is* reachable
+   directly (`StudioMCP.exe` under `Versions/version-*/`), and driving
+   `MCPClient(PROXY, [], shell=False)` works. The gap is the launch default, not
+   the proxy.
+3. **The doctor's tests fail on Linux** for the same reason: they default to
+   `cmd.exe` to launch the fake proxy.
+
+So the design is sound and the normaliser is real; the unverified half is the
+grader and both launch paths. Do not re-derive this - start from the worktree.
