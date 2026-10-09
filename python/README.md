@@ -26,7 +26,7 @@ import asyncio
 from roblox_studio_mcp import RobloxStudio
 
 async def main():
-    async with await RobloxStudio.connect() as studio:
+    async with await RobloxStudio.connect(singleton=False) as studio:
         # List every tool the Studio MCP exposes
         for tool in await studio.list_tools():
             print(tool.name)

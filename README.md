@@ -218,7 +218,7 @@ import asyncio
 from roblox_studio_mcp import RobloxStudio
 
 async def main():
-    async with await RobloxStudio.connect() as studio:
+    async with await RobloxStudio.connect(singleton=False) as studio:
         result = await studio.execute_luau("return 1 + 1")
         print(result.text())
 
@@ -230,6 +230,12 @@ Two things worth knowing before you build on it:
 - **`connect()` needs `await`.** It is `async with await RobloxStudio.connect()`,
   not `async with RobloxStudio.connect()` — the connect is itself a round trip.
   This is the most common mistake, and the error names it.
+- **Close what you open: `singleton=False` in scripts.** The default
+  `connect()` shares one process-wide connection and deliberately does *not*
+  close it on `async with` exit — so a script that ends there leaves the proxy
+  child to interpreter shutdown, which prints `RuntimeError: Event loop is
+  closed` on Windows. Pass `singleton=False` (as above) unless you are
+  intentionally sharing the connection across calls.
 - **One Studio means no `studio_id`.** With a single Studio attached the id is
   resolved on every call. With two or more, `connect(studio_id=...)` is required
   and omitting it raises `AMBIGUOUS_STUDIO` rather than picking one — a silently
@@ -505,3 +511,11 @@ python -m pytest tests/test_integration_studio.py
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Security audit
+
+An external security audit of this repository was commissioned. The
+maintainer's statement on it, verbatim: "I did not read this." Treat every
+finding below that line as unverified by a human reader until that sentence
+changes: no finding here has been confirmed, disputed, or acted on from
+reading the report.
