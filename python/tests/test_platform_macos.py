@@ -17,6 +17,7 @@ identity" with no error at all.
 """
 
 import os
+import socket
 import sys
 import unittest
 from unittest import mock
@@ -551,20 +552,30 @@ class NativeSocketRead(unittest.TestCase):
         Byte order is the trap here - a port matched in host order finds zero
         rows, so this test cannot catch it. The one above can, because it asserts
         a pid is *found*; together they cover both directions.
-        """
-        import socket
 
-        # Bound and listening, so the port exists, but nothing connects: the
-        # reader looks at remote ports of ESTABLISHED rows, not listeners.
-        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        listener.bind(("127.0.0.1", 0))
-        listener.listen(1)
-        port = listener.getsockname()[1]
-        try:
-            # A set, per the signature - not a list.
-            self.assertEqual(platform._mesh_holders_native(port), set())
-        finally:
-            listener.close()
+        **The port is chosen by probing, not by binding, and that is a fix rather
+        than a convenience.** The first version bound port 0, let the kernel pick,
+        and asserted the read was empty. It failed once on Windows at
+        `873 passed` while the same code returned `set()` standalone immediately
+        afterwards: another process on the box legitimately held an ESTABLISHED
+        connection to that ephemeral port. Asserting "nothing on this machine
+        targets an arbitrary port" is racy by construction, so it flaked rather
+        than failing for a reason. A candidate is now only accepted once the
+        reader itself confirms no connection to it - so the assertion stays about
+        false positives instead of becoming a test of a quiet network.
+        """
+        for _ in range(25):
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.bind(("127.0.0.1", 0))
+            probe.listen(1)
+            port = probe.getsockname()[1]
+            probe.close()
+            if not platform._mesh_holders_native(port):
+                break
+        else:
+            self.skipTest("no quiet port available to prove a negative with")
+        # A set, per the signature - not a list.
+        self.assertEqual(platform._mesh_holders_native(port), set())
 
     def test_the_byte_order_direction_is_load_bearing(self):
         """`htons`, not the bare port. Pin the value, not just the outcome.

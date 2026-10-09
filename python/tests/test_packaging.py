@@ -433,7 +433,16 @@ class TestTheBuiltWheelCarriesTheMetadata(unittest.TestCase):
         )
 
     def test_the_landing_page_carries_the_disclosure(self):
-        description = self.built["payload"]["metadata"].partition("\n\n")[2]
+        # CRLF-normalised first. A wheel built on Windows has `\r\n` throughout
+        # its METADATA - measured 2026-10-09, `Metadata-Version: 2.4\r\nName: ...`
+        # - so `partition("\n\n")` finds nothing and reads the description as the
+        # empty string, while `partition("\r\n\r\n")` works. The content was
+        # present in both build directions; only this reader was LF-only. The
+        # assertion is about the disclosure, not the line endings, so the endings
+        # are normalised rather than branched on. Same trap the box records:
+        # line endings do not survive the crossing.
+        metadata = self.built["payload"]["metadata"].replace("\r\n", "\n")
+        description = metadata.partition("\n\n")[2]
         self.assertIn(
             "AI-written",
             description[:2000],

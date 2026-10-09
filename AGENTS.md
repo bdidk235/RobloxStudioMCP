@@ -93,9 +93,9 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
 
 | | command | what it catches |
 |---|---|---|
-| Python tests | `python -m pytest tests -q` | behaviour. **Already includes the type gate** — `test_typecheck.py` runs pyright as a subprocess and is collected by this command. Running it separately is a second, redundant pass. |
+| Python tests | `PYTHONPATH=python/src python -m pytest python/tests -q` | behaviour. **Already includes the type gate** — `test_typecheck.py` runs pyright as a subprocess and is collected by this command; running it separately pays twice. Run from the repo root — bare `tests` exits 4. |
 | Python types | covered above | wrong key, `None` deref, wrong argument type |
-| Contract | `pytest tests/test_contract.py` | generated contract still matches the server |
+| Contract | `PYTHONPATH=python/src python -m pytest python/tests/test_contract.py -q` | generated contract still matches the server |
 
 Two of these catch **silent** wrong answers, which is the failure class this
 project keeps paying for:
