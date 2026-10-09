@@ -48,8 +48,8 @@ def platform_defaults(platform: Optional[str] = None) -> Tuple[str, List[str], b
 # How long resolve_studio_id() rides through a fresh proxy whose Studio uplink
 # is not usable yet before giving up. A new proxy answers list_roblox_studios
 # with "Unable to reach Roblox Studio" for a beat after its handshake.
-RESOLVE_TIMEOUT = 10.0
-RESOLVE_INTERVAL = 0.2
+RESOLVE_TIMEOUT = 60.0
+RESOLVE_INTERVAL = 0.5
 
 # Matches the proxy's transient not-ready symptom (fresh proxy, uplink warming).
 _NOT_READY_HINT = "unable to reach"
