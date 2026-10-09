@@ -5,6 +5,7 @@ create_module wiring, search_and_read batching, run_tests polling, JSON parsing,
 singleton ownership, and server disabled-tools filtering.
 """
 
+import contextlib
 import json
 import os
 import pathlib
@@ -25,6 +26,7 @@ from roblox_studio_mcp.extended import extensions as ext_mod
 from roblox_studio_mcp.extended.errors import INVALID_ARGUMENT, ToolError
 from roblox_studio_mcp.extended.extensions import (
     _ConsoleWatch,
+    ALLOW_OUTSIDE_ENV_VAR,
     get_watch_state,
     insert_asset_from_file,
     run_tests,
@@ -33,6 +35,19 @@ from roblox_studio_mcp.extended.extensions import (
 from roblox_studio_mcp.types import _extract_balanced
 import roblox_studio_mcp.roblox as roblox_mod
 import roblox_studio_mcp.server as server_mod
+
+
+@contextlib.contextmanager
+def _operator_allows_outside():
+    """The operator's confinement opt-out, for fixtures staged outside the root.
+
+    These tests exercise behaviour *past* confinement (model insert, missing
+    files, CRLF handling) with fixtures in `tempfile`, outside the file root.
+    They set the operator switch rather than the removed per-call flag, which
+    no longer exists on the functions or the tool schemas.
+    """
+    with mock.patch.dict(os.environ, {ALLOW_OUTSIDE_ENV_VAR: "1"}):
+        yield
 
 
 def _text_result(text):
@@ -639,14 +654,14 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
             # one cannot fail here - only on a runner, where it arrives short.
             path = os.path.join(os.path.dirname(tf.name), ".", os.path.basename(tf.name))
         try:
-            result = await insert_asset_from_file(
-                studio,
-                file_path=path,
-                allow_outside=True,
-                file_type="model",
-                asset_name="TestModel",
-                parent_path="game.Workspace",
-            )
+            with _operator_allows_outside():
+                result = await insert_asset_from_file(
+                    studio,
+                    file_path=path,
+                    file_type="model",
+                    asset_name="TestModel",
+                    parent_path="game.Workspace",
+                )
             self.assertEqual(result["status"], "inserted")
             self.assertEqual(result["file_path"], str(pathlib.Path(path).resolve()))
             self.assertEqual(result["asset_name"], "TestModel")
@@ -671,14 +686,14 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
             tf.flush()
             path = os.path.join(os.path.dirname(tf.name), ".", os.path.basename(tf.name))
         try:
-            result = await insert_asset_from_file(
-                studio,
-                file_path=path,
-                allow_outside=True,
-                file_type="model",
-                asset_name="BadModel",
-                parent_path="game.Workspace",
-            )
+            with _operator_allows_outside():
+                result = await insert_asset_from_file(
+                    studio,
+                    file_path=path,
+                    file_type="model",
+                    asset_name="BadModel",
+                    parent_path="game.Workspace",
+                )
             self.assertEqual(result["status"], "insert_failed")
             self.assertEqual(result["file_path"], str(pathlib.Path(path).resolve()))
             self.assertIn("model load failed", result["note"])
@@ -692,14 +707,14 @@ class TestInsertModel(unittest.IsolatedAsyncioTestCase):
             tf.flush()
             path = tf.name
         try:
-            result = await insert_asset_from_file(
-                studio,
-                file_path=path,
-                allow_outside=True,
-                file_type="txt",  # unsupported
-                asset_name="ShouldFail",
-                parent_path="game.Workspace",
-            )
+            with _operator_allows_outside():
+                result = await insert_asset_from_file(
+                    studio,
+                    file_path=path,
+                    file_type="txt",  # unsupported
+                    asset_name="ShouldFail",
+                    parent_path="game.Workspace",
+                )
             self.assertEqual(result["status"], "unsupported_file_type")
             self.assertIn("Supported: script, model, image", result["note"])
         finally:
@@ -814,8 +829,8 @@ class TestInsertValidation(unittest.IsolatedAsyncioTestCase):
         # INVALID_ARGUMENT, not NOT_FOUND and not FileNotFoundError: the
         # DataModel was never consulted, so "re-list the DataModel" is not the
         # recovery. See the comment at the raise site.
-        with self.assertRaises(ToolError) as caught:
-            await ext_mod.insert_asset_from_file(studio, "/nonexistent/xyz.lua", allow_outside=True)
+        with _operator_allows_outside(), self.assertRaises(ToolError) as caught:
+            await ext_mod.insert_asset_from_file(studio, "/nonexistent/xyz.lua")
         self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
 
     async def test_bad_parent_raises(self):
@@ -824,8 +839,8 @@ class TestInsertValidation(unittest.IsolatedAsyncioTestCase):
             f.write("print(1)")
             path = f.name
         try:
-            with self.assertRaises(ToolError) as caught:
-                await ext_mod.insert_asset_from_file(studio, path, parent_path="/tmp", allow_outside=True)
+            with _operator_allows_outside(), self.assertRaises(ToolError) as caught:
+                await ext_mod.insert_asset_from_file(studio, path, parent_path="/tmp")
             self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
         finally:
             os.unlink(path)
@@ -838,8 +853,8 @@ class TestExecuteFromFile(unittest.IsolatedAsyncioTestCase):
             f.write("   \n")
             path = f.name
         try:
-            with self.assertRaises(ToolError) as caught:
-                await ext_mod.execute_luau_from_file(studio, path, allow_outside=True)
+            with _operator_allows_outside(), self.assertRaises(ToolError) as caught:
+                await ext_mod.execute_luau_from_file(studio, path)
             self.assertEqual(caught.exception.code, INVALID_ARGUMENT)
         finally:
             os.unlink(path)
@@ -859,7 +874,8 @@ class TestExecuteFromFile(unittest.IsolatedAsyncioTestCase):
                 return _text_result("ok")
 
             studio.execute_luau = fake_execute
-            await ext_mod.execute_luau_from_file(studio, path, allow_outside=True)
+            with _operator_allows_outside():
+                await ext_mod.execute_luau_from_file(studio, path)
             self.assertEqual(captured["code"], "return 1\n")
         finally:
             os.unlink(path)
@@ -884,9 +900,9 @@ class TestInsertCrlf(unittest.IsolatedAsyncioTestCase):
 
             with mock.patch.object(
                 wmod, "write_script", side_effect=fake_write
-            ):
+            ), _operator_allows_outside():
                 await ext_mod.insert_asset_from_file(
-                    studio, path, parent_path="game.Workspace", allow_outside=True
+                    studio, path, parent_path="game.Workspace"
                 )
             self.assertNotIn("\r", captured["content"])
             self.assertIn("print(1)\nprint(2)", captured["content"])

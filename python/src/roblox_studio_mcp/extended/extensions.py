@@ -15,6 +15,7 @@ Usage (direct Python):
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
@@ -41,14 +42,53 @@ DEFAULT_MAX_CHARS_PER_SOURCE = 2000
 #
 # These tools run at the caller's full user privilege and take a path straight
 # from the model. Without a root, any user-readable file is readable -- so the
-# root is the working directory, which still refuses `..` traversal and symlinks
-# that point out while leaving the tool useful on a file outside any fixed tree.
+# root is a configured constant, not a per-call argument: the model cannot set
+# it, only the operator, via `ROBLOX_STUDIO_MCP_FILE_ROOT` (default: the
+# working directory at call time). A second operator switch,
+# `ROBLOX_STUDIO_MCP_ALLOW_OUTSIDE=1`, lifts confinement entirely for a host
+# whose operator wants that. Both are read from the environment on every call,
+# so a test that chdirs into a scratch dir exercises the default honestly.
 #
 # `resolve()` rather than `os.path.abspath` is the load-bearing choice: resolve
 # follows symlinks to their real target, abspath only collapses `..`. A symlink
 # inside the root pointing at ~/.ssh/id_rsa passes an abspath check untouched.
 # That is the whole bug this replaces.
 # --------------------------------------------------------------------------- #
+
+#: Environment override for the confinement root. Unset (or empty) means the
+#: working directory at call time, which is today's behaviour.
+FILE_ROOT_ENV_VAR = "ROBLOX_STUDIO_MCP_FILE_ROOT"
+
+#: Operator switch that lifts confinement. Deliberately env-only: the tool
+#: schemas no longer carry an `allow_outside` argument, so the model cannot
+#: set it and a call carrying one is refused before dispatch (see
+#: `_reject_removed_arguments` in `extended_server.py`).
+ALLOW_OUTSIDE_ENV_VAR = "ROBLOX_STUDIO_MCP_ALLOW_OUTSIDE"
+
+
+def file_root() -> Path:
+    """The directory every caller-named file must resolve inside.
+
+    Read from the environment on every call rather than once at import, for
+    two reasons: the process may legitimately change directory (and the
+    default must follow), and an operator change must take effect without a
+    restart of anything but the server process that already re-reads per call.
+    """
+    override = os.environ.get(FILE_ROOT_ENV_VAR, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path.cwd().resolve()
+
+
+def confinement_allows_outside() -> bool:
+    """Whether the operator lifted confinement for this host.
+
+    Truthy values are ``1``/``true``/``yes``/``on`` (case-insensitive).
+    Anything else -- including unset -- confines.
+    """
+    return os.environ.get(ALLOW_OUTSIDE_ENV_VAR, "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
 
 #: Read a file named by the caller. Default root is the working directory.
 #:
@@ -74,18 +114,22 @@ MAX_FILE_BYTES = 16 * 1024 * 1024
 MEASURED_MAX_FILE_BYTES = 13_917_476
 
 
-def _confined(file_path: str, *, allow_outside: bool = False) -> Path:
-    """Resolve ``file_path`` and refuse anything outside the working directory.
+def _confined(file_path: str) -> Path:
+    """Resolve ``file_path`` and refuse anything outside the file root.
+
+    The root is :func:`file_root` -- the operator's ``ROBLOX_STUDIO_MCP_FILE_ROOT``,
+    defaulting to the working directory -- and the only opt-out is the operator's
+    ``ROBLOX_STUDIO_MCP_ALLOW_OUTSIDE``. There is deliberately no per-call flag:
+    the path arrives from the model, so a model-settable boolean is the
+    disclosure primitive this replaces (outside file + ``file_type="script"`` +
+    read-back, two calls).
 
     Args:
         file_path: The caller-supplied path. Not trusted.
-        allow_outside: Explicit opt-out. Default is confined; the escape hatch
-            exists so a deliberate whole-filesystem read is a choice rather than
-            a workaround, not so confinement can be skipped by accident.
 
     Returns:
-        The resolved absolute path, guaranteed inside the root unless
-        ``allow_outside`` was passed.
+        The resolved absolute path, guaranteed inside the root unless the
+        operator lifted confinement.
 
     Raises:
         ToolError: ``CAPABILITY_DENIED`` when the resolved path is outside the
@@ -93,7 +137,7 @@ def _confined(file_path: str, *, allow_outside: bool = False) -> Path:
             both: a caller learns the path is not usable, not whether it exists
             outside the root, which would make this an existence oracle.
     """
-    root = Path.cwd().resolve()
+    root = file_root()
     try:
         resolved = Path(file_path).expanduser().resolve()
     except (OSError, RuntimeError) as exc:
@@ -104,16 +148,17 @@ def _confined(file_path: str, *, allow_outside: bool = False) -> Path:
             f"Check for a symlink loop or an unreadable parent directory.",
         ) from exc
 
-    if allow_outside:
+    if confinement_allows_outside():
         return resolved
 
     if not resolved.is_relative_to(root):
         raise ToolError(
             CAPABILITY_DENIED,
-            f"file_path is outside the working directory. {describe(file_path)} "
+            f"file_path is outside the file root. {describe(file_path)} "
             f"resolves to {describe(str(resolved))}, which is outside "
-            f"{describe(str(root))}. Pass a path inside the working directory, or "
-            f"set allow_outside=true if you really mean to read it.",
+            f"{describe(str(root))}. Pass a path inside the root; only the "
+            f"server operator can widen it ({FILE_ROOT_ENV_VAR}) or lift "
+            f"confinement ({ALLOW_OUTSIDE_ENV_VAR}=1).",
             path=str(resolved),
             root=str(root),
         )
@@ -273,14 +318,17 @@ async def insert_asset_from_file(
     asset_name: Optional[str] = None,
     parent_path: str = "game.Workspace",
     className: str = "Script",
-    allow_outside: bool = False,
 ) -> Dict[str, Any]:
     """Insert a local file into the game tree.
 
-    ``file_path`` is confined to the current working directory. A path outside it
-    -- by ``..`` or through a symlink pointing out -- is refused with
-    ``CAPABILITY_DENIED`` unless ``allow_outside`` is set. Files over
-    ``MAX_FILE_BYTES`` are refused with ``SIZE_LIMIT``.
+    ``file_path`` is confined to the operator's file root (see :func:`file_root`).
+    A path outside it -- by ``..`` or through a symlink pointing out -- is refused
+    with ``CAPABILITY_DENIED``. Files over ``MAX_FILE_BYTES`` are refused with
+    ``SIZE_LIMIT``.
+
+    There is no per-call opt-out: the path arrives from the model, and the old
+    ``allow_outside`` tool argument was the disclosure primitive this replaces.
+    Only the operator can widen the root, via the environment.
 
     Args:
         file_type: One of "script" (luau/lua), "model" (rbxm/rbxmx), or
@@ -288,7 +336,6 @@ async def insert_asset_from_file(
         asset_name: Name to give the inserted instance (defaults to file basename).
         parent_path: Container path in the DataModel (e.g. game.ReplicatedStorage).
         className: Roblox class for script files (Script, LocalScript, ModuleScript).
-        allow_outside: Read a path outside the working directory. Off by default.
 
     Returns:
         Dict with "status" and relevant fields.
@@ -301,7 +348,7 @@ async def insert_asset_from_file(
     # disagree with it. The value is the confined one, so `isfile`, `basename`,
     # `open` and the `store_image` call all see the same absolute path with no
     # second expansion anywhere.
-    file_path = str(_confined(file_path, allow_outside=allow_outside))
+    file_path = str(_confined(file_path))
 
     if not os.path.isfile(file_path):
         # INVALID_ARGUMENT, deliberately not NOT_FOUND and deliberately not a
@@ -678,7 +725,6 @@ async def execute_luau_from_file(
     file_path: str,
     datamodel_type: str = "Edit",
     encoding: str = "utf-8",
-    allow_outside: bool = False,
 ) -> CallToolResult:
     """Execute Luau source read from a local file.
 
@@ -686,20 +732,21 @@ async def execute_luau_from_file(
     ``.luau``/``.lua`` file on disk instead of an inline string — useful for
     long scripts kept under version control or generated by other tools.
 
-    ``file_path`` is confined to the current working directory. A path outside it
-    -- by ``..`` or through a symlink pointing out -- is refused with
-    ``CAPABILITY_DENIED`` unless ``allow_outside`` is set. Files over
-    ``MAX_FILE_BYTES`` are refused with ``SIZE_LIMIT``.
+    ``file_path`` is confined to the operator's file root (see :func:`file_root`).
+    A path outside it -- by ``..`` or through a symlink pointing out -- is refused
+    with ``CAPABILITY_DENIED``. Files over ``MAX_FILE_BYTES`` are refused with
+    ``SIZE_LIMIT``. There is no per-call opt-out (see
+    :func:`insert_asset_from_file` for why the old ``allow_outside`` argument
+    is gone).
 
     Args:
         studio: A connected :class:`RobloxStudio` (use the singleton).
-        file_path: Local file to read, inside the working directory. ``~`` is
+        file_path: Local file to read, inside the file root. ``~`` is
             expanded first, then the result must land back inside the root --
             expanding ``~`` alone is not an escape hatch.
         datamodel_type: DataModel to run in (``"Edit"``, ``"Client"``,
             ``"Server"``).
         encoding: File encoding (default UTF-8).
-        allow_outside: Read a path outside the working directory. Off by default.
 
     Raises:
         ToolError: ``CAPABILITY_DENIED`` if ``file_path`` resolves outside the
@@ -715,7 +762,7 @@ async def execute_luau_from_file(
 
     # Confine first, then check existence -- so a path outside the root is
     # refused as outside rather than probed for existence.
-    resolved = str(_confined(file_path, allow_outside=allow_outside))
+    resolved = str(_confined(file_path))
     if not os.path.isfile(resolved):
         # INVALID_ARGUMENT rather than NOT_FOUND: see the same decision in
         # `insert_asset_from_file`. The DataModel was never consulted here.

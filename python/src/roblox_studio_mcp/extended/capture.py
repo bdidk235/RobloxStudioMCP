@@ -432,8 +432,8 @@ async def capture_png(
             try:
                 save_path = str(_confined(save_path))
             except ToolError as exc:
-                # `_confined` speaks for read tools ("read it", "allow_outside",
-                # a parameter this tool does not take). Same code, recovery
+                # `_confined` speaks for read tools (operator env vars, a file
+                # root this tool's caller never named). Same code, recovery
                 # rewritten for a write: the actionable half is the path.
                 raise ToolError(
                     CAPABILITY_DENIED,

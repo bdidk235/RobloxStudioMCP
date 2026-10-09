@@ -487,19 +487,14 @@ _EXTENDED_TOOLS.extend(
             name="extended_insert_asset_from_file",
             description=(
                 "Insert a local script, model, or image file into the game tree. "
-                "Path is confined to the working directory unless allow_outside."
+                "Path is confined to the server's file root."
             ),
             input_schema={
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "Local file path, inside the working directory.",
-                    },
-                    "allow_outside": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": "Read a path outside the working directory.",
+                        "description": "Local file path, inside the server's file root.",
                     },
                     "file_type": {
                         "type": "string",
@@ -809,7 +804,7 @@ _EXTENDED_TOOLS.extend(
             description=(
                 "execute_luau with the code read from a local .luau file, for "
                 "anything too long to inline in a tool call. Path is confined "
-                "to the working directory unless allow_outside."
+                "to the server's file root."
             ),
             input_schema={
                 "type": "object",
@@ -826,11 +821,6 @@ _EXTENDED_TOOLS.extend(
                     "studio_id": {
                         "type": "string",
                         "description": _STUDIO_ID_DESCRIPTION,
-                    },
-                    "allow_outside": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": "Read a path outside the working directory.",
                     },
                 },
                 "required": ["file_path"],
@@ -879,12 +869,10 @@ async def _call_insert_asset(
     parent_path: str = arguments.get("parent_path", "game.Workspace")
     className: str = arguments.get("className", "Script")
     studio_id: Optional[str] = arguments.get("studio_id")
-    allow_outside: bool = bool(arguments.get("allow_outside", False))
     studio = _RobloxStudio(client=client, studio_id=studio_id)
     result = await insert_asset_from_file(
         studio, file_path, file_type=file_type, asset_name=asset_name,
         parent_path=parent_path, className=className,
-        allow_outside=allow_outside,
     )
     return {
         "content": [{"type": "text", "text": json.dumps(result, indent=2)}],
@@ -1000,11 +988,9 @@ async def _call_execute_file(
     file_path: str = _require_str(arguments, "file_path")
     datamodel_type: str = arguments.get("datamodel_type", "Edit")
     studio_id: Optional[str] = arguments.get("studio_id")
-    allow_outside: bool = bool(arguments.get("allow_outside", False))
     studio = _RobloxStudio(client=client, studio_id=studio_id)
     result = await execute_luau_from_file(
         studio, file_path, datamodel_type=datamodel_type,
-        allow_outside=allow_outside,
     )
     return {"content": [{"type": "text", "text": result.text()}], "isError": False, "is_error": False}
 
@@ -1527,6 +1513,36 @@ _TOOL_PROPERTIES: Dict[str, frozenset] = {
 #: stop. None currently - listed so adding one is a deliberate act.
 _IGNORED_ARGUMENTS: Dict[str, frozenset] = {}
 
+#: Tool arguments that were deliberately removed, and must refuse loudly rather
+#: than read as a typo. `allow_outside` made confinement model-settable (audit
+#: A2, 2026-10-08): it is operator policy now
+#: (`ROBLOX_STUDIO_MCP_FILE_ROOT` / `ROBLOX_STUDIO_MCP_ALLOW_OUTSIDE`), so a
+#: call carrying it gets the migration path, not the generic unknown-argument
+#: text and not a silent default. Checked before the unknown-argument refusal
+#: below, which would otherwise claim it is a spelling error.
+_REMOVED_ARGUMENTS: Dict[str, str] = {
+    "extended_insert_asset_from_file": "allow_outside",
+    "extended_execute_luau_from_file": "allow_outside",
+}
+
+
+def _reject_removed_arguments(name: str, arguments: Dict[str, Any]) -> None:
+    """Refuse a call carrying an argument the tool deliberately stopped taking."""
+    removed = _REMOVED_ARGUMENTS.get(name)
+    if removed is None or not isinstance(arguments, dict):
+        return
+    if removed not in arguments:
+        return
+    raise ToolError(
+        "INVALID_ARGUMENT",
+        "%s no longer accepts %s: confinement is operator policy, not a tool "
+        "argument. Pass a file_path inside the server's file root, or ask the "
+        "operator to set ROBLOX_STUDIO_MCP_FILE_ROOT or "
+        "ROBLOX_STUDIO_MCP_ALLOW_OUTSIDE=1." % (name, removed),
+        tool=name,
+        removed=[removed],
+    )
+
 
 def _reject_unknown_arguments(name: str, arguments: Dict[str, Any]) -> None:
     """Refuse a call carrying a parameter the tool does not declare.
@@ -1551,6 +1567,7 @@ def _reject_unknown_arguments(name: str, arguments: Dict[str, Any]) -> None:
     a spelling variant (``replaceAll`` vs ``replace_all``) and a bare "unknown
     key" sends the caller hunting.
     """
+    _reject_removed_arguments(name, arguments)
     declared = _TOOL_PROPERTIES.get(name)
     if declared is None:
         return

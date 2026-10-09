@@ -44,6 +44,7 @@ from roblox_studio_mcp import extended_server as es  # noqa: E402
 from roblox_studio_mcp.extended import breakpoints as bp  # noqa: E402
 from roblox_studio_mcp.extended import capture as cap  # noqa: E402
 from roblox_studio_mcp.extended import extensions as ext  # noqa: E402
+from roblox_studio_mcp.extended.extensions import ALLOW_OUTSIDE_ENV_VAR  # noqa: E402
 from roblox_studio_mcp.extended import grep as gp  # noqa: E402
 from roblox_studio_mcp.extended import updater as up  # noqa: E402
 from roblox_studio_mcp.extended import writer as wr  # noqa: E402
@@ -158,13 +159,14 @@ SITES = {
     "update: bad edit shape": lambda: up.update_script(
         FakeStudio({"game.S.A": "hi"}), "game.S.A", [42]
     ),
-    # `allow_outside=True` so this site tests the *missing file* fault rather
-    # than tripping confinement first -- the path is on C:\, outside the root, so
-    # without it the site would raise CAPABILITY_DENIED and assert the wrong
-    # thing. Confinement has its own file, test_path_confinement.py.
-    "insert: missing file": lambda: ext.insert_asset_from_file(
-        FakeStudio(), r"C:\nope.luau", allow_outside=True
-    ),
+    # The operator switch, not the removed per-call flag, so these sites test
+    # their own fault rather than tripping confinement first -- the paths are
+    # outside the root (C:\ on Windows, tempfile everywhere), so without it
+    # the site would raise CAPABILITY_DENIED and assert the wrong thing.
+    # Confinement has its own file, test_path_confinement.py. Set inside the
+    # coroutine: `_attempt` drives it later, and the gate reads the env at
+    # call time, not at thunk time.
+    "insert: missing file": lambda: _insert_missing_file(),
     "insert: bad parent": lambda: _insert_bad_parent(),
     "capture: rgba length mismatch": lambda: cap.encode_png(4, 4, bytes(10)),
     "capture: short header": lambda: cap._parse_header("only\ttwo\tfields"),
@@ -228,15 +230,36 @@ def _capturing_studio():
     return Studio()
 
 
-def _insert_bad_parent():
+async def _insert_missing_file():
+    """The missing-file fault, reached past confinement via the operator switch."""
+    old = os.environ.get(ALLOW_OUTSIDE_ENV_VAR)
+    os.environ[ALLOW_OUTSIDE_ENV_VAR] = "1"
+    try:
+        return await ext.insert_asset_from_file(FakeStudio(), r"C:\nope.luau")
+    finally:
+        if old is None:
+            os.environ.pop(ALLOW_OUTSIDE_ENV_VAR, None)
+        else:
+            os.environ[ALLOW_OUTSIDE_ENV_VAR] = old
+
+
+async def _insert_bad_parent():
     """Needs a real file: a missing one is refused first, for a different reason."""
     path = _SITE_REAL_LUAU or tempfile.mktemp(suffix=".lua")
     if not os.path.exists(path):
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("print(1)")
-    return ext.insert_asset_from_file(
-           FakeStudio(), path, parent_path="/tmp", allow_outside=True
-       )
+    old = os.environ.get(ALLOW_OUTSIDE_ENV_VAR)
+    os.environ[ALLOW_OUTSIDE_ENV_VAR] = "1"
+    try:
+        return await ext.insert_asset_from_file(
+            FakeStudio(), path, parent_path="/tmp"
+        )
+    finally:
+        if old is None:
+            os.environ.pop(ALLOW_OUTSIDE_ENV_VAR, None)
+        else:
+            os.environ[ALLOW_OUTSIDE_ENV_VAR] = old
 
 
 def setUpModule():
