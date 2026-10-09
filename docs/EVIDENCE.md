@@ -1688,11 +1688,11 @@ Both hold as stated.
 
 | # | severity | finding | status |
 |---|---|---|---|
-| A1 | HIGH | `extended_capture` writes any host file via unconfined `save_path`, while marked `readOnlyHint: true` | open |
-| A2 | HIGH | `allow_outside` turns confinement into a disclosure primitive (`~/.ssh/id_rsa` → `ModuleScript.Source` → model context in two calls) | open |
-| A3 | MEDIUM | game-tree paths splice raw into Luau (`local parent = {container}`); place content becomes executed code via search→write | open |
-| A4 | MEDIUM | `stop`: no confirm/dry-run, force-only kill, console-token fallback touches unnamed Studios, `studio_id` is a transport token | open (revalidation already landed) |
-| A5 | MEDIUM | kill target derived from user-writable log files; revalidation re-reads the same spoofable file | open |
+| A1 | HIGH | `extended_capture` writes any host file via unconfined `save_path`, while marked `readOnlyHint: true` | closed (`9e3f7a0`) |
+| A2 | HIGH | `allow_outside` turns confinement into a disclosure primitive (`~/.ssh/id_rsa` → `ModuleScript.Source` → model context in two calls) | closed (merged to `main`) |
+| A3 | MEDIUM | game-tree paths splice raw into Luau (`local parent = {container}`); place content becomes executed code via search→write | closed (`82acaaf`) |
+| A4 | MEDIUM | `stop`: no confirm/dry-run, force-only kill, console-token fallback touches unnamed Studios, `studio_id` is a transport token | closed (see `TODO.md`, 2026-10-09) |
+| A5 | MEDIUM | kill target derived from user-writable log files; revalidation re-reads the same spoofable file | closed (see `TODO.md`, 2026-10-09) |
 | A6 | LOW | `disabled_tools` honoured by `server.py`, silently ignored by `extended_server.py` | open |
 | A7 | LOW | unbounded reads (`_readline_unbounded`, full-file `read_identity` fallback) | open |
 | A8 | LOW | progress-token deadline extensions unbounded; relayed descriptions unmarked by origin | open |

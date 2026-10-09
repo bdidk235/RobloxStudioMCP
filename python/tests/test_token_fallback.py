@@ -28,6 +28,12 @@ from roblox_studio_mcp.extended import instance as inst  # noqa: E402
 
 SID = "12c0a3af-2854-4c8a-9c3f-000000000001"
 OTHER = "12c0a3af-2854-4c8a-9c3f-000000000002"
+# A candidate pool, because the join now refuses an empty one before it
+# prints (audit A4): an empty pool used to mean "any pid is fair game",
+# which let a token printed into the named Studio name an unrelated pid.
+# These tests are about the print itself, so they reach it the way a real
+# caller does - with the candidate set the studio_id resolved to.
+POOL = [{"pid": 4242}]
 
 
 class TokenPrint(unittest.TestCase):
@@ -40,7 +46,7 @@ class TokenPrint(unittest.TestCase):
         import asyncio
 
         with mock.patch.dict(os.environ, {"LOCALAPPDATA": "/nonexistent"}):
-            asyncio.run(inst._resolve_by_console_token(client, SID, []))
+            asyncio.run(inst._resolve_by_console_token(client, SID, POOL))
 
         client.execute_luau.assert_awaited_once()
         kwargs = client.execute_luau.await_args.kwargs
@@ -56,7 +62,7 @@ class TokenPrint(unittest.TestCase):
         import asyncio
 
         with mock.patch.dict(os.environ, {"LOCALAPPDATA": "/nonexistent"}):
-            got = asyncio.run(inst._resolve_by_console_token(client, SID, []))
+            got = asyncio.run(inst._resolve_by_console_token(client, SID, POOL))
 
         self.assertFalse(got["resolved"])
         self.assertIn("could not print a join token", got["error"])
@@ -71,7 +77,7 @@ class TokenPrint(unittest.TestCase):
         import asyncio
 
         with mock.patch.dict(os.environ, {"LOCALAPPDATA": "/nonexistent"}):
-            asyncio.run(inst._resolve_by_console_token(client, SID, []))
+            asyncio.run(inst._resolve_by_console_token(client, SID, POOL))
 
         code = client.execute_luau.await_args.args[0]
         self.assertTrue(code.startswith('print("RBXPID'))

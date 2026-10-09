@@ -51,6 +51,7 @@ from typing import Any, Dict, Tuple
 NO_STUDIO = "NO_STUDIO"
 STALE_STUDIO_ID = "STALE_STUDIO_ID"
 AMBIGUOUS_STUDIO = "AMBIGUOUS_STUDIO"
+WITNESS_MISMATCH = "WITNESS_MISMATCH"
 DATAMODAL_UNAVAILABLE = "DATAMODAL_UNAVAILABLE"
 PLACE_NOT_OPEN = "PLACE_NOT_OPEN"
 NOT_FOUND = "NOT_FOUND"
@@ -65,8 +66,21 @@ CAPABILITY_DENIED = "CAPABILITY_DENIED"
 UNKNOWN = "UNKNOWN"
 
 #: Every code, for tests and for validating anything a caller sends back.
+#:
+#: ``WITNESS_MISMATCH`` is the destructive-path refusal added for audit finding
+#: A5: the PID a ``stop`` is about to terminate was cross-checked against one
+#: independent source, and that source contradicts it (or no independent source
+#: could be read at all). It is a *separate* code from ``AMBIGUOUS_STUDIO``
+#: because the two demand opposite actions from the caller - ambiguity means
+#: `narrow it down`, a witness mismatch means `the PID you resolved is wrong,
+#: start the resolve again` - and a caller that branches on one and receives the
+#: other acts on the wrong advice. One code rather than two, because the
+#: no-witness case carries the same required action (do not kill, re-resolve),
+#: and a second spelling of that would only invite a divergent branch.
+#: Every code, for tests and for validating anything a caller sends back.
 ALL_CODES = frozenset({
-    NO_STUDIO, STALE_STUDIO_ID, AMBIGUOUS_STUDIO, DATAMODAL_UNAVAILABLE,
+    NO_STUDIO, STALE_STUDIO_ID, AMBIGUOUS_STUDIO, WITNESS_MISMATCH,
+    DATAMODAL_UNAVAILABLE,
     PLACE_NOT_OPEN, NOT_FOUND, SIZE_LIMIT, TEST_BUSY, TEST_REFUSED,
     LAUNCH_FAILED, TIMEOUT, INVALID_ARGUMENT, LUA_ERROR, CAPABILITY_DENIED,
     UNKNOWN,

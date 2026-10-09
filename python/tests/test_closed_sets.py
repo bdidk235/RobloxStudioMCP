@@ -61,6 +61,11 @@ _DIRECTLY_RAISED = {
     E.TEST_BUSY: "raised by the test-service paths",
     E.TEST_REFUSED: "raised by the test-service paths",
     E.UNKNOWN: "classify's own fallback, the final return",
+    E.WITNESS_MISMATCH: (
+        "raised by extended_server's stop path when the kill target has no "
+        "independent witness (audit A5); the revalidation refuses and cannot "
+        "classify it itself"
+    ),
 }
 
 #: Declared, but currently unreachable. Kept as an explicit list rather than

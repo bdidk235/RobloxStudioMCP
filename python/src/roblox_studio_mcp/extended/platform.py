@@ -77,6 +77,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 from typing import Any, Dict, List, Optional
@@ -334,8 +335,23 @@ def open_uri(uri: str) -> None:
 
 
 def terminate(pid: int) -> None:
-    """Kill a process. Blocking. The single kill primitive: ``instance`` stops
-    processes by calling this, so both platforms are handled here."""
+    """Kill a process, with no chance to clean up. Blocking.
+
+    The **forced** half of the pair, and the fallback after a graceful request
+    has been given the grace window to work. ``instance`` stops by calling
+    :func:`request_exit` first and only then this, so both platforms are handled
+    here.
+
+    Windows: ``Stop-Process -Force``. Note what ``-Force`` actually controls -
+    Microsoft's own documentation says it "stops the specified processes without
+    prompting for confirmation", and that without it the cmdlet prompts for a
+    process the current user does not own. It is **not** a force flag over a
+    gentler kill: ``Stop-Process`` terminates either way. That is why the
+    graceful half below is a different command, not the same one without
+    ``-Force``.
+
+    POSIX: ``kill -9``.
+    """
     if is_windows():
         subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command",
@@ -344,6 +360,55 @@ def terminate(pid: int) -> None:
         )
     else:
         subprocess.run(["kill", "-9", str(int(pid))], capture_output=True, timeout=30)
+
+
+#: How long a graceful stop request is given before the forced kill follows.
+#: A constant because it describes Studio's shutdown behaviour, not the caller's
+#: intent; ``instance.terminate_process`` exposes it as the ``grace_seconds``
+#: argument it has always had, which used to be only the *wait after* a forced
+#: kill.
+GRACE_SECONDS = 8.0
+
+
+def request_exit(pid: int) -> str:
+    """Ask a process to exit on its own terms. Blocking. Returns the mechanism.
+
+    Windows: ``taskkill /PID N`` **without** ``/F``. That posts ``WM_CLOSE`` to
+    the process's main window, which is the request a user makes by clicking the
+    X, and it is the only documented graceful route here. ``Stop-Process``
+    without ``-Force`` is deliberately *not* used as the gentle first attempt:
+    per Microsoft's own reference it terminates the process either way, and
+    ``-Force`` only suppresses the confirmation prompt - so using it would have
+    produced a docstring claiming a graceful escalation while the behaviour
+    stayed a hard kill. ``taskkill`` without ``/F`` is what actually asks.
+
+    POSIX: ``SIGTERM``, whose default disposition terminates but which Studio
+    may catch and handle - the same courtesy, and the same fallback.
+
+    The exit code is ignored on both. A process with no main window, or one
+    already exiting, makes ``taskkill`` report failure while the stop still
+    takes effect; and on POSIX a signal to a process we do not own raises. The
+    caller decides what happened by polling liveness, never by this return, and
+    the string it gets back is for reporting rather than for branching.
+    """
+    target = int(pid)
+    if is_windows():
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(target)],
+                capture_output=True, text=True, timeout=30,
+            )
+        except OSError:
+            # `taskkill` is present on every supported Windows, so this is a
+            # spawn failure rather than a missing tool. Falling through to the
+            # forced kill is the caller's job, not this function's.
+            return "taskkill (could not be started)"
+        return "taskkill /PID (WM_CLOSE)"
+    try:
+        os.kill(target, signal.SIGTERM)
+    except OSError as exc:
+        return "SIGTERM (not delivered: %s)" % exc
+    return "SIGTERM"
 
 
 # --------------------------------------------------------------------------- #

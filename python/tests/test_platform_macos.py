@@ -408,29 +408,81 @@ class Termination(unittest.TestCase):
 
 
 class TerminateProcessRouting(unittest.TestCase):
-    def test_delegates_to_platform_terminate(self):
-        with mock.patch.object(instance.platform, "terminate") as term, \
+    """``terminate_process`` asks before it forces (audit A4).
+
+    The name promised a grace window for years while the body called the forced
+    kill immediately and used ``grace_seconds`` only to wait for the corpse
+    afterwards. Now :func:`platform.request_exit` gets the window first, and the
+    forced kill follows only if the process is still alive when it expires.
+    """
+
+    def test_the_grace_window_asks_before_it_forces(self):
+        with mock.patch.object(instance.platform, "request_exit",
+                               return_value="taskkill /PID 4700 (WM_CLOSE)") as ask, \
+             mock.patch.object(instance.platform, "terminate") as term, \
              mock.patch.object(instance, "_pid_alive", return_value=False):
             result = instance.terminate_process(4700)
-        term.assert_called_once_with(4700)
-        self.assertEqual(result, {"stopped": True, "pid": 4700})
+        ask.assert_called_once_with(4700)
+        # The load-bearing half: a process that answered the request is never
+        # also force-killed.
+        term.assert_not_called()
+        self.assertTrue(result["stopped"], result)
+        self.assertFalse(result["forced"], result)
+        self.assertEqual(result["requested_exit_via"],
+                         "taskkill /PID 4700 (WM_CLOSE)")
+        self.assertEqual(result["pid"], 4700)
 
-    def test_windows_path_issues_stop_process(self):
+    def test_the_forced_kill_follows_the_window(self):
+        with mock.patch.object(instance.platform, "request_exit",
+                               return_value="SIGTERM") as ask, \
+             mock.patch.object(instance.platform, "terminate") as term, \
+             mock.patch.object(instance, "_pid_alive", return_value=True):
+            result = instance.terminate_process(4700, grace_seconds=0)
+        ask.assert_called_once_with(4700)
+        term.assert_called_once_with(4700)
+        self.assertTrue(result["forced"], result)
+        # Survived both the window and the force: the answer says so rather
+        # than claiming a stop that did not happen.
+        self.assertFalse(result["stopped"], result)
+        self.assertIn("forced kill", result["error"])
+
+    def test_windows_asks_with_taskkill_then_forces_with_stop_process(self):
+        """The escalation, at the platform level: ``taskkill`` without ``/F``
+        posts ``WM_CLOSE``, and only ``Stop-Process -Force`` follows.
+
+        ``Stop-Process`` is deliberately *not* the gentle half - Microsoft's own
+        reference says it terminates either way and ``-Force`` only suppresses
+        the prompt - so the two halves are different commands, and this pins
+        that the gentle one is ``taskkill`` with no ``/F`` in it.
+        """
         with mock.patch.object(platform, "is_windows", return_value=True), \
              mock.patch.object(platform.subprocess, "run") as run, \
-             mock.patch.object(instance, "_pid_alive", return_value=False):
-            result = instance.terminate_process(4700)
-        self.assertIn("Stop-Process", " ".join(run.call_args.args[0]))
-        self.assertEqual(result, {"stopped": True, "pid": 4700})
+             mock.patch.object(instance, "_pid_alive", return_value=True):
+            result = instance.terminate_process(4700, grace_seconds=0)
+        argv = [list(call.args[0]) for call in run.call_args_list if call.args]
+        gentle = [cmd for cmd in argv if cmd and cmd[0] == "taskkill"]
+        forced = [cmd for cmd in argv
+                  if any("Stop-Process" in str(part) for part in cmd)]
+        self.assertTrue(gentle, argv)
+        self.assertNotIn("/F", gentle[0])
+        self.assertIn("/PID", gentle[0])
+        self.assertTrue(forced, argv)
+        self.assertIn("-Force", forced[0][-1])
+        # Order is the contract: the ask goes first.
+        self.assertLess(argv.index(gentle[0]), argv.index(forced[0]))
+        self.assertTrue(result["forced"], result)
 
-    def test_macos_path_issues_kill(self):
+    def test_macos_asks_with_sigterm_then_forces_with_kill(self):
         with mock.patch.object(platform, "is_windows", return_value=False), \
              mock.patch.object(platform.subprocess, "run") as run, \
-             mock.patch.object(instance, "_pid_alive", return_value=False):
-            result = instance.terminate_process(4700)
-        self.assertEqual(run.call_args.args[0][:3],
-                         ["kill", "-9", "4700"])
-        self.assertEqual(result, {"stopped": True, "pid": 4700})
+             mock.patch.object(platform.os, "kill") as kill, \
+             mock.patch.object(instance, "_pid_alive", return_value=True):
+            result = instance.terminate_process(4700, grace_seconds=0)
+        import signal as _signal
+        kill.assert_called_once_with(4700, _signal.SIGTERM)
+        argv = [list(call.args[0]) for call in run.call_args_list if call.args]
+        self.assertIn(["kill", "-9", "4700"], argv, argv)
+        self.assertTrue(result["forced"], result)
 
     def test_grace_expiry_reports_error(self):
         with mock.patch.object(instance.platform, "terminate"), \
