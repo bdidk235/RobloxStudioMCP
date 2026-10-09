@@ -42,6 +42,43 @@ WriteStatus = Literal["wrote", "unchanged", "created"]
 
 _GAME_TREE_PREFIX = "game."
 
+# ONE shared game-tree path validator (A3, 2026-10-09). Every caller-named
+# DataModel dot-path goes through this: ``target_path`` (writer, updater),
+# ``parent_path`` (insert_asset_from_file) and ``root_path``
+# (script_search_and_read, script_grep). A ``startswith("game.")`` check is
+# not enough — the container half is spliced RAW into generated Luau
+# (``local parent = {container}``), so a ``target_path`` containing a newline
+# lands caller-controlled lines as executed code in the Editor (PoC-measured:
+# ``game.Workspace\\nprint("PWNED")\\n--.Evil`` executed ``print("PWNED")``).
+# The regex admits only dot-separated Luau identifiers, so anything with
+# whitespace or a newline is refused outright, with the received value in
+# the error. INVALID_ARGUMENT throughout, matching the existing vocabulary.
+_GAME_TREE_PATH_RE = re.compile(r"^game(\.[A-Za-z_][A-Za-z0-9_]*)+$")
+
+
+def validate_game_tree_path(path: str, *, field: str) -> str:
+    """Refuse anything that is not a ``game``-rooted dot-path of identifiers.
+
+    Args:
+        path: The caller-supplied DataModel path. Not trusted.
+        field: The argument name for the error (``target_path``,
+            ``parent_path`` or ``root_path``).
+
+    Returns:
+        ``path`` unchanged, when it matches.
+
+    Raises:
+        ToolError: ``INVALID_ARGUMENT`` carrying the received value, when
+            ``path`` is not a string or does not match.
+    """
+    if not isinstance(path, str) or not _GAME_TREE_PATH_RE.match(path):
+        raise ToolError(
+            INVALID_ARGUMENT,
+            f"{field} must be a game-tree path like "
+            f"'game.ServerScriptService.MyScript'; got {describe(path)}.",
+        )
+    return path
+
 # Roblox engine hard limit on Script.Source (and any string property).
 # Beyond this, direct assignment fails; use the append-slice pattern instead.
 _STRING_PROPERTY_SIZE_LIMIT = 200_000
@@ -125,8 +162,11 @@ def _is_missing_error(exc: BaseException) -> bool:
 
 
 def _split_target(target_path: str) -> tuple[str, str]:
+    # Validated first: the container half is spliced raw into generated Luau,
+    # so this must only ever yield identifier segments, never newlines.
+    validate_game_tree_path(target_path, field="target_path")
     parts = target_path.split(".")
-    if len(parts) < 2:
+    if len(parts) < 2:  # Unreachable under the regex; kept as a backstop.
         raise ToolError(
             INVALID_ARGUMENT,
             f"target_path must be a DataModel dot-path like "
@@ -267,13 +307,7 @@ async def write_script(
         level = _pick_bracket_level(content)
         content = f"return {_lua_long_bracket(content, level)}"
 
-    if not target_path.startswith(_GAME_TREE_PREFIX):
-        raise ToolError(
-            INVALID_ARGUMENT,
-            f"target_path must start with {describe(_GAME_TREE_PREFIX)} (game-tree path); "
-            f"got {describe(target_path)}. Use a DataModel dot-path like "
-            f"'game.ServerScriptService.MyScript'.",
-        )
+    validate_game_tree_path(target_path, field="target_path")
 
     className = _validate_class_name(className or "Script")
 

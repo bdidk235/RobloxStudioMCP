@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
-from .writer import _GAME_TREE_PREFIX, _strip_line_prefixes, _pick_bracket_level, _lua_long_bracket
+from .writer import _strip_line_prefixes, _pick_bracket_level, _lua_long_bracket, validate_game_tree_path
 from .errors import (
     CAPABILITY_DENIED,
     INVALID_ARGUMENT,
@@ -258,14 +258,7 @@ async def script_search_and_read(
 
     from .grep import _bounded_int
 
-    if not isinstance(root_path, str) or not root_path.startswith(
-        _GAME_TREE_PREFIX
-    ):
-        raise ToolError(
-            INVALID_ARGUMENT,
-            f"root_path must be a game-tree path starting with "
-            f"{describe(_GAME_TREE_PREFIX)}; got {describe(root_path)}.",
-        )
+    validate_game_tree_path(root_path, field="root_path")
     max_results = _bounded_int("max_results", max_results, 1, 100)
 
     # Use search_game_tree to find scripts (requires datamodel_type for Edit mode).
@@ -367,12 +360,8 @@ async def insert_asset_from_file(
 
             f"Read the path back before sending it.",
         )
-    if parent_path and not parent_path.startswith(_GAME_TREE_PREFIX):
-        raise ToolError(
-            INVALID_ARGUMENT,
-            f"parent_path must be a game-tree path starting with "
-            f"{describe(_GAME_TREE_PREFIX)}; got {describe(parent_path)}.",
-        )
+    if parent_path:
+        validate_game_tree_path(parent_path, field="parent_path")
 
     file_type = file_type.lower()
     target_name = asset_name or os.path.splitext(os.path.basename(file_path))[0]

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 from ..roblox import RobloxStudio
 from ..types import _extract_balanced
 from .errors import INVALID_ARGUMENT, ToolError, describe
-from .writer import _strip_line_prefixes
+from .writer import _strip_line_prefixes, validate_game_tree_path
 
 
 def _bounded_int(name: str, value: object, low: int, high: int) -> int:
@@ -211,6 +211,10 @@ async def extended_script_grep(
 
     raw_kwargs: Dict[str, Any] = {"query": query}
     if root_path:
+        # Same shared validator as target_path/parent_path/root_path
+        # elsewhere: a game-tree path is spliced into Luau downstream, so a
+        # newline here must fail here, not in the Editor.
+        validate_game_tree_path(root_path, field="root_path")
         raw_kwargs["root_path"] = root_path
     if instance_type:
         raw_kwargs["instance_type"] = instance_type

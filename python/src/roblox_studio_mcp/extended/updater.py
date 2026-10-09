@@ -49,7 +49,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List, Mapping, Sequence, Tuple, TypedDict, Union
 
-from .writer import _strip_line_prefixes, _GAME_TREE_PREFIX, write_script
+from .writer import _strip_line_prefixes, validate_game_tree_path, write_script
 from .errors import INVALID_ARGUMENT, ToolError, describe
 from ..roblox import RobloxStudio
 
@@ -282,13 +282,7 @@ async def update_script(
     UpdateResult
         Summary of what was applied and what was skipped.
     """
-    if not target_path.startswith(_GAME_TREE_PREFIX):
-        raise ToolError(
-            INVALID_ARGUMENT,
-            f"target_path must be a game-tree path starting with "
-            f"{describe(_GAME_TREE_PREFIX)}, got {describe(target_path)}. "
-            f"File-system paths go to write_script.",
-        )
+    validate_game_tree_path(target_path, field="target_path")
 
     # Read current source first (like Edit requires Read before Edit).
     result = await studio.script_read(target_path)
