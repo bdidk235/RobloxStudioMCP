@@ -1,5 +1,11 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+# setuptools>=77 is the floor for the two things this file now relies on:
+# `license` as an SPDX string and `license-files` (PEP 639). Both are named as
+# "available on setuptools>=77.0.0" in setuptools' own deprecation warning for
+# the old table form, which is the form this used. A lower pin still builds, but
+# it resolves the string against the table-only reader and the license metadata
+# comes out wrong rather than loud.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +14,18 @@ version = "0.1.0"
 description = "A lightweight, dependency-free Python client for MCP (Model Context Protocol) servers, with built-in convenience for the Roblox Studio MCP."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+# SPDX expression, not `license = { text = "MIT" }`. The table form is deprecated
+# (setuptools warns on every build) and is removed on 2027-Feb-18.
+license = "MIT"
+# `LICENSE` lives one directory up, at the repo root, and setuptools globs
+# `license-files` relative to *this* file. `["../LICENSE"]` does put the file in
+# the wheel, but it also warns "Pattern '../LICENSE' cannot contain '..'" and
+# that becomes a hard failure on the same 2027 date. So the license text is
+# carried here as a byte-identical copy, pinned by tests/test_packaging.py.
+license-files = ["LICENSE"]
+authors = [
+    { name = "bdidk235", email = "53656028+bdidk235@users.noreply.github.com" },
+]
 keywords = ["mcp", "model-context-protocol", "roblox", "roblox-studio", "json-rpc", "stdio"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -21,8 +38,28 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 
+[project.urls]
+Homepage = "https://github.com/bdidk235/RobloxStudioMCP"
+Repository = "https://github.com/bdidk235/RobloxStudioMCP"
+Issues = "https://github.com/bdidk235/RobloxStudioMCP/issues"
+Documentation = "https://github.com/bdidk235/RobloxStudioMCP#readme"
+
+# `python -m roblox_studio_mcp.extended_server` still works; this is the same
+# entry point under a name that can be typed.
+[project.scripts]
+roblox-studio-mcp = "roblox_studio_mcp.extended_server:main"
+
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5", "pyright"]
+# setuptools is *listed*, not assumed. The nine wheel tests in
+# python/tests/test_packaging.py guard on `importlib.util.find_spec("setuptools")`
+# and skip whole classes when it is absent - silently, because a setUpClass
+# SkipTest is a skip and not a failure. Python stopped bundling setuptools into
+# new venvs at 3.12, so on a bare 3.12 venv nine licence, wheel-content and
+# console-script checks do not run at all and the suite still exits 0. Measured
+# 2026-10-09: 3.12.15 with setuptools 859 passed / 7 skipped, the same as
+# 3.9-3.11; without it 849 passed / 17 skipped, and the 10 extra skips are every
+# assertion that reads the built wheel.
+dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5", "pyright", "setuptools"]
 
 [tool.pytest.ini_options]
 # The suite is dominated by real waits in subprocess-backed timing tests, and

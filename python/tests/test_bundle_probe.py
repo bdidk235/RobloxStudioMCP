@@ -129,6 +129,17 @@ FAKE_OTOOL_L = """/fake/bin:
 """
 
 
+def _write_script(path: pathlib.Path, text: str) -> None:
+    """Write a generated shell script verbatim: utf-8 in, utf-8 out, no newline
+    translation.
+
+    `Path.write_text(..., newline=...)` is 3.10+ and the declared floor is 3.9.
+    Writing bytes is the same operation on every version, so the generated script
+    is identical on Windows and POSIX without branching on the interpreter.
+    """
+    path.write_bytes(text.encode("utf-8"))
+
+
 def _run_linkage(tmp_path: pathlib.Path, otool_output: str) -> str:
     """Execute the workflow's loop with `otool` stubbed, and return its output."""
     contents = tmp_path / "Contents"
@@ -140,14 +151,13 @@ def _run_linkage(tmp_path: pathlib.Path, otool_output: str) -> str:
     (contents / "MacOS" / "Frameworks" / "Present.dylib").write_bytes(b"\xcf\xfa\xed\xfe")
 
     script = tmp_path / "linkage.sh"
-    script.write_text(
+    _write_script(
+        script,
         "#!/bin/bash\nset -uo pipefail\n"
         f'contents="{contents}"\n'
         f'bin="{contents / "MacOS" / "Probe"}"\n'
         f"otool() {{ cat <<'EOF'\n{otool_output}EOF\n}}\n"
         f"{_linkage_block()}\n",
-        encoding="utf-8",
-        newline="\n",
     )
     r = subprocess.run([BASH, str(script)], capture_output=True, text=True, timeout=TIMEOUT)
     assert r.returncode == 0, f"linkage block exited {r.returncode}: {r.stderr}"
@@ -239,14 +249,13 @@ def test_negative_control_resolution_actually_matters(tmp_path: pathlib.Path) ->
     (contents / "MacOS" / "Frameworks").mkdir(parents=True, exist_ok=True)
     (contents / "MacOS" / "Frameworks" / "Present.dylib").write_bytes(b"\xcf\xfa\xed\xfe")
     script = tmp_path / "broken.sh"
-    script.write_text(
+    _write_script(
+        script,
         "#!/bin/bash\nset -uo pipefail\n"
         f'contents="{contents}"\n'
         f'bin="{contents / "MacOS" / "Probe"}"\n'
         f"otool() {{ cat <<'EOF'\n{FAKE_OTOOL_L}EOF\n}}\n"
         f"{broken}\n",
-        encoding="utf-8",
-        newline="\n",
     )
     r = subprocess.run([BASH, str(script)], capture_output=True, text=True, timeout=TIMEOUT)
     assert r.returncode == 0, r.stderr

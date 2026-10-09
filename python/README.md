@@ -1,5 +1,12 @@
 # roblox-studio-mcp (Python)
 
+> **This project is AI-written.**
+> The code, the tests, the documentation and the commit history were produced by
+> AI coding agents working with a human maintainer and tested by other agents. No line here was typed by hand
+> by a person.
+
+---
+
 A lightweight, **dependency-free** Python client for [MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers — with built-in convenience for the **Roblox Studio MCP**.
 
 No third-party packages: just the Python standard library (`asyncio`, `subprocess`, `json`). Works with Python 3.9+.
@@ -264,6 +271,16 @@ python -m roblox_studio_mcp.server
 # Extended proxy (adds extended_* tools)
 python -m roblox_studio_mcp.extended_server
 ```
+
+The extended proxy is also installed as a console script, so the module path is
+optional:
+
+```powershell
+roblox-studio-mcp
+```
+
+Both speak newline-delimited JSON-RPC 2.0 on stdin/stdout, which is what an MCP
+client config expects.
 
 ## Extended helpers
 

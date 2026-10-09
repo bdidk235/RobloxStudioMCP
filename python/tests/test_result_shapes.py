@@ -39,7 +39,19 @@ from roblox_studio_mcp.types import CallToolResult
 
 
 def _is_typed_dict(annotation) -> bool:
-    return isinstance(annotation, type) and typing.is_typeddict(annotation)
+    """PEP 589 check, without `typing.is_typeddict`.
+
+    That function is 3.10+ and the declared floor is 3.9. A TypedDict class has
+    carried `__required_keys__` and `__optional_keys__` since 3.8, so the
+    attribute pair is the portable test - and it is the *same* test on every
+    supported version, rather than a `getattr` shim that forks behaviour on the
+    version being run.
+    """
+    return (
+        isinstance(annotation, type)
+        and hasattr(annotation, "__required_keys__")
+        and hasattr(annotation, "__optional_keys__")
+    )
 
 
 def _return_type(function):

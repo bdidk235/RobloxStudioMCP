@@ -164,15 +164,14 @@ class TypedDictIsTheRealFix(unittest.TestCase):
         )
 
     def test_watch_output_is_annotated_with_it(self):
-        import inspect
-
         from roblox_studio_mcp.extended import extensions
 
         # `from __future__ import annotations` is in effect, so the raw
         # annotation is the *string* "WatchResult", not the class. Comparing
         # against the class is a test that cannot pass - which is how it failed
-        # the first time.
-        raw = inspect.get_annotations(extensions.watch_output, eval_str=False)
+        # the first time. `inspect.get_annotations(..., eval_str=False)` is the
+        # 3.10+ spelling of this; `__annotations__` is the same dict on 3.9.
+        raw = extensions.watch_output.__annotations__
         self.assertEqual(raw.get("return"), "WatchResult")
 
     def test_it_resolves_to_the_typed_dict(self):

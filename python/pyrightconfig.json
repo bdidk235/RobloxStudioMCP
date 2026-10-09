@@ -3,7 +3,7 @@
   "exclude": ["**/__pycache__", "**/node_modules", "verify_*.py", "probe_*.py", "measure_*.py"],
 
   "typeCheckingMode": "basic",
-  "pythonVersion": "3.12",
+  "pythonVersion": "3.9",
   "reportMissingImports": "none",
 
   "reportOptionalMemberAccess": "error",
