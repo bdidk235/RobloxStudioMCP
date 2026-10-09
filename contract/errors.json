@@ -317,12 +317,12 @@
     {
       "site": "write: non-game path",
       "code": "INVALID_ARGUMENT",
-      "message": "target_path must start with \"game.\" (game-tree path); got \"/tmp/x.lua\". Use a DataModel dot-path like 'game.ServerScriptService.MyScript'."
+      "message": "target_path must be a game-tree path like 'game.ServerScriptService.MyScript'; got \"/tmp/x.lua\"."
     },
     {
       "site": "update: non-game path",
       "code": "INVALID_ARGUMENT",
-      "message": "target_path must be a game-tree path starting with \"game.\", got \"/tmp/x.lua\". File-system paths go to write_script."
+      "message": "target_path must be a game-tree path like 'game.ServerScriptService.MyScript'; got \"/tmp/x.lua\"."
     },
     {
       "site": "update: no match",
@@ -377,7 +377,7 @@
     {
       "site": "insert: bad parent",
       "code": "INVALID_ARGUMENT",
-      "message": "parent_path must be a game-tree path starting with \"game.\"; got \"/tmp\"."
+      "message": "parent_path must be a game-tree path like 'game.ServerScriptService.MyScript'; got \"/tmp\"."
     },
     {
       "site": "save_path: unwritable destination",
