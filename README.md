@@ -515,8 +515,26 @@ MIT — see [LICENSE](LICENSE).
 
 ## Security audit
 
-An external security audit of this repository was commissioned. The
-maintainer's statement on it, verbatim: "I did not read this." Treat every
-finding below that line as unverified by a human reader until that sentence
-changes: no finding here has been confirmed, disputed, or acted on from
-reading the report.
+An external security audit of this repository was commissioned, and its findings
+have been worked through. **A1 to A11 are fixed, merged and gate-verified**; the
+verdicts, measurements and the review's counter-evidence are recorded in
+`docs/EVIDENCE.md` (*External security audit*), and each fix carries the
+negative controls that prove the gate fails without it:
+
+| | finding | where |
+|---|---|---|
+| A1 | `extended_capture`'s `save_path` unconfined, marked read-only | `9e3f7a0` |
+| A2 | `allow_outside` made confinement a disclosure primitive | `80749d8` |
+| A3 | game-tree paths spliced raw into Luau | `82acaaf` |
+| A4 | `stop`: no dry-run, force-only kill, token pool widening | this branch |
+| A5 | kill target from user-writable logs alone | this branch |
+| A6–A11 | disabled_tools, unbounded reads, unbounded deadline, second proxy per call, `wait_seconds`, relay exemption scope | one pass, verified in source |
+
+A12 (supply chain clean) and A13 (no network surface of its own) found nothing to
+do. **The honest limit is that a human has not reviewed the audit or these
+responses.** Everything above was done by AI coding agents with the gates as the
+only referee, so the claims are verifiable and the verification is reproducible,
+but "a person read the report" is not a claim this repository makes.
+
+Still open from the same review: the `wt-upstream` worktree holds ~1,600 lines of
+unfinished feature work whose blockers are written out in `TODO.md`.
