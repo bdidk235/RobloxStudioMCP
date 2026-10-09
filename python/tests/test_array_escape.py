@@ -2,7 +2,8 @@
 
 `execute_luau` is a relayed Studio tool and Studio's serialiser stringifies
 integer keys, so a Luau array arrives as an object with keys "1","2",... Measured
-live; see `REQUEST-luau-return-shapes.md` and the `rsx-transport` skill.
+live; see `python/src/roblox_studio_mcp/skills/rsx-transport.md`
+(*`return` loses array-ness, and it cannot be put back*).
 
 The detector exists because a 165-row driver returned `{}` with no error. But the
 interesting half is the negative cases, because **the shape is ambiguous**:

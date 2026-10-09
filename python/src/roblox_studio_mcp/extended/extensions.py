@@ -816,10 +816,11 @@ def _array_escape_paths(value: Any, path: str = "") -> List[str]:
       the only honest move is to say the shape is present and let the caller
       decide at the source, where the distinction still exists.
 
-      The originating report is ``REQUEST-luau-return-shapes.md`` in this repo,
-      where a 165-row driver returned ``{}`` with no error because of exactly
-      this - invisible without a control, and one step from a false finding
-      about the engine.
+      The originating measurement is a 165-row driver that returned ``{}`` with no
+      error because of exactly this - invisible without a control, and one step from a
+      false finding about the engine. The trap belongs to the relayed transport rather
+      than to any one tool, so the record is the ``rsx-transport`` skill
+      (*`return` loses array-ness, and it cannot be put back*), not a file of its own.
       """
       found: List[str] = []
       if isinstance(value, dict):
