@@ -163,6 +163,13 @@ class FlakyListClient:
                 raise MCPToolError(f"Tool {name!r} reported an error: {NOT_READY_TEXT}")
             if self.mode == "empty":
                 text = '{"studios": []}'
+            elif self.mode == "warming":
+                # A fresh proxy's mesh: empty while discovery catches up, then
+                # populated. First `failures` answers are empty, then sid-9.
+                if self.attempts <= self.failures:
+                    text = '{"studios": []}'
+                else:
+                    text = '{"studios": [{"id": "sid-9", "name": "P"}]}'
             elif self.mode == "multi":
                 text = (
                     '{"studios": [{"id": "sid-a", "name": "Place1"},'
@@ -215,12 +222,24 @@ class TestResolveReadiness(unittest.IsolatedAsyncioTestCase):
             await studio.resolve_studio_id(timeout=5.0, interval=0.01)
         self.assertEqual(client.attempts, 1)
 
-    async def test_empty_list_raises_immediately(self):
+    async def test_empty_list_raises_after_the_window_not_at_once(self):
+        """An empty mesh rides the resolve window like the not-ready transient:
+        a fresh proxy's discovery lags its handshake (measured live: 0,0,1
+        across 4s), so immediate refusal turns a warming proxy into a false
+        "no Studio" error. Past the window it is real."""
         client = FlakyListClient(failures=0, mode="empty")
         studio = RobloxStudio(client)
         with self.assertRaises(MCPToolError):
-            await studio.resolve_studio_id(timeout=5.0, interval=0.01)
-        self.assertEqual(client.attempts, 1)
+            await studio.resolve_studio_id(timeout=0.05, interval=0.01)
+        self.assertGreater(client.attempts, 1)
+
+    async def test_warming_mesh_resolves_once_populated(self):
+        """Empty twice, then a Studio: the resolve warming-proxy scenario."""
+        client = FlakyListClient(failures=2, mode="warming")
+        studio = RobloxStudio(client)
+        self.assertEqual(
+            await studio.resolve_studio_id(timeout=5.0, interval=0.01), "sid-9"
+        )
 
     async def test_multiple_studios_raise_rather_than_guess(self):
         """An implicit id is only accepted when exactly one Studio is open."""
@@ -372,6 +391,87 @@ class TestSingleton(unittest.IsolatedAsyncioTestCase):
             await close_singleton()
         self.assertTrue(fake.closed)
         self.assertIsNone(roblox_mod._singleton)
+
+    def test_shutdown_reaper_kills_only_a_live_child(self):
+        """The atexit fallback terminates without a loop, and no-ops otherwise.
+
+        Three shapes: a live child gets terminated; an exited one is left
+        alone; a client with no proc at all (explicitly closed) is untouched.
+        No event loop runs anywhere in this test - that is the point, since
+        the reaper only ever runs after the loop is gone.
+        """
+        from roblox_studio_mcp.roblox import _reap_singleton_child
+
+        class FakeProc:
+            def __init__(self, returncode):
+                self.returncode = returncode
+                self.terminated = False
+                self.killed = False
+
+            def terminate(self):
+                self.terminated = True
+
+            def kill(self):
+                self.killed = True
+
+        class FakeClient:
+            def __init__(self, proc):
+                self._proc = proc
+
+        live = FakeProc(None)
+        _reap_singleton_child(FakeClient(live))
+        self.assertTrue(live.terminated)
+        self.assertFalse(live.killed)
+
+        dead = FakeProc(0)
+        _reap_singleton_child(FakeClient(dead))
+        self.assertFalse(dead.terminated)
+
+        _reap_singleton_child(FakeClient(None))
+
+    def test_shutdown_reaper_marks_the_transport_closed(self):
+        """Killing the child is not enough: the transport's ``__del__`` still
+        calls ``close()``, which calls ``loop.call_soon`` on the dead loop.
+        Marking ``_closed`` is what ``close()`` itself would have left behind,
+        so ``__del__`` skips it. Proved live: a singleton-default script that
+        printed ``RuntimeError: Event loop is closed`` on every run prints
+        clean output after this."""
+        from roblox_studio_mcp.roblox import _reap_singleton_child
+
+        class FakeTransport:
+            def __init__(self):
+                self._closed = False
+
+        class ProcWithTransport:
+            returncode = None
+            terminated = False
+
+            def __init__(self):
+                self._transport = FakeTransport()
+
+            def terminate(self):
+                self.terminated = True
+
+        class FakeClient:
+            def __init__(self, proc):
+                self._proc = proc
+
+        proc = ProcWithTransport()
+        _reap_singleton_child(FakeClient(proc))
+        self.assertTrue(proc.terminated)
+        self.assertTrue(proc._transport._closed)
+
+    def test_shutdown_reaper_survives_a_broken_client(self):
+        """Teardown hooks must not fail the shutdown they run inside."""
+        from roblox_studio_mcp.roblox import _reap_singleton_child
+
+        class Broken:
+            @property
+            def _proc(self):
+                raise RuntimeError("gone")
+
+        _reap_singleton_child(Broken())  # must not raise
+        _reap_singleton_child(None)  # must not raise
 
     async def test_connect_defaults_to_singleton(self):
         fake = _FakeStudio()

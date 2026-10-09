@@ -10,6 +10,7 @@ is resolved once and injected automatically into every tool call that needs it.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import sys
 import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -299,9 +300,10 @@ class RobloxStudio:
 
         A fresh proxy needs a moment after its handshake before its Studio
         uplink is usable; until then ``list_roblox_studios`` fails with
-        "Unable to reach Roblox Studio". That specific transient symptom is
-        retried until ``timeout`` seconds have elapsed. Every other error —
-        including a genuinely empty instance list — still raises immediately.
+        "Unable to reach Roblox Studio", and its first answers may also be
+        an empty mesh while discovery catches up. Both symptoms ride the
+        window below; every other error still raises immediately, and an
+        empty mesh past the window raises as no Studio to find.
         """
         if self._studio_id:
             return self._studio_id
@@ -315,7 +317,16 @@ class RobloxStudio:
                     raise
                 await asyncio.sleep(max(0.0, min(interval, deadline - time.monotonic())))
                 continue
-            break
+            if studios:
+                break
+            # An empty mesh from a fresh proxy is the same transient: discovery
+            # lags the handshake by seconds (measured: 0,0,1 across 4s on a new
+            # proxy), so it rides the window like "Unable to reach". Past the
+            # window it is real - no Studio to find.
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(max(0.0, min(interval, deadline - time.monotonic())))
+            continue
 
         if not studios:
             raise MCPToolError(
@@ -491,6 +502,14 @@ async def get_singleton(
         if _singleton is None or not _singleton.client.is_connected:
             _singleton = await RobloxStudio.connect(studio_id=studio_id, singleton=False, **kwargs)
             _singleton._is_singleton = True
+            # The shared connection is deliberately *not* closed by __aexit__,
+            # so without this a script that ends on the singleton path leaves
+            # the proxy child alive into interpreter shutdown (plus the closed-
+            # loop __del__ noise on Windows). An explicit close() terminates
+            # first, setting returncode, so the reaper no-ops for it.
+            # getattr: test doubles stand in for RobloxStudio here without a
+            # real client, and there is no child to reap for those.
+            _arm_singleton_reaper(getattr(_singleton, "_client", None))
         elif studio_id and _singleton.studio_id != studio_id:
             # Caller wants a different Studio target: re-point the shared
             # instance instead of spawning a second proxy process.
@@ -504,3 +523,74 @@ async def close_singleton() -> None:
     if _singleton is not None:
         await _singleton.close()
         _singleton = None
+
+
+def _reap_singleton_child(client: "MCPClient") -> None:
+    """Synchronously kill the proxy child if shutdown caught it alive.
+
+    A script that ends on the singleton path (`async with await
+    RobloxStudio.connect()`) never closes the shared connection by design -
+    and without this, the proxy child outlives the interpreter while its
+    transport's ``__del__`` fires on an already-closed loop, printing
+    ``RuntimeError: Event loop is closed`` on Windows. No event loop is
+    running at this point by construction (``atexit`` fires after
+    ``asyncio.run`` returns), so nothing here may await: ``terminate()`` on
+    the child is a synchronous syscall, and anything unexpected is swallowed,
+    because a failing teardown hook must not fail the shutdown it runs inside.
+
+    The kill alone stops the orphan but not the noise: ``__del__`` still calls
+    ``close()``, which calls ``loop.call_soon`` on the dead loop. So the child
+    is killed *and* the transport is marked closed - ``__del__`` skips a
+    transport whose ``_closed`` flag is set, which is exactly the state a
+    proper ``close()`` would have left. Both touches are guarded: on an
+    interpreter whose transport layout differs, this degrades to the old
+    behaviour (noise, no crash) rather than a new failure.
+    """
+    try:
+        proc = client._proc
+    except Exception:
+        return
+    if proc is None:
+        return
+    try:
+        if proc.returncode is not None:
+            return
+    except Exception:
+        return
+    try:
+        proc.terminate()
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    try:
+        transport = getattr(proc, "_transport", None)
+    except Exception:
+        return
+    if transport is None:
+        return
+    try:
+        transport._closed = True
+    except Exception:
+        pass
+
+
+def _arm_singleton_reaper(client: "MCPClient | None") -> None:
+    """Register the shutdown kill for one connected client, once per client."""
+    if client is None:
+        return
+    # Plain-attribute bookkeeping would fail typechecking (`MCPClient`
+    # declares no such field) and `setattr` is no better, so the armed set
+    # lives here: ``__dict__`` assignment is legal on this class (no
+    # ``__slots__``) and invisible to the checker either way.
+    if getattr(client, "__dict__", {}).get("_reaper_armed", False):
+        return
+    try:
+        client.__dict__["_reaper_armed"] = True
+    except Exception:
+        return
+    try:
+        atexit.register(_reap_singleton_child, client)
+    except Exception:
+        pass

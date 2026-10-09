@@ -230,12 +230,13 @@ Two things worth knowing before you build on it:
 - **`connect()` needs `await`.** It is `async with await RobloxStudio.connect()`,
   not `async with RobloxStudio.connect()` — the connect is itself a round trip.
   This is the most common mistake, and the error names it.
-- **Close what you open: `singleton=False` in scripts.** The default
-  `connect()` shares one process-wide connection and deliberately does *not*
-  close it on `async with` exit — so a script that ends there leaves the proxy
-  child to interpreter shutdown, which prints `RuntimeError: Event loop is
-  closed` on Windows. Pass `singleton=False` (as above) unless you are
-  intentionally sharing the connection across calls.
+- **Close what you open — or let shutdown do it.** `singleton=False` (as above)
+  closes the proxy on `async with` exit. The default shared connection does
+  *not* close on exit by design, but interpreter shutdown now reaps its proxy
+  child, so a plain `async with await RobloxStudio.connect()` script also ends
+  clean: no orphan process, no `RuntimeError: Event loop is closed` on Windows.
+  Either form works; the shared one exists so long-lived hosts don't pay a
+  fresh proxy per call.
 - **One Studio means no `studio_id`.** With a single Studio attached the id is
   resolved on every call. With two or more, `connect(studio_id=...)` is required
   and omitting it raises `AMBIGUOUS_STUDIO` rather than picking one — a silently
