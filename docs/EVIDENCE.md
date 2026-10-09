@@ -1713,3 +1713,37 @@ revalidation between resolve and kill is real.
 *Settles against:* a `save_path` outside the working directory being refused;
 `extended_capture` absent from `_READONLY_TOOLS`; a `target_path` containing a
 newline being refused rather than executed.
+
+## The Python floor was never exercised, and the wheel tests skip silently (2026-10-09)
+
+`requires-python = ">=3.9"` was a claim about four interpreter versions that no
+job and no local run had exercised. CI ran `os: [windows-latest, macos-latest]`
+with no `python-version` matrix, so it tested whatever the runner image shipped
+and nothing else.
+
+Measured here, all four present on this box, suite run with
+`-o addopts=""` (the venvs lacked `pytest-xdist`, which `addopts = "-n 4"`
+needs):
+
+| python | setuptools importable | result |
+|---|---|---|
+| 3.9.25 | yes | 859 passed, 7 skipped, 233 subtests |
+| 3.10.22 | yes | 859 passed, 7 skipped, 233 subtests |
+| 3.11.17 | yes | 859 passed, 7 skipped, 233 subtests |
+| 3.12.15 | **no** (fresh venv) | 849 passed, **17 skipped** |
+| 3.12.15 | yes | 859 passed, 7 skipped, 233 subtests |
+
+**The 10-test gap is a silent skip, not a failure, and that is the finding.**
+`test_packaging.py`'s wheel tests are guarded by a `setUpClass` raising
+`unittest.SkipTest` when `importlib.util.find_spec("setuptools")` is `None`, and a
+class-level skip reports as skipped. Python stopped bundling setuptools into new
+venvs at **3.12** - 3.9 to 3.11 still ship it - so every wheel assertion
+(licence files, wheel contents, console-script entry point) is *absent* on a
+bare 3.12 run while the suite still exits 0.
+
+`setuptools` now appears in `[dev]` explicitly, which is what CI installs.
+Without that the new 3.12 job would have been green while checking nothing about
+the artifact PyPI actually serves.
+
+The remaining seven skips are environmental and are not gaps: five `pyright is
+not installed`, one `needs live Studio`, one `only 2 sections; no index needed`.
