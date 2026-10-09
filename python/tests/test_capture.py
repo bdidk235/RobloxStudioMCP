@@ -12,6 +12,7 @@ to branch on, and held nothing.
 """
 
 import base64
+import contextlib
 import os
 import struct
 import sys
@@ -254,6 +255,11 @@ class _WriteFailure(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.root = tempfile.mkdtemp(suffix="-rbxcapture-test")
         self.addCleanup(_rmtree, self.root)
+        # `save_path` is confined to the working directory, so the tests run
+        # *inside* their scratch dir rather than pointing into it from
+        # elsewhere. Restored on cleanup; xdist workers are separate processes.
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.root)
         # A parent that does not exist: the failure every caller hits first, and
         # the one that is identical on every platform.
         self.missing = os.path.join(self.root, "no-such-dir", "shot.png")
@@ -268,6 +274,23 @@ def _rmtree(path):
     import shutil
 
     shutil.rmtree(path, ignore_errors=True)
+
+
+@contextlib.contextmanager
+def _cwd_root():
+    """A scratch dir that is also the cwd, so confined paths land inside it.
+
+    Same reason as the chdir in ``_WriteFailure.asyncSetUp``: `save_path`
+    resolves against the working directory, and a temp dir anywhere else is
+    correctly refused.
+    """
+    old = os.getcwd()
+    with tempfile.TemporaryDirectory(suffix="-rbxcapture-test") as root:
+        os.chdir(root)
+        try:
+            yield root
+        finally:
+            os.chdir(old)
 
 
 class TestSavePathFailure(_WriteFailure):
@@ -453,6 +476,35 @@ class TestNoCorruptFileLeftBehind(_WriteFailure):
             self.assertEqual(handle.read(), encode_png(W, H, RGBA))
 
 
+class TestSavePathConfinement(unittest.IsolatedAsyncioTestCase):
+    """`save_path` is confined to the working directory.
+
+    Without this, one call truncates any user-writable host file with PNG
+    bytes while the tool advertises `readOnlyHint` — measured by building the
+    audit's PoC against the real handler. Outside paths are refused with
+    CAPABILITY_DENIED before anything touches the disk, and the file must be
+    byte-identical afterwards, not merely present.
+    """
+
+    async def test_outside_cwd_is_refused_and_untouched(self):
+        outside = os.path.join(tempfile.gettempdir(), "rbxcapture-victim.png")
+        # Guard the premise: the test is meaningless if tmpdir ever equals cwd.
+        self.assertNotEqual(
+            os.path.dirname(os.path.abspath(outside)),
+            os.path.abspath(os.getcwd()),
+        )
+        with open(outside, "wb") as handle:
+            handle.write(b"do not touch")
+        try:
+            with self.assertRaises(ToolError) as ctx:
+                await capture_png(capturing_studio(), save_path=outside)
+            self.assertEqual(ctx.exception.code, "CAPABILITY_DENIED")
+            with open(outside, "rb") as handle:
+                self.assertEqual(handle.read(), b"do not touch")
+        finally:
+            os.remove(outside)
+
+
 class TestSavePathThroughDispatch(unittest.TestCase):
     """The real JSON-RPC entry point, not ``capture_png``.
 
@@ -486,7 +538,7 @@ class TestSavePathThroughDispatch(unittest.TestCase):
         return sent[0]
 
     def test_the_wire_error_carries_a_declared_code(self):
-        with tempfile.TemporaryDirectory() as root:
+        with _cwd_root() as root:
             response = self._call(os.path.join(root, "no-such-dir", "shot.png"))
         self.assertIn("error", response)
         error = response["error"]
@@ -500,7 +552,7 @@ class TestSavePathThroughDispatch(unittest.TestCase):
         Before the fix this arrived as ``UNKNOWN: unknown error code
         'INTERNAL_ERROR'`` - no code, no metadata, and the capture record gone.
         """
-        with tempfile.TemporaryDirectory() as root:
+        with _cwd_root() as root:
             response = self._call(os.path.join(root, "no-such-dir", "shot.png"))
         error = response["error"]
         self.assertIn("capture itself succeeded", error["message"])
@@ -510,7 +562,7 @@ class TestSavePathThroughDispatch(unittest.TestCase):
         self.assertEqual(error["data"]["errno"], "ENOENT")
 
     def test_a_good_save_path_through_dispatch_returns_the_capture(self):
-        with tempfile.TemporaryDirectory() as root:
+        with _cwd_root() as root:
             target = os.path.join(root, "shot.png")
             response = self._call(target)
             with open(target, "rb") as handle:

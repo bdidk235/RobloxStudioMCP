@@ -44,6 +44,7 @@ class ReadOnlyClassification(unittest.TestCase):
             "extended_clear_breakpoints",
             "extended_run_tests",
             "extended_execute_luau_from_file",
+            "extended_capture",
         }
         for name in writes:
             tool = next(t for t in server._EXTENDED_TOOLS if t.name == name)

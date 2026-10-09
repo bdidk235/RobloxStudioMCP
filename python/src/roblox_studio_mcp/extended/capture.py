@@ -60,6 +60,7 @@ import base64
 import contextlib
 import errno as _errno
 import os
+from pathlib import Path
 import struct
 import tempfile
 import time
@@ -67,8 +68,9 @@ import zlib
 from typing import Any, Dict, Optional, Tuple
 
 from ..roblox import RobloxStudio
-from .errors import describe, ToolError
+from .errors import CAPABILITY_DENIED, describe, ToolError
 from ..types import CallToolResult
+from .extensions import _confined
 
 #: Luau that captures, base64-encodes, and chunks the payload into a scratch
 #: module, then returns only a small header. The body never comes back through
@@ -413,6 +415,35 @@ async def capture_png(
         "captured_at": captured_at,
     }
     if save_path:
+        # Confined before anything touches the disk: without this, `save_path`
+        # truncates any user-writable file with PNG bytes while the tool
+        # advertises `readOnlyHint`. A capture outside the working directory
+        # is refused with CAPABILITY_DENIED, naming the recovery.
+        #
+        # An existing directory skips confinement and fails at the write with
+        # INVALID_ARGUMENT as before: `_confined` refuses non-files with a
+        # read-tool message ("these tools read files"), which would lie about
+        # a write destination, and a directory is not writable either way.
+        try:
+            destination_is_dir = Path(save_path).expanduser().resolve().is_dir()
+        except (OSError, RuntimeError):
+            destination_is_dir = False
+        if not destination_is_dir:
+            try:
+                save_path = str(_confined(save_path))
+            except ToolError as exc:
+                # `_confined` speaks for read tools ("read it", "allow_outside",
+                # a parameter this tool does not take). Same code, recovery
+                # rewritten for a write: the actionable half is the path.
+                raise ToolError(
+                    CAPABILITY_DENIED,
+                    f"save_path is outside the working directory: "
+                    f"{describe(save_path)}. Pass a save_path inside the "
+                    f"working directory, or omit save_path to get png_base64 "
+                    f"in the result.",
+                    path=str(exc.data.get("path", save_path)),
+                    root=str(exc.data.get("root", "")),
+                ) from None
         # `INVALID_ARGUMENT`, not a code of our own inventing. The refusal is
         # about the value the caller supplied: a path that cannot be written is
         # one they have to change. It was `INTERNAL_ERROR`, which is not in

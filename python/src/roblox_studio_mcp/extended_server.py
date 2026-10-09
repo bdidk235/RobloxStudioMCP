@@ -1495,9 +1495,11 @@ _READONLY_TOOLS = frozenset({
     "extended_watch_output",
     "extended_list_studios",
     "extended_studio_identity",
-    "extended_capture",
     "extended_skill",
 })
+# `extended_capture` is deliberately absent: with a caller-supplied `save_path`
+# it truncates a host file, so marking it read-only would let clients run it
+# concurrently with mutating calls. See `capture.py`, which confines the path.
 
 for _tool in _EXTENDED_TOOLS:
     _tool.read_only = _tool.name in _READONLY_TOOLS

@@ -55,7 +55,7 @@
     {
       "name": "extended_capture",
       "description_chars": 215,
-      "read_only": true,
+      "read_only": false,
       "schema": {
         "properties": {
           "save_path": {

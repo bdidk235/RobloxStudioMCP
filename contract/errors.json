@@ -381,10 +381,10 @@
     },
     {
       "site": "save_path: unwritable destination",
-      "code": "INVALID_ARGUMENT",
-      "message": "captured a 2x2 PNG (68 bytes) but could not write it to \"C:\\\\tmp\\\\no-such-dir\\\\shot.png\": ENOENT. The parent directory must exist and be writable. The capture itself succeeded; the encoded PNG is discarded when this call returns and is NOT retrievable afterwards, so re-capture rather than retry the write. Either pass a save_path whose parent directory exists and is writable, or omit save_path to get png_base64 in the result - the latter has no filesystem dependency but rides this transport's return channel, which truncates at exactly 100,015 characters with no error, so it is only safe while png_bytes stays under about 75,000.",
+      "code": "CAPABILITY_DENIED",
+      "message": "save_path is outside the working directory. Pass a save_path inside the working directory, or omit save_path to get png_base64 in the result.",
       "code_only": true,
-      "why": "The pixels are fine and the request is what cannot be honoured: the path the caller supplied does not name a writable file. UNKNOWN was the status quo and is classify()'s catch-all, so branching on it catches every unrelated failure; a new WRITE_FAILED code would buy no decision the errno in data does not already make, for permanent public surface in two implementations. Deliberately NOT prefixed 'capture:' - the three capture: sites are integrity checks on what Studio sent, and INVALID_ARGUMENT there would send the caller to edit a request that was fine. The one case the code overstates is ENOSPC, where the path is fine and the disk is full; data.errno says so. code_only because the message embeds a temp-dir path and an OS errno, which differ per machine and per platform."
+      "why": "Confinement fires before the write: a path outside the working directory is refused whether or not its parent exists, so the old ENOENT message (and its errno detail) only ever described the inside-cwd case. CAPABILITY_DENIED is the honest code for a boundary refusal; INVALID_ARGUMENT remains for paths that pass confinement but still cannot be written. code_only because the message embeds a temp-dir path that differs per machine and per platform."
     }
   ]
 }
