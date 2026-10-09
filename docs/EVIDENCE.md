@@ -1693,12 +1693,12 @@ Both hold as stated.
 | A3 | MEDIUM | game-tree paths splice raw into Luau (`local parent = {container}`); place content becomes executed code via search→write | closed (`82acaaf`) |
 | A4 | MEDIUM | `stop`: no confirm/dry-run, force-only kill, console-token fallback touches unnamed Studios, `studio_id` is a transport token | closed (see `TODO.md`, 2026-10-09) |
 | A5 | MEDIUM | kill target derived from user-writable log files; revalidation re-reads the same spoofable file | closed (see `TODO.md`, 2026-10-09) |
-| A6 | LOW | `disabled_tools` honoured by `server.py`, silently ignored by `extended_server.py` | open |
-| A7 | LOW | unbounded reads (`_readline_unbounded`, full-file `read_identity` fallback) | open |
-| A8 | LOW | progress-token deadline extensions unbounded; relayed descriptions unmarked by origin | open |
-| A9 | LOW | `extended_list_studios` spawns a second proxy per call | open |
-| A10 | LOW | `wait_seconds` the one unbounded numeric (`1e9` self-terminates; weak DoS) | open |
-| A11 | LOW | `_reject_unknown_arguments` exemption covers all relayed tools, not just `screen_capture` as `AGENTS.md` states | open |
+| A6 | LOW | `disabled_tools` honoured by `server.py`, silently ignored by `extended_server.py` | closed (`client.py:304`) |
+| A7 | LOW | unbounded reads (`_readline_unbounded`, full-file `read_identity` fallback) | closed (64 MiB cap `client.py:39`, 4 MiB `read_identity` with `read_truncated`) |
+| A8 | LOW | progress-token deadline extensions unbounded; relayed descriptions unmarked by origin | closed (600 s absolute `client.py:52`) |
+| A9 | LOW | `extended_list_studios` spawns a second proxy per call | closed (reuses the caller's `studio` client) |
+| A10 | LOW | `wait_seconds` the one unbounded numeric (`1e9` self-terminates; weak DoS) | closed (clamped to 90 s) |
+| A11 | LOW | `_reject_unknown_arguments` exemption covers all relayed tools, not just `screen_capture` as `AGENTS.md` states | closed (AGENTS.md now states the true scope) |
 | A12 | — | supply chain clean: stdlib-only true, no secrets/tokens, no install scripts; `apis.roblox.com` fetch validated, agent-unreachable | nothing to do |
 | A13 | — | no network surface of its own: no socket/bind/listen anywhere in `src` | nothing to do |
 
