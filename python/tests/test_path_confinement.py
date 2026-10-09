@@ -20,10 +20,13 @@ on `LAUNCH_FAILED`, a code that existed, compiled, and never matched. A test tha
 only asserts "it raised" would pass just as happily if `_confined` refused every
 path for the wrong reason, so each case pins `ToolError.code`.
 
-**The root is the working directory, deliberately.** A tool whose purpose is "read
-the file I name" has to work outside a fixed subtree or it gets abandoned, and an
-abandoned tool is worse than the one it replaced. Confinement to cwd still refuses
-`..` traversal and symlinks that point out, which is the actual hazard.
+**The root is a configured constant, not a parameter.** `file_root()` reads
+`ROBLOX_STUDIO_MCP_FILE_ROOT` (default: the working directory at call time), and
+the only opt-out is the operator's `ROBLOX_STUDIO_MCP_ALLOW_OUTSIDE`. The old
+model-settable `allow_outside` tool argument was a disclosure primitive --
+outside file + `file_type="script"` + read-back, two calls -- so it is gone
+from the functions, the schemas, and the dispatchers. A call carrying it is
+refused with `INVALID_ARGUMENT` naming the migration, never silently confined.
 
 **The size cap is measured, not guessed.** 18,508 `.luau`/`.lua`/`.rbxm`/`.rbxmx`
 files were surveyed: the largest is 13,917,476 bytes and the largest a caller
@@ -61,10 +64,14 @@ from roblox_studio_mcp.extended.errors import (  # noqa: E402
     ToolError,
 )
 from roblox_studio_mcp.extended.extensions import (  # noqa: E402
+    ALLOW_OUTSIDE_ENV_VAR,
+    FILE_ROOT_ENV_VAR,
     MAX_FILE_BYTES,
     MEASURED_MAX_FILE_BYTES,
     _confined,
+    confinement_allows_outside,
     execute_luau_from_file,
+    file_root,
     insert_asset_from_file,
 )
 
@@ -127,7 +134,7 @@ class Confinement(unittest.TestCase):
         with self.assertRaises(ToolError) as caught:
             _confined("../outside.luau")
         self.assertEqual(caught.exception.code, CAPABILITY_DENIED)
-        self.assertIn("outside the working directory", caught.exception.message)
+        self.assertIn("outside the file root", caught.exception.message)
 
     def test_dotdot_that_stays_inside_is_allowed(self):
         # The rule is the resolved location, not the presence of "..". A path
@@ -162,20 +169,81 @@ class Confinement(unittest.TestCase):
         self.assertEqual(caught.exception.code, CAPABILITY_DENIED)
 
     @_skip_on_windows_without_symlinks
-    def test_the_escape_hatch_allows_what_the_default_refuses(self):
+    def test_the_operator_switch_allows_what_the_default_refuses(self):
         secret = self.root / "secret.txt"
         secret.write_text("token", encoding="utf-8")
         link = self.inner / "innocent.luau"
         link.symlink_to(secret)
-        self.assertEqual(
-            _confined("innocent.luau", allow_outside=True), secret.resolve()
-        )
+        old = os.environ.get(ALLOW_OUTSIDE_ENV_VAR)
+        os.environ[ALLOW_OUTSIDE_ENV_VAR] = "1"
+        try:
+            self.assertTrue(confinement_allows_outside())
+            self.assertEqual(_confined("innocent.luau"), secret.resolve())
+        finally:
+            if old is None:
+                os.environ.pop(ALLOW_OUTSIDE_ENV_VAR, None)
+            else:
+                os.environ[ALLOW_OUTSIDE_ENV_VAR] = old
 
-    def test_the_escape_hatch_allows_traversal_too(self):
-        self.assertEqual(
-            _confined("../outside.luau", allow_outside=True),
-            (self.root / "outside.luau").resolve(),
-        )
+    def test_the_operator_switch_allows_traversal_too(self):
+        old = os.environ.get(ALLOW_OUTSIDE_ENV_VAR)
+        os.environ[ALLOW_OUTSIDE_ENV_VAR] = "true"
+        try:
+            self.assertEqual(
+                _confined("../outside.luau"),
+                (self.root / "outside.luau").resolve(),
+            )
+        finally:
+            if old is None:
+                os.environ.pop(ALLOW_OUTSIDE_ENV_VAR, None)
+            else:
+                os.environ[ALLOW_OUTSIDE_ENV_VAR] = old
+
+    def test_a_per_call_opt_out_no_longer_exists(self):
+        # The hole this file's successor closes: a model-settable boolean is
+        # not confinement. Direct callers get a loud TypeError, never a gate
+        # that opens.
+        with self.assertRaises(TypeError):
+            _confined("ok.luau", allow_outside=True)  # type: ignore[call-arg]
+
+    def test_the_root_is_configurable_but_defaults_to_cwd(self):
+        # Default follows the cwd the test chdir'd into.
+        self.assertEqual(file_root(), self.inner.resolve())
+        other = self.root / "other"
+        other.mkdir()
+        (other / "mine.luau").write_text("print(1)", encoding="utf-8")
+        old = os.environ.get(FILE_ROOT_ENV_VAR)
+        os.environ[FILE_ROOT_ENV_VAR] = str(other)
+        try:
+            self.assertEqual(file_root(), other.resolve())
+            # The inner dir is now *outside* the configured root...
+            with self.assertRaises(ToolError) as caught:
+                _confined(str(self.inner / "ok.luau"))
+            self.assertEqual(caught.exception.code, CAPABILITY_DENIED)
+            # ...while a path under the configured root passes.
+            self.assertEqual(
+                _confined(str(other / "mine.luau")),
+                (other / "mine.luau").resolve(),
+            )
+        finally:
+            if old is None:
+                os.environ.pop(FILE_ROOT_ENV_VAR, None)
+            else:
+                os.environ[FILE_ROOT_ENV_VAR] = old
+
+    def test_unset_switch_values_stay_confined(self):
+        for value in ("", "0", "false", "no", "off", "2"):
+            old = os.environ.get(ALLOW_OUTSIDE_ENV_VAR)
+            os.environ[ALLOW_OUTSIDE_ENV_VAR] = value
+            try:
+                self.assertFalse(
+                    confinement_allows_outside(), "value %r must not lift" % value
+                )
+            finally:
+                if old is None:
+                    os.environ.pop(ALLOW_OUTSIDE_ENV_VAR, None)
+                else:
+                    os.environ[ALLOW_OUTSIDE_ENV_VAR] = old
 
     # --- not a file -------------------------------------------------------- #
 
@@ -280,6 +348,75 @@ class ToolsUseTheGuard(unittest.TestCase):
             )
         self.assertEqual(caught.exception.code, CAPABILITY_DENIED)
         self.assertNotEqual(caught.exception.code, INVALID_ARGUMENT)
+
+
+class RemovedToolArgumentIsRefused(unittest.TestCase):
+    """A call carrying the removed `allow_outside` gets a refusal, not silence.
+
+    The audit's PoC was two calls: insert an outside file as a script with the
+    model-set flag, then read it back. The first call must now fail before
+    dispatch with INVALID_ARGUMENT naming the operator migration -- the generic
+    unknown-argument text would read as a typo, and silently confining would
+    change what the caller asked for without saying so.
+    """
+
+    def _reject(self, tool, arguments):
+        from roblox_studio_mcp import extended_server as es
+
+        try:
+            es._reject_unknown_arguments(tool, arguments)  # noqa: SLF001
+        except ToolError as exc:
+            return exc
+        raise AssertionError("%s accepted %r" % (tool, arguments))
+
+    def test_insert_with_allow_outside_is_refused_with_the_migration(self):
+        err = self._reject(
+            "extended_insert_asset_from_file",
+            {"file_path": "/tmp/x.luau", "allow_outside": True},
+        )
+        self.assertEqual(err.code, INVALID_ARGUMENT)
+        self.assertIn("ROBLOX_STUDIO_MCP_ALLOW_OUTSIDE", err.message)
+        self.assertIn("ROBLOX_STUDIO_MCP_FILE_ROOT", err.message)
+
+    def test_execute_from_file_with_allow_outside_is_refused(self):
+        err = self._reject(
+            "extended_execute_luau_from_file",
+            {"file_path": "/tmp/x.luau", "allow_outside": True},
+        )
+        self.assertEqual(err.code, INVALID_ARGUMENT)
+
+    def test_allow_outside_is_gone_from_both_schemas(self):
+        from roblox_studio_mcp import extended_server as es
+
+        for name in (
+            "extended_insert_asset_from_file",
+            "extended_execute_luau_from_file",
+        ):
+            tool = next(t for t in es._EXTENDED_TOOLS if t.name == name)  # noqa: SLF001
+            self.assertNotIn("allow_outside", tool.input_schema.get("properties") or {})
+
+    def test_the_poc_first_call_is_refused_before_any_read(self):
+        # The disclosure primitive end to end at the gate: an outside secret
+        # with file_type="script" never reaches a read -- confinement fires
+        # first, with studio=None proving no Studio contact precedes it.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            inner = root / "work"
+            inner.mkdir()
+            secret = root / "id_rsa"
+            secret.write_text("PRIVATE", encoding="utf-8")
+            cwd = os.getcwd()
+            os.chdir(inner)
+            try:
+                with self.assertRaises(ToolError) as caught:
+                    _drive(
+                        insert_asset_from_file(None, str(secret), file_type="script")  # type: ignore[arg-type]
+                    )
+                self.assertEqual(caught.exception.code, CAPABILITY_DENIED)
+            finally:
+                os.chdir(cwd)
 
 
 if __name__ == "__main__":
