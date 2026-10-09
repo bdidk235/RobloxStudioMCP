@@ -1747,3 +1747,54 @@ the artifact PyPI actually serves.
 
 The remaining seven skips are environmental and are not gaps: five `pyright is
 not installed`, one `needs live Studio`, one `only 2 sections; no index needed`.
+
+## The socket query was the whole cost, and it is now a syscall (2026-10-09)
+
+`attached_pids()` asked Windows which Studio holds the mesh connection on 13469
+by running `Get-NetTCPConnection` through PowerShell. Measured here on Windows
+Python 3.12, same machine, same moment, both paths returning the same seven pids:
+
+| method | per call | rows read |
+|---|---|---|
+| `iphlpapi!GetExtendedTcpTable` via ctypes | **31 ms** (IPv4), **89 ms** (v4+v6) | 4,469 |
+| `Get-NetTCPConnection` through PowerShell | **27.0 s** | same table |
+
+About **300x**. The query is not the difference - both reach the same kernel
+table. The cost is that PowerShell materialises every row as a .NET
+`NetTCPConnection` object and then pushes each one through a `Where-Object`
+scriptblock, re-parsed per row: 4,469 allocations plus 4,469 scriptblock
+invocations to answer a question about one port. The table has been measured at
+14,948 rows in the same session, so the absolute figure moves with the machine.
+
+**A first measurement said 14.5 ms and did not hold.** Re-measured under the same
+code it was 31 ms for IPv4 and 89 ms with both families. The 14.5 ms figure came
+from a probe that read one address family only, and it was quoted in three
+docstrings and two test files before that was checked. Corrected everywhere; the
+range is what the code now claims, not a constant.
+
+**The trap this writes for, recorded because it nearly shipped.** A ctypes call
+whose `argtypes` are undeclared *guesses* the pointer parameter, and the guess
+succeeds: the call returns 0 and the buffer reads back as a plausible **one-row**
+table with a plausible pid. No exception, no non-zero return. That happened on the
+first version of this function and only surfaced because it was diffed against the
+PowerShell answer. The struct layouts are also not order-portable - `MIB_TCP6ROW`
+puts state and ports *after* the two 16-byte addresses where `MIB_TCPROW` puts
+them first - and ports come back in network byte order, so the comparison is
+against `socket.htons(13469)`.
+
+**`NativeAndShellAgree`** in `python/tests/test_platform_macos.py` is the parity
+test, gated behind `ROBLOX_STUDIO_MCP_SOCKET_PARITY=1` because the slow side
+costs 27 s. It is the only thing that would catch a silent struct regression, so
+it is written to compare the two rather than to assert a value.
+
+Two smaller wins on the same path, both structural rather than measured: the
+witness now reads the AutoSaves lock (a directory listing, no subprocess) before
+the socket table, because either witness alone confirms; and `attached_pids`
+takes a `studio_pids` argument so a caller asking one membership question about
+an already-known Studio pid skips the `Get-CimInstance` enumeration (~1 s) that
+the intersection used to pay for. The lock-first ordering is pinned by a test
+that fails if the order is swapped back.
+
+*Settles against:* `attached_pids()` still running `Get-NetTCPConnection` through
+PowerShell on any path that does not need a filtered list; a struct layout change
+that does not trip the parity test.
