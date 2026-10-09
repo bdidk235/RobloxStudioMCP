@@ -16,10 +16,12 @@ reported. A refusal reports instead of killing. Nothing here touches
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from unittest import mock
 
 from roblox_studio_mcp.extended import instance as inst
+from roblox_studio_mcp.extended import locks as locks_mod
 
 
 def _resolved(**over):
@@ -36,8 +38,14 @@ def _resolved(**over):
     return base
 
 
-def _patched(*, alive=True, identity="match"):
-    """Stub liveness and the log-identity read behind the revalidation."""
+def _patched(*, alive=True, identity="match", witness=True):
+    """Stub liveness, the log-identity read, and the independent witnesses.
+
+    ``witness`` selects the A5 witness state: ``True`` means the attachment set
+    confirms the pid (the normal live case), ``False`` means every witness
+    source is empty (the refusal), and a dict of ``{attached: [...], locks:
+    {...}}`` sets them explicitly.
+    """
     if identity == "match":
         current = {4242: {"log": _resolved()["log"], "task": "EditFile"}}
     elif identity == "moved":
@@ -47,13 +55,38 @@ def _patched(*, alive=True, identity="match"):
         current = {}
     else:
         current = identity
-    return mock.patch.multiple(
-        inst,
-        _pid_alive=mock.Mock(return_value=alive),
-        logid=mock.Mock(
-            live_identities=mock.Mock(return_value=current),
-        ),
+    if witness is True:
+        attached, locks_now = [4242], {}
+    elif witness is False:
+        attached, locks_now = [], {}
+    else:
+        attached = witness.get("attached", [])
+        locks_now = {pid: name for pid, name in witness.get("locks", {}).items()}
+    return _witness_ctx(
+        alive=alive, current=current, attached=attached, locks_now=locks_now
     )
+
+
+def _witness_ctx(*, alive, current, attached, locks_now):
+    """Everything the revalidation touches, in one exit stack.
+
+    ``locks`` is patched in its own module rather than as an ``instance``
+    attribute: ``_independent_witness`` imports it locally, so
+    ``mock.patch.multiple(inst, locks=...)`` raises - the module never had that
+    name. The witness sources are the whole point of A5; see
+    ``test_no_witness_means_no_kill``.
+    """
+    import contextlib
+
+    stack = contextlib.ExitStack()
+    for patcher in (
+        mock.patch.object(inst, "_pid_alive", return_value=alive),
+        mock.patch.object(inst.logid, "live_identities", return_value=current),
+        mock.patch.object(inst.platform, "attached_pids", return_value=attached),
+        mock.patch.object(locks_mod, "live_locks", return_value=locks_now),
+    ):
+        stack.enter_context(patcher)
+    return stack
 
 
 class RevalidatePidForStop(unittest.IsolatedAsyncioTestCase):
@@ -107,13 +140,276 @@ class RevalidatePidForStop(unittest.IsolatedAsyncioTestCase):
             live_identities=mock.Mock(
                 return_value={4242: {"log": _resolved()["log"],
                                     "task": "EditFile"}}))
+        # A witness, because the revalidation now requires one: the log read
+        # and the witness read must both leave the loop, not just the log.
         with mock.patch.multiple(inst, _pid_alive=alive_mock,
                                  logid=log_mock), \
+             mock.patch.object(
+                 inst.platform, "attached_pids",
+                 mock.Mock(return_value=[4242])), \
+             mock.patch.object(
+                 locks_mod, "live_locks", mock.Mock(return_value={})), \
              mock.patch.object(inst.asyncio, "to_thread", side_effect=spy):
             got = await inst.revalidate_pid_for_stop(4242, _resolved())
         self.assertTrue(got["ok"], got)
         self.assertIn(alive_mock, seen, seen)
         self.assertIn(log_mock.live_identities, seen, seen)
+
+
+    async def test_no_witness_means_no_kill(self):
+        """The A5 rule: a log alone is not evidence, because the log is writable.
+
+        The resolve *and* the revalidation both read Studio's own logs, so a
+        planted log survived both and reached the kill. With every witness
+        source empty the answer is a refusal, however good the log looks.
+        """
+        with _patched(witness=False):
+            got = await inst.revalidate_pid_for_stop(4242, _resolved())
+        self.assertFalse(got["ok"], got)
+        self.assertIn("independent witness", got["error"])
+
+    async def test_a_contradicting_witness_is_refused(self):
+        """Witnesses that exist and name other pids are a mismatch, not silence.
+
+        The lock file is the source Studio itself writes, so a pid the lock
+        does not name while the log does is the planted-log case exactly.
+        """
+        with _patched(witness={"attached": [777, 888], "locks": {777: "Place1"}}):
+            got = await inst.revalidate_pid_for_stop(4242, _resolved())
+        self.assertFalse(got["ok"], got)
+        self.assertIn("independent witness", got["error"])
+        self.assertIn("777", got["error"])
+        self.assertIn("888", got["error"])
+
+    async def test_a_lock_alone_confirms_without_the_attachment_set(self):
+        """Either witness is enough - the lock and the socket table are
+        independent, and requiring both would strand a machine whose Studio
+        has not opened a place file."""
+        with _patched(witness={"attached": [], "locks": {4242: "Place1"}}):
+            got = await inst.revalidate_pid_for_stop(4242, _resolved())
+        self.assertTrue(got["ok"], got)
+        self.assertEqual(got["witnessed_by"], ["the AutoSaves lock file"])
+
+    async def test_the_attachment_set_alone_confirms_without_a_lock(self):
+        with _patched(witness={"attached": [4242], "locks": {}}):
+            got = await inst.revalidate_pid_for_stop(4242, _resolved())
+        self.assertTrue(got["ok"], got)
+        self.assertEqual(got["witnessed_by"], ["the mesh attachment set"])
+
+    async def test_an_unreadable_witness_source_is_not_a_contradiction(self):
+        """A raise from either witness read is a missing witness, never a
+        mismatch - and it still refuses, because no witness means no kill."""
+        import contextlib
+
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(
+            inst.platform, "attached_pids",
+            mock.Mock(side_effect=RuntimeError("socket table unreadable"))))
+        with stack, _patched(witness=False):
+            got = await inst.revalidate_pid_for_stop(4242, _resolved())
+        self.assertFalse(got["ok"], got)
+
+
+class TerminateProcessAsksBeforeItForces(unittest.TestCase):
+    """The graceful half: Studio gets the chance to save before `kill -9`."""
+
+    def test_the_grace_window_runs_before_the_forced_kill(self):
+        order = []
+        alive = {"v": True}
+
+        with mock.patch.object(inst.platform, "request_exit",
+                               side_effect=lambda p: order.append("request") or "taskkill"), \
+             mock.patch.object(inst.platform, "terminate",
+                               side_effect=lambda p: order.append("terminate")), \
+             mock.patch.object(inst, "_pid_alive",
+                               side_effect=lambda p: alive["v"]), \
+             mock.patch.object(inst.time, "sleep",
+                               side_effect=lambda s: alive.update(v=False)):
+            got = inst.terminate_process(4242, grace_seconds=0.01)
+        self.assertTrue(got["stopped"], got)
+        self.assertFalse(got["forced"])
+        self.assertEqual(order, ["request"], order)
+
+    def test_the_forced_kill_follows_the_window(self):
+        order = []
+        with mock.patch.object(inst.platform, "request_exit",
+                               side_effect=lambda p: order.append("request") or "taskkill"), \
+             mock.patch.object(inst.platform, "terminate",
+                               side_effect=lambda p: order.append("terminate")), \
+             mock.patch.object(inst, "_pid_alive",
+                               side_effect=lambda p: True), \
+             mock.patch.object(inst.time, "sleep",
+                               side_effect=lambda s: None):
+            got = inst.terminate_process(4242, grace_seconds=0.01)
+        self.assertFalse(got["stopped"], got)
+        self.assertTrue(got["forced"])
+        self.assertIn("forced kill", got["error"])
+        self.assertEqual(order, ["request", "terminate"], order)
+
+
+class ConsoleTokenFallbackRefusesAnEmptyPool(unittest.IsolatedAsyncioTestCase):
+    """Audit A4: an empty candidate set refuses, it never widens to everything."""
+
+    async def test_no_candidates_is_a_refusal_not_any_pid(self):
+        client = mock.Mock()
+        with mock.patch.object(
+            inst.logid, "read_identity",
+            return_value={"pid": 9999, "task": "EditFile"}), \
+            mock.patch.object(inst.os, "listdir", return_value=[]):
+            got = await inst._resolve_by_console_token(client, "sid-1", [])
+        self.assertFalse(got["resolved"], got)
+        self.assertIn("candidate", got["error"])
+        # The load-bearing half: the Studio was never written to.
+        client.execute_luau.assert_not_called()
+
+    async def test_a_candidate_pool_still_resolves(self):
+        """The refusal must not break the real path: a pool of one still joins.
+
+        Uses a real temp log directory with a real token in it, because the
+        token is generated inside the function from `uuid4` - a fake that
+        cannot see it would have to fake the whole log read, and then the test
+        would prove only that the mock returned what it was told.
+        """
+        import tempfile
+        import uuid
+        from unittest import mock as _m
+
+        client = mock.AsyncMock()
+        client.execute_luau = mock.AsyncMock(return_value=None)
+        token = "RBXPIDAABBCCDDEE"
+        with tempfile.TemporaryDirectory() as logs:
+            log_name = "0.741_20260930T120000Z_Studio_9A2B_last.log"
+            with open(os.path.join(logs, log_name), "w", encoding="utf-8") as fh:
+                # A real log shape: the token the sweep looks for, plus the
+                # ``Constructing UIThreadNotifier`` line `read_identity` pulls
+                # the pid from.
+                fh.write(token + "\n")
+                fh.write("[FLog::Output] 1.23456 7dbc: Constructing "
+                         "UIThreadNotifier for process '4242'\n")
+            with mock.patch.object(inst.logid, "log_dir", return_value=logs), \
+                 mock.patch.object(uuid, "uuid4",
+                                   return_value=_m.Mock(hex="aabbccddeeff00112233")):
+                got = await inst._resolve_by_console_token(
+                    client, "sid-1", [{"pid": 4242}])
+        self.assertTrue(got["resolved"], got)
+        self.assertEqual(got["pid"], 4242)
+        client.execute_luau.assert_awaited_once()
+
+
+class StopDryRun(unittest.IsolatedAsyncioTestCase):
+    """`dry_run` reports the stop target instead of terminating (audit A4).
+
+    The point is inspection at zero risk: the pid that WOULD be stopped, what
+    resolved it, and whether an independent witness would confirm it. Every
+    outcome is a report, including the ones that would refuse a real stop -
+    a dry run must never raise for finding the problem it was called to find.
+    """
+
+    async def _stop(self, arguments, *, rechecked=None, resolved=None):
+        from roblox_studio_mcp import extended_server as srv
+
+        seen = {}
+        killed = []
+        term = mock.Mock(side_effect=lambda pid: killed.append(pid) or
+                         {"stopped": True, "pid": pid})
+
+        async def resolver(client, studio_id, *, allow_console_write=None):
+            seen["allow_console_write"] = allow_console_write
+            return resolved if resolved is not None else _resolved()
+
+        async def revalidate(pid, answer):
+            seen["pid"] = pid
+            return rechecked or {"ok": True, "witnessed_by": ["the mesh attachment set"]}
+
+        with mock.patch.object(
+            inst, "resolve_pid_for_studio", new=mock.AsyncMock(side_effect=resolver),
+        ), mock.patch.object(
+            inst, "revalidate_pid_for_stop", new=mock.AsyncMock(side_effect=revalidate),
+        ), mock.patch.object(inst, "terminate_process", new=term):
+            raw = await srv._call_manage_instance(
+                mock.Mock(), dict({"action": "stop", "studio_id": "sid-1"},
+                                  **arguments))
+        return json.loads(raw["content"][0]["text"]), seen, killed
+
+    async def test_a_dry_run_reports_and_never_kills(self):
+        got, _seen, killed = await self._stop({"dry_run": True})
+        self.assertTrue(got["dry_run"], got)
+        self.assertFalse(got["stopped"], got)
+        self.assertEqual(got["pid"], 4242)
+        self.assertTrue(got["would_stop"], got)
+        self.assertEqual(got["witnessed_by"], ["the mesh attachment set"])
+        self.assertEqual(got["resolved_by"], "matched the mesh name against each "
+                                            "process's own log command line")
+        # The load-bearing half: the kill mock was never reached, not merely
+        # overridden.
+        self.assertEqual(killed, [], killed)
+
+    async def test_a_dry_run_reports_a_future_refusal_without_raising(self):
+        """The value of the flag: it finds the refusal before the kill is tried."""
+        got, _seen, killed = await self._stop(
+            {"dry_run": True},
+            rechecked={"ok": False, "code": "WITNESS_MISMATCH",
+                       "error": "no independent witness confirms it"},
+        )
+        self.assertTrue(got["dry_run"], got)
+        self.assertFalse(got["would_stop"], got)
+        self.assertTrue(got["would_refuse"], got)
+        self.assertIn("independent witness", got["error"])
+        self.assertEqual(killed, [], killed)
+
+    async def test_the_same_revalidation_refusal_raises_for_a_real_stop(self):
+        """The pairing: without the flag, the very same finding is an error.
+
+        A dry run reports it and a real stop refuses with it - one code, two
+        surfaces, and the flag decides which. This pins that the difference is
+        real rather than accidental.
+        """
+        from roblox_studio_mcp import extended_server as srv
+
+        from roblox_studio_mcp.extended.errors import ToolError
+
+        with mock.patch.object(
+            inst, "resolve_pid_for_studio",
+            new=mock.AsyncMock(return_value=_resolved()),
+        ), mock.patch.object(
+            inst, "revalidate_pid_for_stop",
+            new=mock.AsyncMock(return_value={
+                "ok": False, "code": "WITNESS_MISMATCH", "error": "no witness",
+            }),
+        ), mock.patch.object(inst, "terminate_process", new=mock.Mock()):
+            with self.assertRaises(ToolError) as caught:
+                await srv._call_manage_instance(
+                    mock.Mock(), {"action": "stop", "studio_id": "sid-1"})
+        self.assertEqual(caught.exception.code, "WITNESS_MISMATCH")
+        self.assertEqual(caught.exception.data["studio_id"], "sid-1")
+
+    async def test_a_dry_run_does_not_print_the_token(self):
+        """The token is the one side effect `stop` is otherwise permitted.
+
+        A dry run that printed would break the promise in its own description,
+        so the console-write grant is withdrawn rather than narrowed.
+        """
+        _got, seen, _killed = await self._stop({"dry_run": True})
+        self.assertFalse(seen["allow_console_write"], seen)
+
+    async def test_a_real_stop_still_grants_the_token(self):
+        """Without the flag the grant is as it was - backward compatible."""
+        got, seen, killed = await self._stop({})
+        self.assertTrue(seen["allow_console_write"], seen)
+        self.assertTrue(got["stopped"], got)
+        self.assertNotIn("dry_run", got)
+        self.assertEqual(killed, [4242], killed)
+
+    async def test_an_unresolvable_dry_run_still_reports_the_diagnosis(self):
+        _got, _seen, killed = await self._stop(
+            {"dry_run": True},
+            resolved={"resolved": False, "error": "no connected Studio has id 'sid-1'"},
+        )
+        self.assertFalse(_got["resolved"], _got)
+        self.assertTrue(_got["dry_run"], _got)
+        self.assertFalse(_got["stopped"], _got)
+        self.assertIn("no connected Studio", _got["error"])
+        self.assertEqual(killed, [], killed)
 
 
 class StopDispatchRevalidates(unittest.IsolatedAsyncioTestCase):

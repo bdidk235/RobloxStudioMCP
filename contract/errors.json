@@ -96,6 +96,7 @@
         ],
         "accepted": [
           "action",
+          "dry_run",
           "place_path",
           "studio_id"
         ]

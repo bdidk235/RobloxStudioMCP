@@ -185,6 +185,9 @@
           "studio_id": {
             "type": "string"
           },
+          "dry_run": {
+            "type": "boolean"
+          },
           "place_path": {
             "type": "string"
           }

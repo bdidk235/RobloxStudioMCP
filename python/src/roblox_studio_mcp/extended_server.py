@@ -43,7 +43,7 @@ from typing import (
 )
 
 from .client import MCPClient
-from .extended.errors import ToolError, classify, describe
+from .extended.errors import ToolError, WITNESS_MISMATCH, classify, describe
 from .roblox import default_args, default_command, default_shell
 from .types import Tool
 
@@ -681,6 +681,21 @@ _EXTENDED_TOOLS.extend(
                         "type": "string",
                         "description": "Required for action='stop'. " + _STUDIO_ID_DESCRIPTION,
                     },
+                    "dry_run": {
+                        "type": "boolean",
+                        # No `default`: this project's rule is that a default on
+                        # a non-required argument is "the default in disguise",
+                        # and the contract test pins that. The absent value
+                        # behaves as false.
+                        "description": (
+                            "For action='stop' only: resolve and check, then "
+                            "report instead of terminating. Returns the pid "
+                            "that WOULD be stopped, what resolved it, and "
+                            "whether an independent witness confirms it - so "
+                            "the target can be inspected at zero risk. "
+                            "Nothing is killed and no token is printed."
+                        ),
+                    },
                     "place_path": {
                         "type": "string",
                         "description": "For launch: the place file to open.",
@@ -1202,19 +1217,61 @@ async def _call_manage_instance(
         # `stop` grants it because the alternative is the refusal just below
         # (`needs_console_write: True`) stranding a destructive request - this
         # path would rather print one line than guess a PID and kill it.
-        # Behaviour is unchanged: the flag was already `True` here.
+        # A dry run withdraws the grant: it is inspecting, and an inspection
+        # that leaves a mark on the user's console is not an inspection.
+        dry_run = bool(arguments.get("dry_run"))
         found = await inst.resolve_pid_for_studio(
-            studio, studio_id, allow_console_write=True
+            studio, studio_id, allow_console_write=not dry_run
         )
         if not found.get("resolved"):
             result = {"action": action, **found}
+            if dry_run:
+                result["dry_run"] = True
+                result["stopped"] = False
         else:
             # Revalidated between resolve and kill: the resolve answer
             # describes a moment that has passed, and killing on stale evidence
             # hits the wrong process once the pid is reused. A refusal reports
             # instead of terminating; nothing here changes the tool's inputs.
             rechecked = await inst.revalidate_pid_for_stop(found["pid"], found)
-            if not rechecked.get("ok"):
+            if dry_run:
+                # Discovery is the whole purpose here, so every outcome is
+                # reported rather than acted on - including the ones that would
+                # refuse a real stop. A dry run must never raise for finding a
+                # problem it was called to find.
+                result = {
+                    "action": action,
+                    "studio_id": studio_id,
+                    "resolved_by": found.get("how"),
+                    "pid": found["pid"],
+                    "dry_run": True,
+                    "stopped": False,
+                    "would_stop": bool(rechecked.get("ok")),
+                }
+                if rechecked.get("ok"):
+                    result["witnessed_by"] = rechecked.get("witnessed_by")
+                else:
+                    result["would_refuse"] = rechecked.get("code") == WITNESS_MISMATCH
+                    result["error"] = rechecked.get("error")
+            elif not rechecked.get("ok"):
+                # A witness refusal is an error, not a soft result (audit A5).
+                # The revalidation already refuses without killing; this
+                # distinguishes the case where the refusal is *because the
+                # kill target could not be corroborated* from the ordinary
+                # "that pid has gone", which stays a result so callers that
+                # already branch on it keep working.
+                if rechecked.get("code") == WITNESS_MISMATCH:
+                    # A missing message is impossible - the code is only set
+                    # alongside one - but the type says it could be, so name
+                    # the invariant rather than let pyright's `None` through.
+                    detail = rechecked.get("error") or (
+                        "the kill target could not be corroborated by any "
+                        "independent witness"
+                    )
+                    raise ToolError("WITNESS_MISMATCH", detail,
+                                    tool="extended_manage_instance",
+                                    studio_id=studio_id,
+                                    pid=found["pid"])
                 result = {
                     "action": action,
                     "studio_id": studio_id,

@@ -61,6 +61,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from ..roblox import RobloxStudio
 from . import logid, platform
+from .errors import ToolError, WITNESS_MISMATCH
 
 #: An executable smaller than this is a partially written or absent install.
 #: Re-exported from :mod:`platform`, where it is defined.
@@ -1211,7 +1212,18 @@ async def resolve_pid_for_studio(
             },
             reason,
         )
-    pool = [{"pid": p} for p in candidates] if candidates else attached
+    # Empty candidates refuse rather than widening to every attached Studio
+    # (audit A4): the caller named one studio_id, so the token fallback must
+    # resolve within the set that name produced or not at all.
+    if not candidates:
+        return _with_reason(
+            {
+                "resolved": False,
+                "error": reason,
+            },
+            reason,
+        )
+    pool = [{"pid": p} for p in candidates]
     return await _resolve_by_console_token(client, studio_id, pool)
 
 
@@ -1284,10 +1296,17 @@ async def _resolve_unnamed_studio(
             )
         return answer
 
-    pool = [{"pid": pid} for pid in found["candidates"]] or all_processes
+    # Same rule as the named path: an empty candidate set refuses, it does not
+    # widen to every live process. A "no candidates" answer is the resolver
+    # saying it cannot identify this studio_id, and a destructive action needs
+    # that reported rather than resolved by elimination across the machine.
+    # (Audit A4: the pool is what a token print is allowed to name, so it is
+    # the candidate set or nothing.)
     unresolved: Dict[str, Any] = _with_reason(
         {
             "resolved": False,
+            # The candidates when there are any, otherwise what was live, so a
+            # caller can still see what the resolver was choosing between.
             "candidates": found["candidates"] or sorted(live),
             "error": found["reason"],
             # What the logs *did* establish, so an unresolved answer is still a
@@ -1299,6 +1318,9 @@ async def _resolve_unnamed_studio(
     if not allow_console_write:
         unresolved["needs_console_write"] = True
         return unresolved
+    if not found["candidates"]:
+        return unresolved
+    pool = [{"pid": pid} for pid in found["candidates"]]
     return await _resolve_by_console_token(client, studio_id, pool)
 
 
@@ -1326,6 +1348,19 @@ async def _resolve_by_console_token(
     filename's start stamp to each process's creation time within 5s, which was a
     guess: two launches seconds apart are exactly when that tolerance misfires.
     """
+    # Empty pool refuses BEFORE anything is printed. The token is a visible
+    # side effect on the user's Studio, so a refusal must not cost one; and
+    # this is the gate that keeps a token from naming an arbitrary pid (A4).
+    allowed = {p["pid"] for p in candidates}
+    if not allowed:
+        return {
+            "resolved": False,
+            "error": (
+                "no candidate processes: the console-token fallback resolves "
+                "only within the candidate set this studio_id resolved to, and "
+                "refuses to attribute an arbitrary pid."
+            ),
+        }
     token = f"RBXPID{uuid.uuid4().hex[:10].upper()}"
     try:
         await client.execute_luau(f'print("{token}")', studio_id=studio_id)
@@ -1348,13 +1383,14 @@ async def _resolve_by_console_token(
     if owner_log is None:
         return {"resolved": False, "error": "join token did not appear in any Studio log"}
 
-    # Narrow to the pool the caller believes is in play, so a token cannot resolve
-    # to a process that was already excluded.
-    allowed = {p["pid"] for p in candidates} if candidates else None
+    # Narrow to the pool the caller believes is in play. The empty case was
+    # already refused above, before the token was printed, so by the time a
+    # log has answered the set is known to be non-empty.
+    allowed = {p["pid"] for p in candidates}
 
     identity = logid.read_identity(os.path.join(directory, owner_log))
     pid = identity.get("pid") if identity else None
-    if pid is not None and identity is not None and (allowed is None or pid in allowed):
+    if pid is not None and identity is not None and pid in allowed:
         return {
             "resolved": True,
             "pid": pid,
@@ -1370,13 +1406,13 @@ async def _resolve_by_console_token(
     else:
         detail = (
             f"log {owner_log!r} belongs to pid {pid}, which is "
-            + ("not one of the candidate processes" if allowed is not None
-               else "not currently running")
+            + ("not one of the candidate processes" if allowed
+               else "not in an empty candidate set")
         )
     return {
         "resolved": False,
         "error": detail,
-        "candidates": sorted(allowed) if allowed is not None else None,
+        "candidates": sorted(allowed),
     }
 
 
@@ -1434,25 +1470,133 @@ async def revalidate_pid_for_stop(
                     "to terminate. Re-run action='list' and resolve again."
                 ),
             }
-    return {"ok": True}
+    return await _independent_witness(target)
+
+
+async def _independent_witness(target: int) -> Dict[str, Any]:
+    """Confirm a PID against a source other than the log it was resolved from.
+
+    Audit finding A5. The whole ``studio_id`` → PID join is derived from files
+    under ``%LOCALAPPDATA%\\Roblox\\logs`` - a directory any process running as
+    the user can write - and ``revalidate_pid_for_stop`` re-reads *the same
+    file*, so its re-read is not independent evidence. A planted log naming a
+    victim PID therefore survived both the resolve and the revalidation and
+    reached ``kill -9``.
+
+    Two sources exist that the log does not control:
+
+    - **The AutoSaves ``.lock`` file** (`extended/locks.py`), which Studio
+      itself writes and which states the pid of the process holding the place.
+    - **The attachment set** (`platform.attached_pids()`), the OS's own socket
+      table for the mesh port - not a file at all.
+
+    The rule is that at least one must confirm, and it is deliberately the
+    strict direction: **no witness, no kill.** A refusal costs a re-resolve; a
+    wrong kill costs the user's unsaved work in an unrelated process. Witnesses
+    that exist but disagree are ``WITNESS_MISMATCH``; no witness *at all* is
+    also a refusal, because "nothing contradicts it" is not evidence.
+    """
+    from . import locks
+
+    confirmed_by: List[str] = []
+    try:
+        attached = await asyncio.to_thread(platform.attached_pids)
+    except Exception:  # noqa: BLE001 - an unreadable socket table is a missing
+        attached = []      # witness, never a contradiction
+    if target in [int(p) for p in attached]:
+        confirmed_by.append("the mesh attachment set")
+
+    try:
+        live = await asyncio.to_thread(locks.live_locks, {target})
+    except Exception:  # noqa: BLE001 - ditto
+        live = {}
+    if target in [int(p) for p in live]:
+        confirmed_by.append("the AutoSaves lock file")
+
+    if confirmed_by:
+        return {
+            "ok": True,
+            "witnessed_by": confirmed_by,
+        }
+    attached_ids = sorted(int(p) for p in attached)
+    lock_ids = sorted(int(p) for p in live)
+    attached_text = ", ".join(str(p) for p in attached_ids) or "nothing"
+    lock_text = ", ".join(str(p) for p in lock_ids) or "nothing"
+    if attached or live:
+        return {
+            "ok": False,
+            "code": WITNESS_MISMATCH,
+            "error": (
+                f"pid {target} is live and its log still matches, but no "
+                f"independent witness confirms it: the attachment set holds "
+                f"{attached_text} and the AutoSaves locks hold {lock_text}. "
+                f"Refusing to terminate a pid derived from a log alone, "
+                f"because that log is user-writable. Re-run action='list' "
+                f"and resolve again."
+            ),
+        }
+    return {
+        "ok": False,
+        "code": WITNESS_MISMATCH,
+        "error": (
+            f"pid {target} is live and its log still matches, but no "
+            f"independent witness could be read at all - neither the mesh "
+            f"attachment set nor any AutoSaves lock. Refusing to terminate a "
+            f"pid supported by a log alone, because that log is "
+            f"user-writable and the revalidation re-reads it. Re-run "
+            f"action='list' and resolve again."
+        ),
+    }
 
 
 def terminate_process(pid: int, *, grace_seconds: float = 8.0) -> Dict[str, Any]:
     """Terminate a process and confirm it went away.
 
-    Kills via :func:`platform.terminate`, which branches on the host platform
-    (``Stop-Process`` on Windows, ``kill -9`` elsewhere), so the blast radius
-    is auditable: a PID must be resolved from a ``studio_id`` first, never
-    guessed.
+    **Asks before it forces.** :func:`platform.request_exit` gets the grace
+    window first - ``taskkill /PID`` (which posts ``WM_CLOSE``) on Windows,
+    ``SIGTERM`` on POSIX - so Studio gets the chance to autosave and flush its
+    place file. Only if it is still alive when the window expires does
+    :func:`platform.terminate` force it. The name said "grace" for years while
+    the body called the forced kill immediately and used ``grace_seconds``
+    only to wait for the corpse afterwards.
+
+    The PID must have been resolved from a ``studio_id`` first, never guessed -
+    that is the caller's job, and :func:`revalidate_pid_for_stop` stands in
+    front of this one.
     """
-    platform.terminate(int(pid))
+    target = int(pid)
+    requested = platform.request_exit(target)
     deadline = time.monotonic() + grace_seconds
+    forced = False
     while time.monotonic() < deadline:
-        if not _pid_alive(pid):
-            return {"stopped": True, "pid": pid}
+        if not _pid_alive(target):
+            return {
+                "stopped": True,
+                "pid": target,
+                "requested_exit_via": requested,
+                "forced": False,
+            }
         time.sleep(0.5)
-    return {"stopped": not _pid_alive(pid), "pid": pid,
-            "error": "process did not exit within the grace period"}
+    forced = True
+    platform.terminate(target)
+    forced_deadline = time.monotonic() + grace_seconds
+    while time.monotonic() < forced_deadline:
+        if not _pid_alive(target):
+            break
+        time.sleep(0.5)
+    stopped = not _pid_alive(target)
+    answer = {
+        "stopped": stopped,
+        "pid": target,
+        "requested_exit_via": requested,
+        "forced": True,
+    }
+    if not stopped:
+        answer["error"] = (
+            "process did not exit within the grace period, and was still "
+            "alive after the forced kill"
+        )
+    return answer
 
 
 def _pid_alive(pid: int) -> bool:

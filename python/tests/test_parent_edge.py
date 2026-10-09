@@ -693,14 +693,52 @@ class ResolverWiring(unittest.TestCase):
                          sorted([SERVER_PID] + list(CLIENT_PIDS)))
 
     def test_the_fallback_pool_is_every_process_when_nothing_anchors(self):
-        """No tree means no narrowing, and the token still has to be able to run.
-        Refusing to fall back would replace a resolvable case with an error."""
+        """Nothing anchors, and the pool is no longer "every process".
+
+        This test's own name and body are the finding, corrected. It used to
+        assert the widening: one unnamed row, one live process, and the token
+        fallback ran with a pool of *every live process*, because
+        ``[] or all_processes`` is ``all_processes``. That pool is what a token
+        print is allowed to name, and a token printed into the one Studio the
+        caller named could therefore come back attributed to an unrelated pid.
+
+        Nothing about the count changed - only the consequence did. The empty
+        answer is now a refusal carrying the resolver's own reason, and the
+        token never runs, because a pool of "everything" is not a pool.
+        """
         self._only(EDIT_PID)
         token = mock.AsyncMock(return_value={"resolved": False})
         with mock.patch.object(inst, "_resolve_by_console_token", new=token):
-            self._run(_rows([None]), True)
-        pool = token.await_args.args[2]
-        self.assertEqual([row["pid"] for row in pool], [EDIT_PID])
+            got = self._run(_rows([None]), True)
+        token.assert_not_awaited()
+        self.assertFalse(got["resolved"], got)
+        self.assertIn("reason" if "reason" in got else "error", got)
+        # What the logs did establish is still reported, so an unresolved
+        # answer stays a diagnosis rather than a shrug.
+        self.assertIn("playtest_tree", got)
+
+    def test_nothing_anchored_and_nothing_live_refuses_to_widen(self):
+        """Audit A4, the correction to the test above.
+
+        An empty candidate set used to widen the pool to *every live process*,
+        because ``[] or all_processes`` is ``all_processes``. The pool is what a
+        token print is allowed to name, so widening it is how a token printed
+        into the one Studio the caller named came back attributed to an
+        unrelated pid - and this is the stop path, so an arbitrary pid is a
+        kill target.
+
+        So the empty case refuses, and the refusal is the resolver's own
+        "cannot identify" answer rather than a bare error. The live set is
+        still reported under ``candidates`` so the caller can see what the
+        resolver was choosing between; it is just no longer the pool.
+        """
+        self._only()
+        token = mock.AsyncMock(return_value={"resolved": False})
+        with mock.patch.object(inst, "_resolve_by_console_token", new=token):
+            got = self._run(_rows([None]), True)
+        self.assertFalse(got["resolved"], got)
+        token.assert_not_awaited()
+        self.assertIn("playtest_tree", got)
 
     def test_a_guid_disagreement_is_carried_to_the_caller(self):
         """Reported, never obeyed - but silently dropping it would leave a caller
