@@ -80,7 +80,7 @@ import re
 import signal
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from .errors import CAPABILITY_DENIED, ToolError
 
@@ -552,6 +552,212 @@ def _pid_alive_windows(pid: int) -> bool:
     return any(int(r.get("ProcessId", 0) or 0) == int(pid) for r in rows)
 
 
+#: ``GetExtendedTcpTable`` table class: owner PID for every TCP row. The value
+#: the native mesh-holder read uses; see :func:`_mesh_holders_native`.
+TCP_TABLE_OWNER_PID_ALL = 5
+
+#: ``MIB_TCP_STATE_ESTAB`` - the only state that means "this pid holds the
+#: connection" rather than "a socket exists".
+MIB_TCP_STATE_ESTAB = 5
+
+
+def _mesh_holders_native(port: int) -> Optional[Set[int]]:
+    """PIDs with an ESTABLISHED connection to `port`, read from the kernel.
+
+    **Why this exists: `Get-NetTCPConnection` costs 27 s here.**
+    Measured 2026-10-09 on Windows Python 3.12, same machine, same moment, same
+    seven pids returned by both paths:
+
+    | method | per call | rows read |
+    |---|---|---|
+    | this one, `iphlpapi!GetExtendedTcpTable` | **31 ms** (v4 only), **89 ms** (v4+v6) | 4,469 v4 |
+    | `Get-NetTCPConnection` through PowerShell | **27.0 s** | same table |
+
+    About **300x**, and the reason is not the query - both reach the same kernel
+    table. It is that PowerShell materialises every row as a .NET
+    `NetTCPConnection` object and then pushes each one through a `Where-Object`
+    scriptblock, re-parsed per row: the table held 4,469 rows at the time it was
+    last measured and has been seen at 14,948, so that is thousands of object
+    allocations plus thousands of scriptblock invocations, to answer a question
+    about one port.
+
+    **The native figure is not a constant, and an earlier version of this
+    docstring said 14.5 ms.** It does not hold: re-measured, the same call is
+    31 ms for IPv4 and 89 ms with both families, and the difference is the table
+    size, which tracks how many connections the machine has open. So this is a
+    300x improvement with a *variable* absolute cost, not a fixed 14.5 ms - and
+    anyone quoting a single number should quote the range.
+
+    **`argtypes` is not optional here, and omitting it fails silently.** The
+    first version of this function left `argtypes` undeclared; ctypes guessed
+    the pointer parameter, the call returned success, and the buffer read back
+    as a plausible **one-row** table with a plausible pid - no exception, no
+    non-zero return. That wrong answer only surfaced because it was diffed
+    against the PowerShell answer. Declare the prototype, or do not write this
+    function.
+
+    Ports come back in **network byte order**, so the comparison is against
+    `socket.htons(port)`, not `port`. Getting that wrong yields zero matches
+    rather than wrong ones, which makes it the harmless half of the trap.
+
+    `None` means "not available" - not Windows, or the call failed - and the
+    caller falls back to the shell query. A missing native path degrades to the
+    one that works, which is slower and correct, rather than to an error.
+    """
+    if not is_windows():
+        return None
+    try:
+        import ctypes
+        import socket
+
+        # `windll` is Windows-only in pyright's stubs, so it is reached through
+        # getattr rather than attribute access - the same pattern as the reaper
+        # in `roblox.py`. It is guaranteed to exist here: the `is_windows()` gate
+        # above already ran. Returning None on absence keeps the fallback
+        # honest rather than guessing.
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            return None
+        iphlpapi = windll.iphlpapi
+        iphlpapi.GetExtendedTcpTable.restype = ctypes.c_ulong
+        iphlpapi.GetExtendedTcpTable.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong),
+            ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
+        ]
+
+        class _RowV4(ctypes.Structure):
+            _fields_ = [
+                ("dwState", ctypes.c_ulong),
+                ("dwLocalAddr", ctypes.c_ulong),
+                ("dwLocalPort", ctypes.c_ulong),
+                ("dwRemoteAddr", ctypes.c_ulong),
+                ("dwRemotePort", ctypes.c_ulong),
+                ("dwOwningPid", ctypes.c_ulong),
+            ]
+
+        class _RowV6(ctypes.Structure):
+            # NOT the v4 order. In v6 the two 16-byte addresses and their scope
+            # ids come first, and state and ports come after them. Swapping the
+            # two layouts reads ports out of address bytes - plausible numbers,
+            # wrong answer, no error.
+            _fields_ = [
+                ("ucLocalAddr", ctypes.c_ubyte * 16),
+                ("dwLocalScopeId", ctypes.c_ulong),
+                ("ucRemoteAddr", ctypes.c_ubyte * 16),
+                ("dwRemoteScopeId", ctypes.c_ulong),
+                ("dwState", ctypes.c_ulong),
+                ("dwLocalPort", ctypes.c_ulong),
+                ("dwRemotePort", ctypes.c_ulong),
+                ("dwOwningPid", ctypes.c_ulong),
+            ]
+
+        row_size = {2: ctypes.sizeof(_RowV4), 23: ctypes.sizeof(_RowV6)}
+        want = socket.htons(port)
+        found: Set[int] = set()
+
+        for af in (2, 23):
+            # One sizing call, then one real call. The buffer is sized by the
+            # kernel, so there is no retry loop to get wrong.
+            size = ctypes.c_ulong(0)
+            iphlpapi.GetExtendedTcpTable(
+                None, ctypes.byref(size), 0, af, TCP_TABLE_OWNER_PID_ALL, 0
+            )
+            if not size.value:
+                continue
+            buf = ctypes.create_string_buffer(size.value)
+            used = ctypes.c_ulong(size.value)
+            rc = iphlpapi.GetExtendedTcpTable(
+                buf, ctypes.byref(used), 0, af, TCP_TABLE_OWNER_PID_ALL, 0
+            )
+            if rc != 0:
+                continue
+            # `dwNumEntries` is a bare DWORD ahead of the rows, and the struct's
+            # array is declared size 1 only so the type exists. Rows are read by
+            # offset from the buffer rather than through the struct array, so
+            # reading past a declared length cannot happen.
+            head = ctypes.cast(buf, ctypes.POINTER(ctypes.c_ulong)).contents.value
+            for index in range(head):
+                base = 4 + index * row_size[af]
+                row = (
+                    _RowV4.from_buffer_copy(buf, base)
+                    if af == 2
+                    else _RowV6.from_buffer_copy(buf, base)
+                )
+                if row.dwState != MIB_TCP_STATE_ESTAB:
+                    continue
+                if row.dwRemotePort != want:
+                    continue
+                if row.dwOwningPid:
+                    found.add(int(row.dwOwningPid))
+        return found
+    except Exception:  # noqa: BLE001 - a missing native path is not an error
+        return None
+
+
+def attached_pids(studio_pids: Optional[List[int]] = None) -> List[int]:
+    """Pids holding an established connection to the mesh on :data:`MESH_PORT`.
+
+    Filtered to Studio processes, because the proxy and the listener are holders
+    too, and neither is a Studio.
+
+    On macOS this uses ``lsof`` rather than anything Python can do portably: the
+    mesh is a loopback WebSocket, so the owning process is only visible through the
+    system's own socket table. Unverified on macOS.
+
+    ``studio_pids`` narrows the intersection when the caller already knows which
+    processes are in play. Passing it skips the process enumeration entirely -
+    which matters more than it looks, because that enumeration is the *other*
+    PowerShell spawn, and a caller asking one membership question about an
+    already-known Studio pid should not pay for a full list it does not need.
+    """
+    holders = _mesh_holders_native(MESH_PORT)
+    if holders is None:
+        holders = _mesh_holders_shell(MESH_PORT)
+    if studio_pids is None:
+        studio = {row["pid"] for row in process_rows()}
+    else:
+        studio = {int(p) for p in studio_pids}
+    return sorted(holders & studio)
+
+
+def _mesh_holders_shell(port: int) -> Set[int]:
+    """The socket query, through PowerShell or lsof. The slow path.
+
+    Kept because :func:`_mesh_holders_native` returns ``None`` whenever the
+    native read is unavailable, and a machine that cannot read the table natively
+    is still a machine that needs an answer. Also kept as the parity reference:
+    the test suite asserts the two agree rather than trusting the struct layout,
+    because that is the only way a silent ctypes regression gets caught.
+    """
+    holders: Set[int] = set()
+    if is_windows():
+        data = _powershell_json(
+            "Get-NetTCPConnection -RemotePort %d -ErrorAction SilentlyContinue | "
+            "Where-Object { $_.State -eq 'Established' } | "
+            "Select-Object -ExpandProperty OwningProcess -Unique | ConvertTo-Json -Compress"
+            % port
+        )
+        holders = {int(p) for p in (data if isinstance(data, list) else [data] or [])
+                   if p is not None}
+    else:
+        proc = subprocess.run(
+            ["lsof", "-nP", "-iTCP:%d" % port, "-sTCP:ESTABLISHED", "-t"],
+            capture_output=True, text=True, timeout=30,
+        )
+        # Return code ignored for the same reason as `ps` above: "nothing is
+        # holding the port" is the normal state of a machine with no Studio
+        # running, and an empty answer is not a failure.
+        #
+        # `-nP` matters more than it looks: without it `lsof` resolves the port
+        # through `/etc/services` and does reverse lookups, so a connection to
+        # 13469 comes back as a service name rather than a number.
+        for line in (proc.stdout or "").splitlines():
+            line = line.strip()
+            if line.isdigit():
+                holders.add(int(line))
+    return holders
+
+
 def pid_alive(pid: int) -> bool:
     """Whether a pid is still running."""
     if is_windows():
@@ -563,48 +769,3 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
-def attached_pids() -> List[int]:
-    """Pids holding an established connection to the mesh on :data:`MESH_PORT`.
-
-    Filtered to Studio processes, because the proxy and the listener are holders
-    too, and neither is a Studio.
-
-    On macOS this uses ``lsof`` rather than anything Python can do portably: the
-    mesh is a loopback WebSocket, so the owning process is only visible through the
-    system's own socket table. Unverified on macOS.
-    """
-    if is_windows():
-        data = _powershell_json(
-            "Get-NetTCPConnection -RemotePort %d -ErrorAction SilentlyContinue | "
-            "Where-Object { $_.State -eq 'Established' } | "
-            "Select-Object -ExpandProperty OwningProcess -Unique | ConvertTo-Json -Compress"
-            % MESH_PORT
-        )
-        holders = {int(p) for p in (data if isinstance(data, list) else [data] or [])
-                   if p is not None}
-    else:
-        proc = subprocess.run(
-            ["lsof", "-nP", "-iTCP:%d" % MESH_PORT, "-sTCP:ESTABLISHED", "-t"],
-            capture_output=True, text=True, timeout=30,
-        )
-        # Return code ignored for the same reason as `ps` above: "nothing is
-        # holding the port" is the normal state of a machine with no Studio
-        # running, and it is an empty answer, not a failure.
-        #
-        # `-nP` matters more than it looks: without it `lsof` resolves the port
-        # through `/etc/services` and does reverse lookups, so a connection to
-        # 13469 comes back as a service name rather than a number. The research
-        # also records a widely-read report that `sudo lsof -i` stopped returning
-        # most processes on macOS Sequoia, which resolved to two causes that do
-        # not apply here - the COMMAND column truncates to 9 characters (this
-        # passes `-t`, so only pids are printed at all), and QUIC traffic is UDP.
-        # No `sudo` is needed for a loopback mesh where both ends are this
-        # user's own processes.
-        holders = set()
-        for line in (proc.stdout or "").splitlines():
-            line = line.strip()
-            if line.isdigit():
-                holders.add(int(line))
-
-    studio = {row["pid"] for row in process_rows()}
-    return sorted(holders & studio)

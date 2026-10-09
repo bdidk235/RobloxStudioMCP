@@ -131,10 +131,13 @@ def list_studio_processes(
     """Every running ``RobloxStudioBeta``, with its role and mesh attachment.
 
     ``with_attachment=False`` skips the mesh-connection lookup, and that is worth
-    far more than it looks. Attachment costs **9.5s** here - a
-    ``Get-NetTCPConnection`` plus a second ``Get-CimInstance``, at 1.9s a spawn -
-    against 2.1s for the process list itself, so the "cheap" call is still
-    PowerShell-bound but four times cheaper.
+    far more than it looks. The socket query was the expensive half of this call
+    for as long as it went through ``Get-NetTCPConnection``; measured 2026-10-09
+    it is now ~89 ms natively against 27 s through PowerShell
+    (``platform._mesh_holders_native``), so what remains is the process list
+    itself - one ``Get-CimInstance`` spawn at ~1 s. Attachment is still not
+    fetched where nothing joins on it, because it is no longer free, just no
+    longer ruinous.
 
     Callers that are polling for a change, or only need PIDs and creation times,
     should pass ``False`` and rely on ``max_age``. The resolver's
@@ -724,8 +727,8 @@ async def launch_instance(
             # either identified above or reported as unidentified at the
             # deadline below, and neither needs the parent's exit code.
             #
-            # Attachment is not needed to spot our own process, and looking it up
-            # costs 9.5s against 2.1s - which is most of this loop's budget. The
+            # Attachment is not needed to spot our own process, and the socket
+            # query is most of this loop's budget. The
             # cache is bypassed with max_age=0 because the whole question is
             # whether a pid that did not exist a moment ago exists now, and a
             # cached answer would answer "no" to precisely the process we launched.
@@ -1142,9 +1145,10 @@ async def resolve_pid_for_studio(
 
     # Every process, not just attached ones: an unattached match is exactly the
     # kind of near-miss that produced the wrong kill. Attachment is not fetched
-    # here - nothing in this function joins on it, and fetching it costs 9.5s
-    # against 2.1s for the list itself. Off the event loop, like every other
-    # process-list read on an async path.
+    # here because nothing in this function joins on it - and because the socket
+    # query, native at ~89 ms as it now is, is still not worth paying for a
+    # field no branch reads. Off the event loop, like every other process-list
+    # read on an async path.
     all_processes = await asyncio.to_thread(
         list_studio_processes, False
     )
@@ -1495,24 +1499,36 @@ async def _independent_witness(target: int) -> Dict[str, Any]:
     wrong kill costs the user's unsaved work in an unrelated process. Witnesses
     that exist but disagree are ``WITNESS_MISMATCH``; no witness *at all* is
     also a refusal, because "nothing contradicts it" is not evidence.
+
+    **Cheap witness first, and membership only.** The lock is a file read; the
+    socket query was 27 s through PowerShell and is ~89 ms natively now
+    (``platform._mesh_holders_native``), and either witness alone confirms - so
+    reading the attachment set before the lock spent the expensive half first
+    and threw it away whenever the lock had already answered. It is also passed
+    ``[target]``, so the intersection skips the process-list enumeration
+    entirely: the target is already known to be a Studio process, and a
+    membership question about it does not need a full list built to answer it.
     """
     from . import locks
 
     confirmed_by: List[str] = []
-    try:
-        attached = await asyncio.to_thread(platform.attached_pids)
-    except Exception:  # noqa: BLE001 - an unreadable socket table is a missing
-        attached = []      # witness, never a contradiction
-    if target in [int(p) for p in attached]:
-        confirmed_by.append("the mesh attachment set")
-
+    # 1. The lock: a directory listing plus one file read, no subprocess at all.
     try:
         live = await asyncio.to_thread(locks.live_locks, {target})
-    except Exception:  # noqa: BLE001 - ditto
-        live = {}
+    except Exception:  # noqa: BLE001 - an unreadable lock is a missing witness,
+        live = {}        # never a contradiction
     if target in [int(p) for p in live]:
         confirmed_by.append("the AutoSaves lock file")
 
+    # 2. The socket table, only because the lock did not already answer.
+    attached: List[int] = []
+    if not confirmed_by:
+        try:
+            attached = await asyncio.to_thread(platform.attached_pids, [target])
+        except Exception:  # noqa: BLE001 - ditto
+            attached = []
+        if target in [int(p) for p in attached]:
+            confirmed_by.append("the mesh attachment set")
     if confirmed_by:
         return {
             "ok": True,

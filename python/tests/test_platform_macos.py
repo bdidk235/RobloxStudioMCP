@@ -494,3 +494,138 @@ class TerminateProcessRouting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(platform.is_windows(),
+                     "the native socket read is Windows-only; it returns None elsewhere")
+class NativeSocketRead(unittest.TestCase):
+    """`_mesh_holders_native` reads the kernel table directly.
+
+    **Measured 2026-10-09 on Windows Python 3.12:** 31 ms for the IPv4 table and
+    89 ms with both address families, against 27.0 s for the same seven pids
+    through `Get-NetTCPConnection` - about 300x. The reason is not the query:
+    both reach the same kernel table. PowerShell wraps each row in a .NET object
+    and pushes it through a `Where-Object` scriptblock, re-parsed per row, over a
+    table that held 4,469 rows when last measured and has been seen at 14,948.
+
+    The absolute figure moves with the table size, so it is deliberately not
+    quoted as a constant. An earlier draft of this docstring said 14.5 ms; that
+    did not survive a second measurement.
+
+    These tests do not need a Studio, and that is deliberate: they open a local
+    listener and connect to it, so the connection's owner is this test process
+    and the expected answer is `os.getpid()`. A wrong struct layout, a swapped
+    v4/v6 field order, or a port compared in host instead of network byte order
+    all produce a *plausible* answer with no exception - which is exactly the
+    failure this project treats as the expensive kind.
+    """
+
+    def _connected_pair(self):
+        import socket
+
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.settimeout(5)
+        client.connect(("127.0.0.1", port))
+        server, _ = listener.accept()
+        return listener, client, server, port
+
+    def test_the_native_read_finds_a_connection_we_made_ourselves(self):
+        listener, client, server, port = self._connected_pair()
+        try:
+            found = platform._mesh_holders_native(port)
+            self.assertIsNotNone(found)
+            # Both ends are this process, so a correct read finds this pid and
+            # nothing else needs to be true.
+            self.assertIn(os.getpid(), found)
+        finally:
+            for sock in (server, client, listener):
+                sock.close()
+
+    def test_a_port_with_no_connection_yields_nothing(self):
+        """The negative control: an empty answer rather than a wrong one.
+
+        Byte order is the trap here - a port matched in host order finds zero
+        rows, so this test cannot catch it. The one above can, because it asserts
+        a pid is *found*; together they cover both directions.
+        """
+        import socket
+
+        # Bound and listening, so the port exists, but nothing connects: the
+        # reader looks at remote ports of ESTABLISHED rows, not listeners.
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        try:
+            # A set, per the signature - not a list.
+            self.assertEqual(platform._mesh_holders_native(port), set())
+        finally:
+            listener.close()
+
+    def test_the_byte_order_direction_is_load_bearing(self):
+        """`htons`, not the bare port. Pin the value, not just the outcome.
+
+        The positive test above would still pass if the port happened to be
+        byte-order symmetric. Asserting on a known asymmetric value is what makes
+        the direction explicit.
+        """
+        import socket
+
+        # 13469 is 0x349D; byte-swapped it is 0x9D34. The mesh port is asymmetric
+        # in both bytes, so the direction cannot pass by accident.
+        self.assertEqual(socket.htons(platform.MESH_PORT), 0x9D34)
+
+    def test_it_returns_none_rather_than_raising_when_the_call_is_denied(self):
+        """A native path that cannot run degrades to the shell one, not to an error."""
+        with mock.patch.object(platform, "is_windows", return_value=False):
+            self.assertIsNone(platform._mesh_holders_native(platform.MESH_PORT))
+
+
+@unittest.skipUnless(
+    os.environ.get("ROBLOX_STUDIO_MCP_SOCKET_PARITY") == "1",
+    "compares native against the 27s PowerShell path (ROBLOX_STUDIO_MCP_SOCKET_PARITY=1)",
+)
+class NativeAndShellAgree(unittest.TestCase):
+    """The parity check, because a struct regression is otherwise invisible.
+
+    A wrong `argtypes` makes ctypes guess the pointer parameter: the call returns
+    success and the buffer reads back as a plausible **one-row** table with a
+    plausible pid. No exception, no non-zero return code. The first version of
+    this function had exactly that bug and only a diff against this path caught
+    it - so the diff is the test.
+    """
+
+    def test_both_paths_agree_on_the_mesh_port(self):
+        native = platform._mesh_holders_native(platform.MESH_PORT)
+        shell = platform._mesh_holders_shell(platform.MESH_PORT)
+        self.assertIsNotNone(native, "native read unavailable")
+        self.assertEqual(set(native), set(shell))
+
+
+class AttachedPidsScoping(unittest.TestCase):
+    """`attached_pids(studio_pids=...)` skips the process enumeration."""
+
+    def test_a_scoped_call_enumerates_nothing(self):
+        with mock.patch.object(platform, "process_rows",
+                               side_effect=AssertionError("enumerated processes")), \
+             mock.patch.object(platform, "_mesh_holders_native",
+                               return_value={11, 22, 33}):
+            self.assertEqual(platform.attached_pids([22]), [22])
+        # The unscoped call still builds the list, because callers asking "which
+        # Studios are attached" need it.
+        with mock.patch.object(platform, "process_rows",
+                               return_value=[{"pid": 11}, {"pid": 22}]), \
+             mock.patch.object(platform, "_mesh_holders_native",
+                               return_value={11, 22, 33}):
+            self.assertEqual(platform.attached_pids(), [11, 22])
+
+    def test_a_failed_native_read_falls_back_to_the_shell(self):
+        with mock.patch.object(platform, "_mesh_holders_native", return_value=None), \
+             mock.patch.object(platform, "_mesh_holders_shell",
+                               return_value={4242}), \
+             mock.patch.object(platform, "process_rows", return_value=[]):
+            self.assertEqual(platform.attached_pids([4242]), [4242])

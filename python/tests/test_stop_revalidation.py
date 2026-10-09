@@ -15,6 +15,7 @@ reported. A refusal reports instead of killing. Nothing here touches
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import unittest
@@ -489,3 +490,70 @@ class StopDispatchRevalidates(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WitnessReadsTheCheapSourceFirst(unittest.IsolatedAsyncioTestCase):
+    """The A5 witness ordering: the lock is read before the socket table.
+
+    Not a micro-optimisation for its own sake. The socket query was 27 s through
+    PowerShell and either witness alone confirms, so reading it first spent the
+    expensive half and discarded it whenever the lock had already answered. It is
+    ~89 ms natively now (`platform._mesh_holders_native`), which makes this
+    ordering cheap in absolute terms - but it is still the difference between a
+    file read and a syscall, and it is pinned so a later tidy-up cannot quietly
+    restore the expensive order.
+    """
+
+    async def _run_with_witness(self, witness):
+        """Run the revalidation, returning (answer, socket-read mock).
+
+        The mock is the patched ``attached_pids`` itself rather than a spy, so it
+        is captured inside the patch's lifetime - asserting on
+        ``inst.platform.attached_pids`` after the ``with`` block reads the real
+        function, which has no assert methods and proves nothing.
+        """
+        stack = contextlib.ExitStack()
+        stack.enter_context(_patched(witness=witness))
+        socket_read = mock.patch.object(
+            inst.platform, "attached_pids",
+            return_value=witness.get("attached", []) if isinstance(witness, dict) else [],
+        )
+        socket_read = stack.enter_context(socket_read)
+        try:
+            got = await inst.revalidate_pid_for_stop(4242, _resolved())
+        finally:
+            stack.close()
+        return got, socket_read
+
+    async def test_a_confirmed_lock_never_touches_the_socket_table(self):
+        got, socket_read = await self._run_with_witness(
+            {"attached": [], "locks": {4242: "Place1"}})
+        self.assertTrue(got["ok"], got)
+        self.assertEqual(got["witnessed_by"], ["the AutoSaves lock file"])
+        # The load-bearing assertion, and the one a reordering would break.
+        socket_read.assert_not_called()
+
+    async def test_the_socket_table_is_read_when_the_lock_is_silent(self):
+        got, socket_read = await self._run_with_witness(
+            {"attached": [4242], "locks": {}})
+        self.assertTrue(got["ok"], got)
+        self.assertEqual(got["witnessed_by"], ["the mesh attachment set"])
+        socket_read.assert_called_once()
+
+    async def test_the_socket_read_asks_one_membership_question(self):
+        """The intersection is scoped, so the process enumeration is skipped.
+
+        The target is already known to be a Studio process - the resolver pulled
+        it out of the live process list. Passing `[target]` as the scoping set
+        means `attached_pids` computes `holders & {target}` and never enumerates
+        processes to build a list nobody asked for.
+        """
+        _got, socket_read = await self._run_with_witness(
+            {"attached": [4242], "locks": {}})
+        socket_read.assert_called_once_with([4242])
+
+    async def test_neither_witness_still_refuses(self):
+        got, socket_read = await self._run_with_witness(False)
+        self.assertFalse(got["ok"], got)
+        self.assertIn("independent witness", got["error"])
+        socket_read.assert_called_once()
