@@ -112,7 +112,9 @@ behaviour - the regenerated contract diff is the record of what moved - while
 a fix changes no surface at all. The version lives in two files,
 `python/pyproject.toml` and `python/src/roblox_studio_mcp/_version.py`, and
 `test_packaging.py` pins them together, so bump both or the gate fails.
-Current: `0.1.0`, pre-proud.
+Current: `0.1.0`, pre-proud. Release with `python/scripts/pypi_release.py`
+(`test`, then `dry-run`, then `publish`); tokens live in untracked
+`python/.env` per `python/.env.example`.
 
 ## Commit messages
 

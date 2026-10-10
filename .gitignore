@@ -9,6 +9,10 @@ python/dist/
 .venv/
 venv/
 
+# Release tokens (python/.env). The committed template is python/.env.example;
+# anything named .env stays off disk as far as git is concerned.
+.env
+
 # OS
 .DS_Store
 Thumbs.db
