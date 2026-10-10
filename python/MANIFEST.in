@@ -1,0 +1,4 @@
+# The sdist ships only what an installer needs: the package, its skills,
+# and the standard metadata. The test tree stays in the repo - PyPI
+# consumers install the wheel, and nothing in the build reads tests/.
+prune tests
