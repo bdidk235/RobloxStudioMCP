@@ -388,8 +388,10 @@ So the ordering is:
   Measured on the gate's scope: **ty 0.0.85 runs in 0.40 s, pyright in 12.96 s
   (32x)**, and ty caught the same live defect pyright caught (`Optional[str]`
   passed where `str` was required, at the exact line). `ROBLOX_TYPECHECKER`
-  selects the backend, default `ty`; CI pins `pyright`, because ty is `0.0.x`
-  and reserves the right to redefine diagnostics between releases.
+  selects the backend, default `ty`; CI runs the full suite under pyright and
+  additionally runs the gate under a pinned ty (`ty==0.0.85` in `[dev]`), so
+  both backends are proven on every push and the pin insulates CI from 0.0.x
+  diagnostic drift.
 
   The four ty diagnostics on first contact were resolved with no rule
   suppressed: one dead file deleted (a stray module shadowed at runtime by the

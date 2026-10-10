@@ -46,3 +46,12 @@ jobs:
         env:
           ROBLOX_TYPECHECKER: pyright
         run: python -m pytest tests
+
+      - name: Type gate (ty backend)
+        # Both backends are proven on every push: the fast default must also be
+        # green, or a ty-only regression surfaces on the next local run instead
+        # of here. ty is pinned in `[dev]` for exactly this step - an unpinned
+        # 0.0.x checker could turn this red with no code change on our side.
+        env:
+          ROBLOX_TYPECHECKER: ty
+        run: python -m pytest tests/test_typecheck.py

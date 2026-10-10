@@ -22,9 +22,9 @@ precision is what decides whether a gate stays respected.
 **0.40 s against pyright's 12.96 s** on this package, measured 2026-10-10, and
 it caught the same live defect pyright caught (`Optional[str]` passed where
 `str` was required, at the exact line) plus the acid-test errors. CI pins
-`ROBLOX_TYPECHECKER=pyright`, because ty is `0.0.x` and reserves the right to
-redefine diagnostics between releases - a gate whose definitions can move is
-not a gate you build on alone. Both backends must report zero on a clean tree;
+`ROBLOX_TYPECHECKER=pyright` for the full suite and additionally runs this
+gate under a pinned ty (`ty==0.0.85` in `[dev]`), so both backends are proven
+on every push - the pin insulates CI from 0.0.x diagnostic drift. Both backends must report zero on a clean tree;
 the four ty diagnostics on first contact were resolved with no rule suppressed:
 one dead file deleted (a stray module shadowed by the package directory of the
 same name and imported by nothing), one `Dict[str, Any]` annotation, and one

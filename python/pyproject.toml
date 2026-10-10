@@ -59,7 +59,7 @@ roblox-studio-mcp = "roblox_studio_mcp.extended_server:main"
 # 2026-10-09: 3.12.15 with setuptools 859 passed / 7 skipped, the same as
 # 3.9-3.11; without it 849 passed / 17 skipped, and the 10 extra skips are every
 # assertion that reads the built wheel.
-dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5", "pyright", "setuptools", "ty"]
+dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5", "pyright", "setuptools", "ty==0.0.85"]
 
 [tool.pytest.ini_options]
 # The suite is dominated by real waits in subprocess-backed timing tests, and
