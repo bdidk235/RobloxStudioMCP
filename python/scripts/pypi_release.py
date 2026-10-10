@@ -239,16 +239,19 @@ def _pypi_version_exists(version):
     return False
 
 
-def _upload(dist_dir, repository, token):
+def _upload(dist_dir, repository, token, verbose=False):
     _require_tool("twine", "twine")
     env = dict(os.environ)
     env["TWINE_USERNAME"] = "__token__"
     env["TWINE_PASSWORD"] = token
     files = sorted(str(p) for p in dist_dir.iterdir() if p.suffix in (".whl", ".gz"))
     print("  upload: %d file(s) to %s" % (len(files), repository))
+    cmd = [sys.executable, "-m", "twine", "upload", "--repository", repository,
+           "--non-interactive", "--disable-progress-bar"]
+    if verbose:
+        cmd.append("--verbose")
     proc = _run(
-        [sys.executable, "-m", "twine", "upload", "--repository", repository,
-         "--non-interactive", *files],
+        cmd + files,
         env=env,
     )
     if proc.returncode != 0:
@@ -288,7 +291,7 @@ def cmd_dry_run(args):
             shutil.rmtree(_tmp, ignore_errors=True)
         if not args.yes and not _ask("upload %s to TestPyPI" % version):
             _die("aborted - nothing uploaded")
-        _upload(dist_path, "testpypi", token)
+        _upload(dist_path, "testpypi", token, verbose=args.verbose)
         _tmp2, python2 = _fresh_venv()
         try:
             _pip(python2, "--index-url", "https://test.pypi.org/simple/",
@@ -323,7 +326,7 @@ def cmd_publish(args):
             shutil.rmtree(_tmp, ignore_errors=True)
         if not args.yes and not _ask("upload %s to PyPI" % version):
             _die("aborted - nothing uploaded")
-        _upload(dist_path, "pypi", token)
+        _upload(dist_path, "pypi", token, verbose=args.verbose)
     print("publish: done - verify the landing page renders, then tag v%s" % version)
 
 
@@ -348,6 +351,8 @@ def main(argv=None):
     )
     parser.add_argument("--yes", action="store_true",
                         help="skip confirmation prompts (never safety checks)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="twine --verbose: show the server response on failure")
     parser.add_argument("--env-file", default=str(_PYTHON / ".env"),
                         help="where tokens are read from (default: python/.env)")
     sub = parser.add_subparsers(dest="command")
