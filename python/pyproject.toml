@@ -59,7 +59,19 @@ roblox-studio-mcp = "roblox_studio_mcp.extended_server:main"
 # 2026-10-09: 3.12.15 with setuptools 859 passed / 7 skipped, the same as
 # 3.9-3.11; without it 849 passed / 17 skipped, and the 10 extra skips are every
 # assertion that reads the built wheel.
-dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5", "pyright", "setuptools", "ty==0.0.85"]
+# `wheel` and the setuptools floor are both load-bearing, for the same CI
+# failure: fresh runners resolved `bdist_wheel` to nothing -
+# `error: invalid command 'bdist_wheel'` on all 8 legs - because the test
+# builds wheels in-process with the *runtime* setuptools, which is whatever
+# the runner image ships, while `requires` above only floors the *build*
+# environment. `setuptools>=77` forces the runtime up to the same floor this
+# file already demands for the build (license string + license-files need
+# it); `wheel` registers `bdist_wheel` through distutils entry points
+# (verified present in wheel 0.48.0), which covers any setuptools that
+# consults them but ships no local module. Modern setuptools ignores the
+# package for this purpose ("never loaded from wheel"), so it is inert
+# where it is not needed.
+dev = ["pytest", "pytest-asyncio", "pytest-xdist>=3.5", "pyright", "setuptools>=77", "ty==0.0.85", "wheel"]
 
 [tool.pytest.ini_options]
 # The suite is dominated by real waits in subprocess-backed timing tests, and

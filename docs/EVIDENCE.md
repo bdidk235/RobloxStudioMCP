@@ -1818,3 +1818,34 @@ that fails if the order is swapped back.
 *Settles against:* `attached_pids()` still running `Get-NetTCPConnection` through
 PowerShell on any path that does not need a filtered list; a struct layout change
 that does not trip the parity test.
+
+## Fresh runners could not build wheels: `invalid command 'bdist_wheel'` (2026-10-10)
+
+CI failed all 8 legs while Linux stayed green. The macOS log gave it away in
+one line, repeated across 9 errors and 1 failure: `error: invalid command
+'bdist_wheel'` from the test's in-process `setuptools.build_meta` call.
+
+The test builds wheels with the *runtime* setuptools - whatever the runner
+image ships, because unpinned `setuptools` in `[dev]` is already satisfied by
+the bundled copy and pip keeps it. But `requires` (the *build* environment)
+already floors `setuptools>=77` for the SPDX license string and
+`license-files`. So the build env and the test env disagreed by construction,
+and the test env lost: a setuptools with no `bdist_wheel` command.
+
+Verified pieces, not the whole chain (CI's exact bundled version is unknown):
+`wheel` 0.48.0 registers `bdist_wheel` under `[distutils.commands]` entry
+points (read off the downloaded wheel); setuptools 84 prefers its own module
+("never loaded from wheel", read off its `dist.py`), so the package is inert
+where it is not needed. And the floor mechanism end-to-end: a 3.9 venv
+holding setuptools 69.5.1, after `pip install -e ".[dev]"` with the new
+floor, came out at setuptools 82.0.1 + wheel 0.48.0 with the packaging suite
+green - the same editable-install path CI takes.
+
+Fix: `[dev]` carries `setuptools>=77` (same floor as the build) and `wheel`
+(entry-point rescue). Retracted on the way: blaming the Python version (3.9
+legs failed, but so did every other version) and blaming a startup death on
+macOS (the legs ran the suite in ~9 s and failed on content, not startup -
+timing shapes are not evidence).
+
+*Settles against:* a fresh `pip install -e ".[dev]"` whose packaging tests
+fail on `bdist_wheel`.
