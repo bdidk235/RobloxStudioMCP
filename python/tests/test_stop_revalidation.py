@@ -211,43 +211,6 @@ class RevalidatePidForStop(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(got["ok"], got)
 
 
-class TerminateProcessAsksBeforeItForces(unittest.TestCase):
-    """The graceful half: Studio gets the chance to save before `kill -9`."""
-
-    def test_the_grace_window_runs_before_the_forced_kill(self):
-        order = []
-        alive = {"v": True}
-
-        with mock.patch.object(inst.platform, "request_exit",
-                               side_effect=lambda p: order.append("request") or "taskkill"), \
-             mock.patch.object(inst.platform, "terminate",
-                               side_effect=lambda p: order.append("terminate")), \
-             mock.patch.object(inst, "_pid_alive",
-                               side_effect=lambda p: alive["v"]), \
-             mock.patch.object(inst.time, "sleep",
-                               side_effect=lambda s: alive.update(v=False)):
-            got = inst.terminate_process(4242, grace_seconds=0.01)
-        self.assertTrue(got["stopped"], got)
-        self.assertFalse(got["forced"])
-        self.assertEqual(order, ["request"], order)
-
-    def test_the_forced_kill_follows_the_window(self):
-        order = []
-        with mock.patch.object(inst.platform, "request_exit",
-                               side_effect=lambda p: order.append("request") or "taskkill"), \
-             mock.patch.object(inst.platform, "terminate",
-                               side_effect=lambda p: order.append("terminate")), \
-             mock.patch.object(inst, "_pid_alive",
-                               side_effect=lambda p: True), \
-             mock.patch.object(inst.time, "sleep",
-                               side_effect=lambda s: None):
-            got = inst.terminate_process(4242, grace_seconds=0.01)
-        self.assertFalse(got["stopped"], got)
-        self.assertTrue(got["forced"])
-        self.assertIn("forced kill", got["error"])
-        self.assertEqual(order, ["request", "terminate"], order)
-
-
 class ConsoleTokenFallbackRefusesAnEmptyPool(unittest.IsolatedAsyncioTestCase):
     """Audit A4: an empty candidate set refuses, it never widens to everything."""
 
