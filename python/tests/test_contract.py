@@ -197,9 +197,14 @@ class SchemaContract(unittest.TestCase):
         """The hint grants parallel execution, so marking a writer read-only
         would be the dangerous direction. Asserted by behaviour, not by list:
         the two tools that only *sometimes* observe are deliberately unmarked."""
+        # Union of this file's original five and the five only
+        # test_readonly_hints named: one list, maintained here, so the two
+        # cannot drift into disagreeing sets again.
         for name in ("extended_write_script", "extended_update_script",
                      "extended_manage_instance", "extended_wait_for",
-                     "extended_breakpoints"):
+                     "extended_breakpoints", "extended_insert_asset_from_file",
+                     "extended_clear_breakpoints", "extended_run_tests",
+                     "extended_execute_luau_from_file", "extended_capture"):
             self.assertFalse(
                 getattr(BY_NAME[name], "read_only", False),
                 "%s can mutate or execute caller code and must not be marked" % name,

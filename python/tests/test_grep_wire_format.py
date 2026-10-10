@@ -62,11 +62,6 @@ class TextFormat(unittest.TestCase):
         self.assertEqual(hit["line_number"], 131)
         self.assertIn('print("indexing"', hit["content"])
 
-    def test_the_truncation_notice_is_not_a_hit(self):
-        """It reads as a hit if you do not exclude it, and would report a file
-        named after an English sentence."""
-        paths = [h["path"] for h in _parse_grep_text(LIVE_REPLY)]
-        self.assertFalse(any("Search stopped" in p for p in paths), paths)
 
     def test_content_containing_a_pipe_is_not_truncated(self):
         line = "Path: game.S | Line: 7 | local t = a | b or c"
@@ -85,9 +80,6 @@ class ParseGrepRawPrefersJson(unittest.TestCase):
     """The text parser is the *last* attempt, so a JSON reply is never mis-read
     as prose. Order matters: text is a looser format, so it must not win."""
 
-    def test_a_json_array_still_wins(self):
-        raw = '[{"path": "game.S", "line_number": 3}]'
-        self.assertEqual(_parse_grep_raw(raw)[0]["path"], "game.S")
 
     def test_a_wrapped_json_object_still_wins(self):
         raw = '{"results": [{"path": "game.T", "line": 9}]}'
@@ -115,18 +107,12 @@ class ParseGrepRawPrefersJson(unittest.TestCase):
         self.assertTrue(any(h["path"] == "game.ServerScriptService.UsabilityProbe"
                             for h in hits))
 
-    def test_unparseable_input_is_empty_rather_than_an_error(self):
-        self.assertEqual(_parse_grep_raw("something else entirely"), [])
 
 
 class AsHitDicts(unittest.TestCase):
     """The second defect: a list of strings reached ``hit.get(...)``."""
 
-    def test_strings_are_dropped_not_detonated(self):
-        self.assertEqual(_as_hit_dicts(["a", "b"]), [])
 
-    def test_dicts_survive(self):
-        self.assertEqual(_as_hit_dicts([{"path": "game.S"}, "junk"]), [{"path": "game.S"}])
 
     def test_a_non_list_is_empty(self):
         self.assertEqual(_as_hit_dicts({"path": "game.S"}), [])

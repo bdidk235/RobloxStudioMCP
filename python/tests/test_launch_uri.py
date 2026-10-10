@@ -343,6 +343,36 @@ class TestPlaceParsing(unittest.TestCase):
             "B.rbxl",
         )
 
+    def test_a_path_with_spaces_parses_whole(self):
+        # Moved from test_watch_output.PlacePathSpaces, which pinned the same
+        # `(\\S+)` truncation bug off-theme there. The macos PathsWithSpaces
+        # tests a different function (`logid._path_after`), so this file is
+        # the only other home for `place_from_command_line` spaces cases.
+        self.assertEqual(
+            place_from_command_line(
+                r"C:\Roblox\Versions\v1\RobloxStudioBeta.exe --task EditFile "
+                r"--localPlaceFile C:\Users\User\My Places\Baseplate-1.rbxl"
+            ),
+            "Baseplate-1.rbxl",
+        )
+
+    def test_a_quoted_path_with_spaces_parses(self):
+        self.assertEqual(
+            place_from_command_line(
+                'RobloxStudioBeta.exe --localPlaceFile "C:\\a dir\\b\\Place-9.rbxl" -task EditFile'
+            ),
+            "Place-9.rbxl",
+        )
+
+    def test_a_project_file_with_spaces_parses(self):
+        self.assertEqual(
+            place_from_command_line(
+                "RobloxStudioBeta.exe -task StartServer "
+                "-localProjectFile C:\\Users\\User\\My Places\\Baseplate-1.rbxl"
+            ),
+            "Baseplate-1.rbxl",
+        )
+
     def test_uri_launch_has_no_derivable_place_name(self):
         # A URI carries only an id. Studio names the place itself, and while it
         # is still opening, the mesh reports name: null too.

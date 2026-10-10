@@ -162,58 +162,6 @@ class WatchOutput(unittest.TestCase):
         self.assertTrue(got["truncated"])
 
 
-class PlacePathSpaces(unittest.TestCase):
-    """`place_from_command_line` had the same `(\\S+)` bug as the log parser.
-
-    Harmless for this machine's own paths (they live under `%TEMP%`, no spaces)
-    and silently wrong for any place in a directory that has one. A truncated path
-    still yields a basename - a fragment - so it simply never matched a mesh name
-    rather than raising.
-    """
-
-    def test_a_path_under_temp_still_parses(self):
-        from roblox_studio_mcp.extended.instance import place_from_command_line
-
-        cmd = (
-            r"C:\Roblox\Versions\v1\RobloxStudioBeta.exe --task EditFile "
-            r"--localPlaceFile C:\Users\User\AppData\Local\Temp\baseplates\Baseplate-1.rbxl"
-        )
-        self.assertEqual(place_from_command_line(cmd), "Baseplate-1.rbxl")
-
-    def test_a_path_with_spaces_parses_whole(self):
-        from roblox_studio_mcp.extended.instance import place_from_command_line
-
-        cmd = (
-            r"C:\Roblox\Versions\v1\RobloxStudioBeta.exe --task EditFile "
-            r"--localPlaceFile C:\Users\User\My Places\Baseplate-1.rbxl"
-        )
-        self.assertEqual(place_from_command_line(cmd), "Baseplate-1.rbxl")
-
-    def test_a_quoted_path_with_spaces_parses(self):
-        from roblox_studio_mcp.extended.instance import place_from_command_line
-
-        cmd = (
-            'RobloxStudioBeta.exe --localPlaceFile "C:\\a dir\\b\\Place-9.rbxl" -task EditFile'
-        )
-        self.assertEqual(place_from_command_line(cmd), "Place-9.rbxl")
-
-    def test_a_play_test_project_file_with_spaces_parses(self):
-        from roblox_studio_mcp.extended.instance import place_from_command_line
-
-        cmd = (
-            "RobloxStudioBeta.exe -task StartServer "
-            "-localProjectFile C:\\Users\\User\\My Places\\Baseplate-1.rbxl"
-        )
-        self.assertEqual(place_from_command_line(cmd), "Baseplate-1.rbxl")
-
-    def test_a_uri_launch_has_no_derivable_path(self):
-        from roblox_studio_mcp.extended.instance import place_from_command_line
-
-        self.assertIsNone(
-            place_from_command_line("RobloxStudioBeta.exe roblox-studio:1+task:EditPlace+placeId:1")
-        )
-
-
 class SurfaceParity(unittest.TestCase):
     """The contract schema must accept what the Python schema accepts.
 
