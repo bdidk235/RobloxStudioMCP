@@ -93,7 +93,7 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
 
 | | command | what it catches |
 |---|---|---|
-| Python tests | `PYTHONPATH=python/src python -m pytest python/tests -q` | behaviour. **Already includes the type gate** — `test_typecheck.py` runs pyright as a subprocess and is collected by this command; running it separately pays twice. Run from the repo root — bare `tests` exits 4. |
+| Python tests | `PYTHONPATH=python/src python -m pytest python/tests -q` | behaviour. **Already includes the type gate** — `test_typecheck.py` runs it as a subprocess (ty locally, ~0.4 s; pyright in CI via `ROBLOX_TYPECHECKER`) and is collected by this command; running it separately pays twice. Run from the repo root — bare `tests` exits 4. |
 | Python types | covered above | wrong key, `None` deref, wrong argument type |
 | Contract | `PYTHONPATH=python/src python -m pytest python/tests/test_contract.py -q` | generated contract still matches the server |
 

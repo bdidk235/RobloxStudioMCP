@@ -328,7 +328,7 @@ def open_uri(uri: str) -> None:
             "place by file instead: %s --task EditFile --localPlaceFile <path>"
             % studio_exe(),
         )
-    os.startfile(uri)  # type: ignore[attr-defined]  # noqa: S606
+    os.startfile(uri)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]  # noqa: S606
 
 
 

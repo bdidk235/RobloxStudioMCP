@@ -1050,7 +1050,7 @@ async def _call_breakpoints(
             studio, script_path, line,
             log_expression=arguments.get("log_expression"),
         )
-        result = {"added": result}
+        result: Dict[str, Any] = {"added": result}
 
     result["hit_prefix"] = "Breakpoint "
     result["how_to_read_hits"] = (

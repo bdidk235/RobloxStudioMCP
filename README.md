@@ -96,7 +96,6 @@ LICENSE                 MIT
 client.py           generic MCP JSON-RPC client
 roblox.py           RobloxStudio convenience wrapper
 server.py           stdio MCP server (base, passes through to Studio MCP)
-extended.py         RobloxStudio re-export for subpackage imports
 extended_server.py  stdio MCP server with the 16 extended tools
 types.py
 errors.py           error codes

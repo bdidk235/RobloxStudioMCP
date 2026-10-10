@@ -383,6 +383,24 @@ So the ordering is:
 3. Neither alone would have caught the original line. Saying otherwise would be
    selling the tooling.
 
+  ### ty is the default backend, pyright stays in CI (2026-10-10)
+
+  Measured on the gate's scope: **ty 0.0.85 runs in 0.40 s, pyright in 12.96 s
+  (32x)**, and ty caught the same live defect pyright caught (`Optional[str]`
+  passed where `str` was required, at the exact line). `ROBLOX_TYPECHECKER`
+  selects the backend, default `ty`; CI pins `pyright`, because ty is `0.0.x`
+  and reserves the right to redefine diagnostics between releases.
+
+  The four ty diagnostics on first contact were resolved with no rule
+  suppressed: one dead file deleted (a stray module shadowed at runtime by the
+  package directory of the same name, imported by nothing, unshipped by
+  `packages.find`), one `Dict[str, Any]` annotation, and one platform ignore
+  comment next to pyright's own on the same line. Two misses on the way are
+  recorded because they are the gate's own failure class: the PATH probe found
+  `ty` but the subprocess then raised `FileNotFoundError`, so the binary path
+  is resolved once and reused; and the suite's pointer gate caught the deleted
+  filename in the new docstring, which is that gate working as designed.
+
 ## Closed sets: what a foreign type system would and would not buy
 
 **Question considered:** keep Node not as a second implementation, but as a
