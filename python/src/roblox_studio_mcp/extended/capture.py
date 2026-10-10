@@ -71,6 +71,10 @@ from ..roblox import RobloxStudio
 from .errors import CAPABILITY_DENIED, describe, ToolError
 from ..types import CallToolResult
 from .extensions import _confined
+# Shared with writer/grep/updater rather than a second copy: the writer
+# regex (`\s*` before the arrow) strips everything this one's did, and
+# both need a literal arrow, so base64 payloads (no arrows) are untouched.
+from .writer import _strip_line_prefixes as strip_line_prefixes
 
 #: Luau that captures, base64-encodes, and chunks the payload into a scratch
 #: module, then returns only a small header. The body never comes back through
@@ -237,23 +241,6 @@ def _parse_header(text: str) -> Dict[str, Any]:
         "b64_head": head,
         "b64_tail": tail,
     }
-
-
-_LINE_PREFIX = None
-
-
-def strip_line_prefixes(text: str) -> str:
-    """Remove ``script_read``'s ``     1->`` line-number prefixes.
-
-    With a single-line payload this is a 7-character overhead, so it is cheap,
-    but the prefixes are never safe to leave in: they corrupt the base64.
-    """
-    global _LINE_PREFIX
-    if _LINE_PREFIX is None:
-        import re
-
-        _LINE_PREFIX = re.compile(r"^\s*\d+→", re.MULTILINE)
-    return _LINE_PREFIX.sub("", text)
 
 
 async def capture_rgba(

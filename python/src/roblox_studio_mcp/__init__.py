@@ -12,7 +12,6 @@ from .errors import (
     JSONRPCError,
     MCPConnectionError,
     MCPError,
-    MCPProtocolError,
     MCPToolError,
 )
 from .roblox import (
@@ -37,7 +36,6 @@ __all__ = [
     "JSONRPCError",
     "MCPConnectionError",
     "MCPError",
-    "MCPProtocolError",
     "MCPToolError",
     "get_singleton",
     "close_singleton",

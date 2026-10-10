@@ -13,10 +13,6 @@ class MCPConnectionError(MCPError):
     """Raised when the connection to an MCP server fails or drops."""
 
 
-class MCPProtocolError(MCPError):
-    """Raised when the server sends something that violates the protocol."""
-
-
 class MCPToolError(MCPError):
     """Raised when a tool call fails.
 

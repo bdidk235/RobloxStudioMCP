@@ -49,7 +49,6 @@ MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 #: removed: it broke the pinned semantic that steady progress completes
 #: (`test_progress_extends_the_deadline`: 2.5 s of work on a 0.6 s timeout),
 #: while this ceiling bounds the threat without touching it.
-MAX_REQUEST_SECONDS = 600.0
 #:
 #: The second of two independent limits, because either alone is wrong: the
 #: extension count alone scales with ``timeout`` (a caller who sets a 600 s
