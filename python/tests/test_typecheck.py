@@ -25,10 +25,14 @@ it caught the same live defect pyright caught (`Optional[str]` passed where
 `ROBLOX_TYPECHECKER=pyright` for the full suite and additionally runs this
 gate under a pinned ty (`ty==0.0.85` in `[dev]`), so both backends are proven
 on every push - the pin insulates CI from 0.0.x diagnostic drift. Both backends must report zero on a clean tree;
-the four ty diagnostics on first contact were resolved with no rule suppressed:
-one dead file deleted (a stray module shadowed by the package directory of the
-same name and imported by nothing), one `Dict[str, Any]` annotation, and one
-platform ignore comment next to pyright's own on the same line.
+the four ty diagnostics on first contact were resolved with one scoped
+exemption and no suppressed rule: one dead file deleted (a stray module
+shadowed by the package directory of the same name and imported by
+nothing), one `Dict[str, Any]` annotation, one platform ignore comment next
+to pyright's own on the same line, and `unused-ignore-comment` exempted for
+that one file only - because the startfile ignore is unused exactly where
+the API exists (Windows), which CI proved. A stale ignore anywhere else
+still fails, verified by planting one.
 
 **The honest limit.** Neither checker would have caught the `watch_output` bug as
 written, because a defaulted ``.get()`` on a missing key is legal in both - see

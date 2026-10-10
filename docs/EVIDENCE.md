@@ -396,8 +396,11 @@ So the ordering is:
   The four ty diagnostics on first contact were resolved with no rule
   suppressed: one dead file deleted (a stray module shadowed at runtime by the
   package directory of the same name, imported by nothing, unshipped by
-  `packages.find`), one `Dict[str, Any]` annotation, and one platform ignore
-  comment next to pyright's own on the same line. Two misses on the way are
+  `packages.find`), one `Dict[str, Any]` annotation, one platform ignore
+  comment next to pyright's own on the same line, and `unused-ignore-comment`
+  exempted for that one file only - the startfile ignore is unused exactly
+  where the API exists (Windows, proven by CI), and a planted stale ignore
+  elsewhere still fails. Two misses on the way are
   recorded because they are the gate's own failure class: the PATH probe found
   `ty` but the subprocess then raised `FileNotFoundError`, so the binary path
   is resolved once and reused; and the suite's pointer gate caught the deleted

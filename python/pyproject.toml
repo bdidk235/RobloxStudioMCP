@@ -92,3 +92,16 @@ where = ["src"]
 # tests/test_skills.py::TestPackaging, which builds a wheel and reads its
 # listing, so this line cannot silently lapse again.
 roblox_studio_mcp = ["py.typed", "skills/*.md"]
+
+[tool.ty]
+# One scoped exemption, not a suppressed rule. `os.startfile` exists only on
+# Windows: the ignore comment on the startfile call suppresses a real
+# diagnostic on POSIX and is therefore unused on Windows, where ty reports
+# the unused ignore itself (CI proved the Windows half). Exempting the rule
+# for platform.py alone keeps it live everywhere else, so a stale suppression
+# anywhere else still fails the gate.
+[[tool.ty.overrides]]
+include = ["src/roblox_studio_mcp/extended/platform.py"]
+
+[tool.ty.overrides.rules]
+unused-ignore-comment = "ignore"
