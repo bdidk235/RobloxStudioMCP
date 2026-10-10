@@ -253,7 +253,13 @@ class _WriteFailure(unittest.IsolatedAsyncioTestCase):
     """A ``save_path`` that cannot be written, and the record of the capture."""
 
     async def asyncSetUp(self):
-        self.root = tempfile.mkdtemp(suffix="-rbxcapture-test")
+        # Resolved, not raw: `tempfile` may return an 8.3 short form
+        # (`RUNNER~1` on CI runners) while the code records the path after
+        # confinement, which resolves to the long form. Both spell the same
+        # file, but the test compares strings, so the fixture must be the
+        # spelling the record carries. `realpath` is identity where no short
+        # form exists, so this changes nothing on machines without one.
+        self.root = os.path.realpath(tempfile.mkdtemp(suffix="-rbxcapture-test"))
         self.addCleanup(_rmtree, self.root)
         # `save_path` is confined to the working directory, so the tests run
         # *inside* their scratch dir rather than pointing into it from
@@ -285,7 +291,10 @@ def _cwd_root():
     correctly refused.
     """
     old = os.getcwd()
-    with tempfile.TemporaryDirectory(suffix="-rbxcapture-test") as root:
+    with tempfile.TemporaryDirectory(suffix="-rbxcapture-test") as raw:
+        # Same short-form reason as above: resolve before yielding, so the
+        # root the test builds paths from is the spelling the record carries.
+        root = os.path.realpath(raw)
         os.chdir(root)
         try:
             yield root

@@ -70,9 +70,8 @@ def _save_env(path, key, token):
     print("  saved to %s (mode 600; git ignores it)" % path)
 
 
-def _dotenv():
-    """The two tokens, or an error naming the file rather than the key."""
-    path = _PYTHON / ".env"
+def _dotenv(path):
+    """The two tokens from `path`, or an error naming the file, not the key."""
     values = {}
     if path.is_file():
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -94,14 +93,23 @@ def _ensure_token(tokens, key, label, env_path):
     token = tokens.get(key, "")
     if token and not token.startswith("paste-"):
         return token
-    print("  no %s in python/.env (template: python/.env.example)" % label)
+    # No prompt without a terminal. On Windows `getpass` reads the console
+    # via msvcrt, ignoring redirected stdin entirely - so a piped stdin does
+    # not fail, it hangs: on CI that was two 120-second timeouts. Tokens come
+    # from the .env file or an interactive terminal, never a pipe.
+    if not sys.stdin.isatty():
+        print("  no %s in %s" % (label, env_path))
+        print("  stdin is not a terminal, so there is nobody to ask - "
+              "put %s in %s" % (key, env_path))
+        _die("aborted - nothing uploaded")
+    print("  no %s in %s (template: python/.env.example)" % (label, env_path))
     try:
         pasted = getpass.getpass("  paste %s (input hidden): " % label).strip()
     except (EOFError, KeyboardInterrupt):
         _die("aborted - nothing uploaded")
     if not pasted:
         _die("aborted - nothing uploaded")
-    if _ask("save it to python/.env for next time"):
+    if _ask("save it to %s for next time" % env_path):
         with open(str(env_path), "a", encoding="utf-8") as handle:
             handle.write("%s=%s\n" % (key, pasted))
         try:
@@ -263,9 +271,10 @@ def cmd_test(_args):
 
 
 def cmd_dry_run(args):
-    tokens = _dotenv()
+    env_file = Path(args.env_file)
+    tokens = _dotenv(env_file)
     token = _ensure_token(tokens, "PYPI_TEST_TOKEN", "TestPyPI token",
-                           _PYTHON / ".env")
+                           env_file)
     version = _declared_version()
     print("dry-run: version %s against TestPyPI" % version)
     with tempfile.TemporaryDirectory(prefix="pypi-dist-") as dist:
@@ -292,9 +301,10 @@ def cmd_dry_run(args):
 
 
 def cmd_publish(args):
-    tokens = _dotenv()
+    env_file = Path(args.env_file)
+    tokens = _dotenv(env_file)
     token = _ensure_token(tokens, "PYPI_TOKEN", "PyPI token",
-                           _PYTHON / ".env")
+                           env_file)
     version = _declared_version()
     print("publish: version %s to real PyPI" % version)
     _clean_tree()
@@ -338,6 +348,8 @@ def main(argv=None):
     )
     parser.add_argument("--yes", action="store_true",
                         help="skip confirmation prompts (never safety checks)")
+    parser.add_argument("--env-file", default=str(_PYTHON / ".env"),
+                        help="where tokens are read from (default: python/.env)")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("test", help="build + fresh-venv install + smoke, no upload")
     sub.add_parser("dry-run", help="test, then TestPyPI upload + install")

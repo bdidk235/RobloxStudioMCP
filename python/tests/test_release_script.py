@@ -11,6 +11,7 @@ releases rarely.
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,8 +19,15 @@ _SCRIPT = os.path.join(_ROOT, "python", "scripts", "pypi_release.py")
 
 
 def _run(*argv, stdin_data=""):
+    # A token file that cannot exist, so the refusal paths hold on every
+    # machine: the developer checkout may carry a real python/.env (which
+    # would take the token path instead), and CI carries none. Without this
+    # the tests assert one machine's state, not the script's behavior.
+    missing = os.path.join(
+        tempfile.gettempdir(), "pypi-release-no-such-env-%d" % os.getpid()
+    )
     proc = subprocess.run(
-        [sys.executable, _SCRIPT, *argv],
+        [sys.executable, _SCRIPT, "--env-file", missing, *argv],
         cwd=os.path.join(_ROOT, "python"),
         input=stdin_data,
         capture_output=True,
@@ -39,13 +47,15 @@ class ReleaseRefusals(unittest.TestCase):
         code, out = _run("dry-run")
         self.assertNotEqual(code, 0)
         self.assertIn("nothing uploaded", out)
-        self.assertIn(".env.example", out)
+        # The message names the file it looked in, so a refusal on a custom
+        # --env-file does not send the reader to the default one.
+        self.assertIn("pypi-release-no-such-env", out)
 
     def test_publish_without_a_token_aborts_cleanly(self):
         code, out = _run("publish")
         self.assertNotEqual(code, 0)
         self.assertIn("nothing uploaded", out)
-        self.assertIn(".env.example", out)
+        self.assertIn("pypi-release-no-such-env", out)
 
     def test_help_lists_all_three_modes(self):
         code, out = _run("--help")
