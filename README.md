@@ -120,10 +120,14 @@ skills/             those skills, packaged into the wheel as data
 
 ## Install
 
-**Not on PyPI yet — and not done.** What is done is the verification: the full
-suite passes (run the gates table in AGENTS.md; counts in prose rot), and every
-claim below about the repo's own behaviour was checked against the source, not
-carried forward on trust. Install from a clone:
+**On PyPI as [`roblox-studio-mcp`](https://pypi.org/project/roblox-studio-mcp/) `0.1.1`.** Install it directly:
+
+```powershell
+pip install roblox-studio-mcp
+```
+
+That makes the package importable everywhere, so the server command below works
+from any directory. To hack on it, install from a clone instead:
 
 ```powershell
 git clone https://github.com/bdidk235/RobloxStudioMCP.git
@@ -131,8 +135,7 @@ cd RobloxStudioMCP/python
 pip install -e .
 ```
 
-That makes the package importable everywhere, so the server command below works
-from any directory. Contributors want `.[dev]` instead (pytest, pyright); see
+Contributors want `.[dev]` instead (pytest, pyright); see
 [Development](#development).
 
 ### Connect your coding agent
