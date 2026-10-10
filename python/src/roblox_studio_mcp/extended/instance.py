@@ -914,6 +914,12 @@ async def _identify_launched(
     # process. The new process's own log identity confirms (or refuses) the
     # pairing; with no readable identity the row is still returned, but marked
     # `verified: False` so the caller knows the attribution is provisional.
+    #
+    # Honest limit, stated where the check runs rather than only in the `how`
+    # text: the confirmation below is name-based (`name_matches_identity`
+    # compares basenames), so it cannot separate two Studios with the same
+    # place open. If a foreign same-place Studio is the lone arrival, it
+    # matches and is credited `verified: True`.
     if before_ids is not None:
         arrived = [row for row in rows if _sid(row) and _sid(row) not in before_ids]
         if len(arrived) == 1:

@@ -345,6 +345,39 @@ class RouteOneVerifiesThePid(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(got["studio_id"], got)
         self.assertNotIn("verified", got)
 
+    async def test_same_place_foreign_arrival_is_credited_on_name_match(self):
+        """Pins the honest limit of the route-1 check: it is name-based.
+
+        A foreign Studio with the SAME place open attaches first; ours has no
+        mesh entry yet. The real `name_matches_identity` (not the mock the
+        other tests use) compares basenames, so the foreign row matches our
+        pid's log and comes back `verified: True` - although nothing ties the
+        row to pid 777. This test asserts that outcome on purpose: a future
+        PID-tying fix must change this test deliberately, and until then the
+        suite must not imply the check is stronger than a name comparison.
+        """
+        rows = _rows(("old", "Mine.rbxl"), ("stranger", "Mine.rbxl"))
+        real_matcher = inst.logid.name_matches_identity
+
+        async def token(client, studio_id, candidates):
+            raise AssertionError("route 1 must decide; no console write")
+
+        with mock.patch.object(
+            inst.logid,
+            "live_identities",
+            lambda pids, started=None: {
+                777: {"place_path": "Mine.rbxl", "task": "EditFile"}
+            },
+        ), mock.patch.object(
+            inst, "_resolve_by_console_token", token
+        ):
+            got = await inst._identify_launched(
+                _Studio(rows), 777, "Mine.rbxl", before_ids={"old"}
+            )
+        self.assertEqual(got["studio_id"], "stranger", got)
+        self.assertTrue(got["verified"], got)
+        self.assertEqual(real_matcher, inst.logid.name_matches_identity)
+
 
 class TheChainOrderIsTheContract(unittest.IsolatedAsyncioTestCase):
     """`studio_id -> pid` must try the cheap routes before the console.
