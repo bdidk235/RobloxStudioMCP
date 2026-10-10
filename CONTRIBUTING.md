@@ -33,9 +33,10 @@ Studio — the tests use fakes throughout.
 
 | Gate | Command | From |
 | --- | --- | --- |
-| Python behaviour | `python -m pytest tests -q` | `python/` |
-| Python types | `pytest tests/test_typecheck.py` (runs pyright) | `python/` |
-| Contract | `pytest tests/test_contract.py` | `python/` |
+| Python behaviour, types, contract | see the gates table in `AGENTS.md` | repo root |
+
+That table is canonical: this file carried the commands with a wrong path
+(`tests` does not exist at the root), which is what a second copy guarantees.
 
 **`python -m unittest discover -s tests` is not the gate.** Several tests are
 `pytest-asyncio`, and `unittest discover` does not drive them — it can report

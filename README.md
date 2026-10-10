@@ -121,7 +121,7 @@ skills/             those skills, packaged into the wheel as data
 ## Install
 
 **Not on PyPI yet — and not done.** What is done is the verification: the full
-suite passes (762 tests, plus the contract, type, and docs gates), and every
+suite passes (run the gates table in AGENTS.md; counts in prose rot), and every
 claim below about the repo's own behaviour was checked against the source, not
 carried forward on trust. Install from a clone:
 
@@ -275,11 +275,13 @@ specific about why.
   branch: the transport launches the proxy as
   `cmd.exe /c … %LOCALAPPDATA%\Roblox\mcp.bat` on Windows and as the
   `StudioMCP` binary inside the app bundle on macOS, and process enumeration
-  and log discovery are built on `os.startfile`, `EnumWindows` and
-  `%LOCALAPPDATA%`. A Linux port means writing that layer, not fixing a bug.
+  and log discovery are built on `Get-CimInstance`, `lsof` and
+  `os.startfile`. A Linux port means writing that layer, not fixing a bug.
 
-Every platform difference is confined to one file —
-`python/src/roblox_studio_mcp/extended/platform.py`.
+Platform differences live in three places: launch defaults
+(`roblox.py:platform_defaults`), the `is_windows()` branches and process
+queries (`extended/platform.py`), and the registry paths
+(`extended/registry.py`).
 
 ## The extended tools (for agents)
 
@@ -454,18 +456,15 @@ so it can report green while skipping the async coverage.
 
 ### The gates, and what each one catches
 
-| Gate | Command | Catches |
-| --- | --- | --- |
-| Python behaviour | `python -m pytest tests -q` | behaviour |
-| Python types | `pytest tests/test_typecheck.py` (runs pyright) | wrong key, `None` deref, wrong argument type |
-| Contract | `pytest tests/test_contract.py` | generated contract still matches the server |
-
-**The contract row is the one that is easy to miss**, because nothing fails until a tool
-is added or renamed. `contract/tools.json` is generated from the Python server by
-`contract/build_contract.py` and asserted by the suite, so a tool, a parameter
-or a required argument cannot change unnoticed. Regenerate it
-after a deliberate surface change — `python contract/build_contract.py` — and the
-diff *is* the contract report.
+The gates table lives in `AGENTS.md` alone - this file carried its own copy
+with a wrong path and a wrong backend, which is the drift a second copy
+guarantees. **The contract gate is the one that is easy to miss**, because
+nothing fails until a tool is added or renamed. `contract/tools.json` is
+generated from the Python server by `contract/build_contract.py` and asserted
+by the suite, so a tool, a parameter or a required argument cannot change
+unnoticed. Regenerate it after a deliberate surface change —
+`python contract/build_contract.py` — and the diff *is* the contract
+report.
 
 Two of these gates catch **silent** wrong answers, which is the failure class
 this project keeps paying for. Unknown parameters are refused before dispatch,
@@ -525,9 +524,9 @@ negative controls that prove the gate fails without it:
 | A1 | `extended_capture`'s `save_path` unconfined, marked read-only | `9e3f7a0` |
 | A2 | `allow_outside` made confinement a disclosure primitive | `80749d8` |
 | A3 | game-tree paths spliced raw into Luau | `82acaaf` |
-| A4 | `stop`: no dry-run, force-only kill, token pool widening | this branch |
-| A5 | kill target from user-writable logs alone | this branch |
-| A6–A11 | disabled_tools, unbounded reads, unbounded deadline, second proxy per call, `wait_seconds`, relay exemption scope | one pass, verified in source |
+| A4 | `stop`: no dry-run, force-only kill, token pool widening | `d859078` |
+| A5 | kill target from user-writable logs alone | `d859078` |
+| A6–A11 | disabled_tools, unbounded reads, unbounded deadline, second proxy per call, `wait_seconds`, relay exemption scope | `6eac1f8` |
 
 A12 (supply chain clean) and A13 (no network surface of its own) found nothing to
 do. **The honest limit is that a human has not reviewed the audit or these
