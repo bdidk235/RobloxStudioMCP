@@ -356,9 +356,28 @@ def main(argv=None):
     parser.add_argument("--env-file", default=str(_PYTHON / ".env"),
                         help="where tokens are read from (default: python/.env)")
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("test", help="build + fresh-venv install + smoke, no upload")
-    sub.add_parser("dry-run", help="test, then TestPyPI upload + install")
-    sub.add_parser("publish", help="test, then the real upload")
+    # The same flags on every subcommand: argparse only accepts globals
+    # *before* the subcommand, so `publish --verbose` died with
+    # "unrecognized arguments" while `--verbose publish` worked. Duplicating
+    # three lines beats a usage trap on a release tool.
+    for name, help_text in (
+        ("test", "build + fresh-venv install + smoke, no upload"),
+        ("dry-run", "test, then TestPyPI upload + install"),
+        ("publish", "test, then the real upload"),
+    ):
+        subparser = sub.add_parser(name, help=help_text)
+        # default=SUPPRESS on all three: without it the subparser's defaults
+        # overwrite values already parsed from before the subcommand, so
+        # `--env-file MISSING dry-run` silently ran with python/.env - which
+        # is how the refusal tests passed a token that was never offered.
+        subparser.add_argument("--yes", action="store_true",
+                               default=argparse.SUPPRESS,
+                               help="skip confirmation prompts (never safety checks)")
+        subparser.add_argument("--verbose", action="store_true",
+                               default=argparse.SUPPRESS,
+                               help="twine --verbose: show the server response on failure")
+        subparser.add_argument("--env-file", default=argparse.SUPPRESS,
+                               help="where tokens are read from (default: python/.env)")
     args = parser.parse_args(argv)
     command = args.command or _menu()
     if command is None:
