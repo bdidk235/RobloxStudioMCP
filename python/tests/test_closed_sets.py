@@ -243,20 +243,6 @@ class EveryRaisedCodeIsDeclared(unittest.TestCase):
         self.assertGreaterEqual(len(found), 3)
 
 
-class LaunchUriIsComplete(unittest.TestCase):
-    def test_carries_all_three_keys(self):
-        # An explicit universe id keeps this offline; the derived default is
-        # covered in test_launch_uri.py with the network stubbed.
-        uri = asyncio.run(I.build_launch_uri(1, 0))
-        for key in ("task", "placeId", "universeId"):
-            self.assertIn("+%s:" % key, uri)
-
-    def test_has_exactly_four_parts(self):
-        """Measured constraint. Dropping `universeId` looks like it works - the
-        process starts and attaches - but Studio comes up with no place open."""
-        self.assertEqual(len(asyncio.run(I.build_launch_uri(1, 0)).split("+")), 4)
-
-
 class RolesAreClosed(unittest.TestCase):
     def test_parser_produces_only_declared_roles(self):
         declared = {I.ROLE_EDIT, I.ROLE_SERVER, I.ROLE_CLIENT, I.ROLE_UNKNOWN}

@@ -99,6 +99,16 @@ class TestLaunchUriShape(unittest.TestCase):
                        "baseUrl", "launchmode"):
             self.assertNotIn(absent, uri, f"{absent} must not be in the URI")
 
+    def test_has_exactly_four_parts(self):
+        """Measured constraint, kept here rather than in test_closed_sets.py.
+
+        Dropping `universeId` looks like it works - the process starts and
+        attaches - but Studio comes up with no place open. It lived in
+        `LaunchUriIsComplete`, off-theme there (error/action closed sets)
+        and strictly weaker than this file; moved, not duplicated.
+        """
+        self.assertEqual(len(run(build_launch_uri(1, 0)).split("+")), 4)
+
     def test_prefix_is_not_doubled(self):
         # Some samples show 'roblox-studio:roblox-studio:1+...' and that also
         # works, but it is an artifact of the protocol handler. Single is canonical.

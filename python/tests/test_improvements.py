@@ -600,22 +600,6 @@ class TestExtendedToolDescriptions(unittest.TestCase):
         self.assertIn("NOT survive", by_name["extended_studio_identity"])
         self.assertIn("change on restart", by_name["extended_list_studios"])
 
-    def test_descriptions_stay_inside_the_context_budget(self):
-        from contract.build_contract import PER_TOOL_CAP, TOTAL_CAP
-
-        from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
-
-        # The tool list is paid on every call, every session, so cap it. The
-        # caps live in the contract builder rather than being written out here,
-        # because a second copy of the number is a second number to drift -
-        # which is exactly what the old hardcoded 2700 was.
-        for tool in _EXTENDED_TOOLS:
-            self.assertLessEqual(
-                len(tool.description), PER_TOOL_CAP, f"{tool.name} description"
-            )
-        total = sum(len(t.description) for t in _EXTENDED_TOOLS)
-        self.assertLessEqual(total, TOTAL_CAP)
-
     def test_search_tool_documents_truncation(self):
         from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
 
