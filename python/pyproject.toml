@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "roblox-studio-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "A lightweight, dependency-free Python client for MCP (Model Context Protocol) servers, with built-in convenience for the Roblox Studio MCP."
 readme = "README.md"
 requires-python = ">=3.9"

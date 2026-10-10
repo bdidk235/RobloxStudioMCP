@@ -1,3 +1,3 @@
 """Package version, kept in its own module to avoid circular imports."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
