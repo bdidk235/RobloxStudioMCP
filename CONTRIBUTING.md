@@ -104,6 +104,16 @@ The macOS branch has never been run against a real macOS Studio. Treat a macOS
 bug report as a genuine unknown, and check `TODO.md` before concluding anything
 about macOS is broken.
 
+## Versioning
+
+`major.minor.fixes`, in the maintainer's words: **major is a "proud update",
+minor can change things, fixes are fixes.** A minor may move surface and
+behaviour - the regenerated contract diff is the record of what moved - while
+a fix changes no surface at all. The version lives in two files,
+`python/pyproject.toml` and `python/src/roblox_studio_mcp/_version.py`, and
+`test_packaging.py` pins them together, so bump both or the gate fails.
+Current: `0.1.0`, pre-proud.
+
 ## Commit messages
 
 **Subject: what changed, imperative, ~60 characters.** The measure is whether you
