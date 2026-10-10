@@ -258,9 +258,17 @@ class Confinement(unittest.TestCase):
         # this layer's refusal -- it falls through to the caller's existence
         # check and becomes INVALID_ARGUMENT there. Asserting otherwise would
         # pin two different codes to one condition.
-        self.assertEqual(
-            _confined("nope.luau"), (self.inner / "nope.luau").resolve()
-        )
+        #
+        # Absolute on purpose. A relative missing name resolves against the cwd,
+        # so the two sides of this assertion would resolve differently-spelled
+        # inputs (cwd-spelling vs fixture-spelling) through an OS API whose
+        # canonicalization is not identical for both - 8.3 short names on
+        # Windows CI, `/var` vs `/private/var` on macOS. Same file, different
+        # string, red gate. Absolute input resolves byte-identical input on
+        # both sides, so agreement is deterministic. Relative resolution stays
+        # covered by the existing-file tests, which pass everywhere.
+        missing = self.inner / "nope.luau"
+        self.assertEqual(_confined(str(missing)), missing.resolve())
 
     # --- size cap ---------------------------------------------------------- #
 
