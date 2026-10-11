@@ -305,6 +305,18 @@ Four verifiers (one per review source, model `step-5-preview-free`, live-Studio 
 
 - [ ] The throwaway baseplate is a `roblox-studio-*.rbxl` file in the platform temp dir (one `mkstemp` file per `make_place`), launched with `--task EditFile --localPlaceFile`. Worth deleting when done — see `cleanup_throwaway_place`.
 
+### Active work plan (2026-10-11)
+
+Ordered by value per effort. Items 1-3 need no live Studio; item 4 needs one
+I launch myself (standing rule 1) or explicit user scope for the attached
+instance.
+
+- [ ] **1. Upstream tool surface snapshot + assert (TODO:250, biggest silent risk).** Capture a live `tools/list` (handshake + list only, DataModel untouched), check in the snapshot, assert `proxied_upstream` vs `extended` split in CI. Blocked on a launchable Studio until scope is granted.
+- [ ] **2. Operator runbook (TODO:256).** Docs-only: the six-step chain launch → attach → resolve → capture → play → stop with every declared code's recovery. No Studio needed.
+- [ ] **3. `os.fdopen` fd-leak guard in capture `_write_atomic`.** If `fdopen` itself raises, `handle_fd` leaks; close it in the failure path. Tiny, unit-testable, no Studio needed.
+- [ ] **4. Route-1 PID tie (review residual).** Name-based check can't separate same-place Studios; tie the newcomer via mesh PID mapping or console token, or downgrade `verified`. Needs design + live multi-Studio verification.
+- [ ] **Research in flight (2026-10-11, three background subagents):** macOS Studio-MCP usage, existing-solution comparison, macOS observability primitives (`lsof`, FLog formats, window capture). Findings land here before any macOSverification is claimed.
+
 ## Withdrawn — do not re-derive these
 
 - > **Superseded 2026-10-01 on the "never run" part, not the rest.** There is still *(`macOS: researched and implemented, still never executed`)*

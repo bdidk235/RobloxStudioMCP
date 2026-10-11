@@ -468,6 +468,31 @@ class TestNoCorruptFileLeftBehind(_WriteFailure):
             "the scratch file was left behind",
         )
 
+    async def test_an_fdopen_failure_closes_the_descriptor(self):
+        """`os.fdopen` failing leaves a bare fd with no file object to own it.
+
+        The outer handler only unlinks the temp path, so before the guard the
+        descriptor leaked. The double records the fd it is given, then raises;
+        the test proves the fd is closed (`fstat` raises) alongside the usual
+        scratch check. Portable: closed-fd `fstat` raises `OSError` on POSIX
+        and Windows alike.
+        """
+        seen = []
+
+        def fake_fdopen(fd, *args, **kwargs):
+            seen.append(fd)
+            raise OSError(24, "Too many open files")
+
+        target = os.path.join(self.root, "shot.png")
+        with mock.patch.object(cap.os, "fdopen", side_effect=fake_fdopen):
+            err = await self._fails(target)
+
+        self.assertEqual(err.code, "INVALID_ARGUMENT")
+        self.assertEqual(len(seen), 1)
+        with self.assertRaises(OSError):
+            os.fstat(seen[0])
+        self.assertEqual([n for n in os.listdir(self.root) if n.startswith(TEMP_PREFIX)], [])
+
     async def test_a_good_write_leaves_no_scratch_either(self):
         target = os.path.join(self.root, "shot.png")
         result = await capture_png(capturing_studio(), save_path=target)

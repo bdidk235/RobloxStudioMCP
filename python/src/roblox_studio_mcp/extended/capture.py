@@ -325,7 +325,16 @@ def _write_atomic(path: str, data: bytes) -> None:
     directory = os.path.dirname(os.path.abspath(path)) or os.curdir
     handle_fd, temp = tempfile.mkstemp(prefix=TEMP_PREFIX, suffix=".part", dir=directory)
     try:
-        with os.fdopen(handle_fd, "wb") as handle:
+        try:
+            handle = os.fdopen(handle_fd, "wb")
+        except BaseException:
+            # `fdopen` failing leaves a bare fd with no file object to close
+            # it: shut it here, or the descriptor leaks alongside the temp
+            # file this block already removes below.
+            with contextlib.suppress(OSError):
+                os.close(handle_fd)
+            raise
+        with handle:
             handle.write(data)
         os.replace(temp, path)
     except BaseException:
