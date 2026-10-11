@@ -311,7 +311,18 @@ Ordered by value per effort. Items 1-3 need no live Studio; item 4 needs one
 I launch myself (standing rule 1) or explicit user scope for the attached
 instance.
 
-- [ ] **1. Upstream tool surface snapshot + assert (TODO:250, biggest silent risk).** Capture a live `tools/list` (handshake + list only, DataModel untouched), check in the snapshot, assert `proxied_upstream` vs `extended` split in CI. Blocked on a launchable Studio until scope is granted.
+- [x] **DONE 2026-10-11 — 1. Upstream tool surface snapshot + assert.** Fresh live
+  capture (handshake + `tools/list` only, direct StudioMCP.exe launch — WSL has
+  no `cmd.exe`; DataModel untouched): 30 tools, zero drift vs the salvaged
+  snapshot. Ported the wt-upstream work onto current main as new files
+  (`upstream.py`, `doctor.py`, `build_upstream.py`, both contract JSONs, both
+  test files, `fake_proxy.py`) plus the two missing catalog entries
+  (`capture_plugin_gui`, `list_plugin_guis` — a true positive from a
+  previously-unrun test). Fixed three unfinished-work defects along the way:
+  order-mismatched `[0]` indexing in two grading tests (snapshot is sorted,
+  dump is wire order — one raised KeyError), tuple-vs-dict steer comparison,
+  and the doctor tests launching the fake proxy via `cmd.exe` (now
+  `sys.executable`, portable). Full suite: 877 passed.
 - [ ] **2. Operator runbook (TODO:256).** Docs-only: the six-step chain launch → attach → resolve → capture → play → stop with every declared code's recovery. No Studio needed.
 - [ ] **3. `os.fdopen` fd-leak guard in capture `_write_atomic`.** If `fdopen` itself raises, `handle_fd` leaks; close it in the failure path. Tiny, unit-testable, no Studio needed.
 - [ ] **4. Route-1 PID tie (review residual).** Name-based check can't separate same-place Studios; tie the newcomer via mesh PID mapping or console token, or downgrade `verified`. Needs design + live multi-Studio verification.

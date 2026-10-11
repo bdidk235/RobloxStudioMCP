@@ -1,0 +1,800 @@
+{
+  "_comment": "The upstream (relayed) tool surface, captured from a live tools/list through the StudioMCP proxy. Trust label: proxied_upstream - owned by Roblox Studio, not this repo, so it is graded, not asserted byte-for-byte. Refresh after a Studio update with `python contract/build_upstream.py --live` (writes this file and contract/upstream_live_dump.json together), and check any time with `python -m roblox_studio_mcp.doctor --upstream`. Generated file; do not hand-edit.",
+  "trust": "proxied_upstream",
+  "captured": "2026-10-11",
+  "source": "live tools/list through StudioMCP.exe direct (WSL: no cmd.exe; equivalent to mcp.bat resolution)",
+  "tool_count": 30,
+  "tools": [
+    {
+      "name": "capture_plugin_gui",
+      "description_chars": 509,
+      "required": [
+        "plugin_gui_id",
+        "studio_id"
+      ],
+      "properties": {
+        "plugin_gui_id": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "character_navigation",
+      "description_chars": 58,
+      "required": [
+        "datamodel_type",
+        "studio_id"
+      ],
+      "properties": {
+        "datamodel_type": {
+          "type": "string",
+          "enum": [
+            "Client"
+          ]
+        },
+        "instance_path": {
+          "type": "string"
+        },
+        "speed_multiplier": {
+          "type": "number"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      }
+    },
+    {
+      "name": "execute_luau",
+      "description_chars": 1108,
+      "required": [
+        "code",
+        "datamodel_type",
+        "studio_id"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "datamodel_type": {
+          "type": "string",
+          "enum": [
+            "Edit",
+            "Client",
+            "Server"
+          ]
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "generate_material",
+      "description_chars": 173,
+      "required": [
+        "baseMaterial",
+        "materialDescription",
+        "materialId",
+        "materialPattern",
+        "studio_id"
+      ],
+      "properties": {
+        "async": {
+          "type": "boolean"
+        },
+        "baseMaterial": {
+          "type": "string",
+          "enum": [
+            "Plastic",
+            "SmoothPlastic",
+            "Wood",
+            "WoodPlanks",
+            "Marble",
+            "Basalt",
+            "Slate",
+            "CrackedLava",
+            "Concrete",
+            "Limestone",
+            "Granite",
+            "Pavement",
+            "Brick",
+            "Pebble",
+            "Cobblestone",
+            "Rock",
+            "Sandstone",
+            "CorrodedMetal",
+            "DiamondPlate",
+            "Foil",
+            "Metal",
+            "Grass",
+            "LeafyGrass",
+            "Sand",
+            "Fabric",
+            "Snow",
+            "Mud",
+            "Ground",
+            "Asphalt",
+            "Salt",
+            "Ice",
+            "Glacier",
+            "Cardboard",
+            "Carpet",
+            "CeramicTiles",
+            "ClayRoofTiles",
+            "RoofShingles",
+            "Leather",
+            "Plaster",
+            "Rubber"
+          ]
+        },
+        "materialDescription": {
+          "type": "string"
+        },
+        "materialId": {
+          "type": "string"
+        },
+        "materialPattern": {
+          "type": "string",
+          "enum": [
+            "Regular",
+            "Organic"
+          ]
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "generate_mesh",
+      "description_chars": 49,
+      "required": [
+        "studio_id",
+        "textPrompt"
+      ],
+      "properties": {
+        "async": {
+          "type": "boolean"
+        },
+        "maxTriangles": {
+          "type": "number"
+        },
+        "partNames": {
+          "type": "string"
+        },
+        "segmentation": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "none",
+            "explicit"
+          ]
+        },
+        "size": {
+          "type": "object"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "textPrompt": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "generate_procedural_model",
+      "description_chars": 1206,
+      "required": [
+        "prompt",
+        "studio_id"
+      ],
+      "properties": {
+        "async": {
+          "type": "boolean"
+        },
+        "attachedImageUri": {
+          "type": "string"
+        },
+        "partNames": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "segmentation": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "none",
+            "explicit"
+          ]
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "generate_texture",
+      "description_chars": 154,
+      "required": [
+        "studio_id",
+        "textPrompt"
+      ],
+      "properties": {
+        "hintImage": {
+          "type": "object"
+        },
+        "instance_path": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "textPrompt": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "get_console_output",
+      "description_chars": 50,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "get_studio_state",
+      "description_chars": 185,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "http_get",
+      "description_chars": 1767,
+      "required": [
+        "studio_id",
+        "url"
+      ],
+      "properties": {
+        "context_lines": {
+          "type": "number"
+        },
+        "query": {
+          "type": "string"
+        },
+        "return_full": {
+          "type": "boolean"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "insert_asset",
+      "description_chars": 516,
+      "required": [
+        "assetId",
+        "studio_id"
+      ],
+      "properties": {
+        "assetId": {
+          "type": "string"
+        },
+        "assetName": {
+          "type": "string"
+        },
+        "assetType": {
+          "type": "string",
+          "enum": [
+            "Model",
+            "Package",
+            "Mesh",
+            "MeshPart",
+            "Image",
+            "Decal",
+            "Audio",
+            "Video",
+            "Animation"
+          ]
+        },
+        "parentPath": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "inspect_instance",
+      "description_chars": 3553,
+      "required": [
+        "path",
+        "studio_id"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "list_plugin_guis",
+      "description_chars": 329,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "list_roblox_studios",
+      "description_chars": 435,
+      "required": [],
+      "properties": {},
+      "read_only": true
+    },
+    {
+      "name": "multi_edit",
+      "description_chars": 1599,
+      "required": [
+        "datamodel_type",
+        "edits",
+        "file_path",
+        "studio_id"
+      ],
+      "properties": {
+        "className": {
+          "type": "string"
+        },
+        "datamodel_type": {
+          "type": "string",
+          "enum": [
+            "Edit"
+          ]
+        },
+        "edits": {
+          "type": "array",
+          "items_type": "object"
+        },
+        "file_path": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "screen_capture",
+      "description_chars": 202,
+      "required": [
+        "capture_id",
+        "studio_id"
+      ],
+      "properties": {
+        "camera_position": {
+          "type": "array",
+          "items_type": "number"
+        },
+        "capture_id": {
+          "type": "string"
+        },
+        "look_at_position": {
+          "type": "array",
+          "items_type": "number"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "script_grep",
+      "description_chars": 140,
+      "required": [
+        "query",
+        "studio_id"
+      ],
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "script_read",
+      "description_chars": 970,
+      "required": [
+        "studio_id",
+        "target_file"
+      ],
+      "properties": {
+        "end_line_one_indexed_inclusive": {
+          "type": "integer"
+        },
+        "should_read_entire_file": {
+          "type": "boolean"
+        },
+        "start_line_one_indexed": {
+          "type": "integer"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "target_file": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "script_search",
+      "description_chars": 345,
+      "required": [
+        "keywords",
+        "studio_id"
+      ],
+      "properties": {
+        "keywords": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "search_asset",
+      "description_chars": 3677,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "assetType": {
+          "type": "string",
+          "enum": [
+            "Model",
+            "Audio",
+            "Mesh",
+            "MeshPart",
+            "Image",
+            "Decal",
+            "Video",
+            "Package"
+          ]
+        },
+        "audioMaxDuration": {
+          "type": "number"
+        },
+        "audioMinDuration": {
+          "type": "number"
+        },
+        "excludeSources": {
+          "type": "array",
+          "items_type": "string"
+        },
+        "facets": {
+          "type": "array",
+          "items_type": "string"
+        },
+        "groupId": {
+          "type": "string"
+        },
+        "groupName": {
+          "type": "string"
+        },
+        "includeSources": {
+          "type": "array",
+          "items_type": "string"
+        },
+        "maxPriceCents": {
+          "type": "number"
+        },
+        "maxResults": {
+          "type": "number"
+        },
+        "minPriceCents": {
+          "type": "number"
+        },
+        "priceFilter": {
+          "type": "string",
+          "enum": [
+            "free",
+            "paid",
+            "all"
+          ]
+        },
+        "query": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "creator_store",
+            "user",
+            "group",
+            "universe"
+          ]
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items_type": "string"
+        },
+        "verifiedCreatorsOnly": {
+          "type": "boolean"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "search_game_tree",
+      "description_chars": 2086,
+      "required": [
+        "datamodel_type",
+        "studio_id"
+      ],
+      "properties": {
+        "datamodel_type": {
+          "type": "string",
+          "enum": [
+            "Edit",
+            "Client",
+            "Server"
+          ]
+        },
+        "head_limit": {
+          "type": "number"
+        },
+        "instance_type": {
+          "type": "string"
+        },
+        "keywords": {
+          "type": "string"
+        },
+        "max_depth": {
+          "type": "number"
+        },
+        "path": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "segment_mesh",
+      "description_chars": 237,
+      "required": [
+        "parts",
+        "studio_id"
+      ],
+      "properties": {
+        "instance_path": {
+          "type": "string"
+        },
+        "parts": {
+          "type": "array",
+          "items_type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "skill",
+      "description_chars": 3011,
+      "required": [
+        "skill_name",
+        "studio_id"
+      ],
+      "properties": {
+        "skill_name": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
+      "name": "start_stop_play",
+      "description_chars": 37,
+      "required": [
+        "is_start",
+        "studio_id"
+      ],
+      "properties": {
+        "is_start": {
+          "type": "boolean"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "store_image",
+      "description_chars": 315,
+      "required": [
+        "filePath",
+        "studio_id"
+      ],
+      "properties": {
+        "filePath": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "subagent",
+      "description_chars": 1855,
+      "required": [
+        "description",
+        "studio_id",
+        "subagent_type",
+        "task"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "subagent_type": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "upload_image",
+      "description_chars": 266,
+      "required": [
+        "imagePaths",
+        "studio_id"
+      ],
+      "properties": {
+        "imagePaths": {
+          "type": "array",
+          "items_type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "user_keyboard_input",
+      "description_chars": 134,
+      "required": [
+        "actions",
+        "datamodel_type",
+        "studio_id"
+      ],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items_type": "object"
+        },
+        "datamodel_type": {
+          "type": "string",
+          "enum": [
+            "Client"
+          ]
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "user_mouse_input",
+      "description_chars": 348,
+      "required": [
+        "actions",
+        "datamodel_type",
+        "studio_id"
+      ],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items_type": "object"
+        },
+        "datamodel_type": {
+          "type": "string",
+          "enum": [
+            "Client"
+          ]
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "wait_job_finished",
+      "description_chars": 484,
+      "required": [
+        "jobId",
+        "studio_id"
+      ],
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "number"
+        }
+      },
+      "read_only": true
+    }
+  ],
+  "proxy": {
+    "name": "RobloxStudio",
+    "version": "1.0.0"
+  }
+}

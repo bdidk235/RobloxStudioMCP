@@ -214,6 +214,19 @@ window.CATALOG = [
     ],
   },
   {
+    category: "Plugin GUI (relayed)",
+    tools: [
+      { n: "list_plugin_guis", o: "raw",
+        d: "List the plugin GUIs (widgets/windows) in Studio with their pluginGuiIds. Hidden ones are listed too and cannot be captured.",
+        req: [], opt: [],
+        ret: "{pluginGuis: [{pluginGuiId, ...}]}." },
+      { n: "capture_plugin_gui", o: "raw",
+        d: "Screenshot one visible plugin GUI by pluginGuiId. Studio itself must be visible; hidden GUIs fail.",
+        req: ["plugin_gui_id"], opt: [],
+        ret: "Image data." },
+    ],
+  },
+  {
     category: "Meta: skills, subagents, jobs, web (relayed)",
     tools: [
       { n: "skill", o: "raw",
