@@ -184,5 +184,94 @@ class SurfaceParity(unittest.TestCase):
         self.assertIn("max_lines", props)
 
 
+class _MeshClient:
+    """Fake proxy with a settable mesh and console, for cursor-keying tests.
+
+    Goes through the real `get_watch_state` and the real `watch_output`, so
+    the test pins which cursor a handler call actually uses. Mesh ids are
+    unique per test because `_WATCH_STATES` is process-global.
+    """
+
+    def __init__(self, studios, console):
+        self.studios = studios
+        self.console = console
+
+    async def list_tools(self):
+        from roblox_studio_mcp import Tool
+
+        return [Tool("list_roblox_studios"), Tool("get_console_output")]
+
+    async def call_tool(self, name, arguments):
+        import json
+
+        from roblox_studio_mcp import CallToolResult
+
+        if name == "list_roblox_studios":
+            return CallToolResult.from_dict(
+                {
+                    "content": [
+                        {"type": "text", "text": json.dumps({"studios": self.studios})}
+                    ]
+                }
+            )
+        if name == "get_console_output":
+            return CallToolResult.from_dict(
+                {"content": [{"type": "text", "text": "\n".join(self.console)}]}
+            )
+        raise AssertionError(f"unexpected tool call: {name}")
+
+
+def _new_lines(result):
+    import json
+
+    return json.loads(result["content"][0]["text"])["lines"]
+
+
+class CursorKeying(unittest.TestCase):
+    def tearDown(self):
+        from roblox_studio_mcp.extended import extensions as ext
+
+        for key in [k for k in ext._WATCH_STATES if k.startswith("cursor-")]:
+            del ext._WATCH_STATES[key]
+
+    def test_an_omitted_pin_shares_the_explicit_pins_cursor(self):
+        """One Studio polled both ways must not report everything twice.
+
+        The handler used to key an omitted pin as "default", giving one Studio
+        two cursors: the second poll re-reported the whole console as new.
+        """
+        client = _MeshClient(
+            [{"id": "cursor-a", "name": "A"}], ["line one", "line two"]
+        )
+        first = asyncio.run(es._call_watch_output(client, {"studio_id": "cursor-a"}))
+        self.assertEqual(_new_lines(first), ["line one", "line two"])
+        second = asyncio.run(es._call_watch_output(client, {}))
+        self.assertEqual(
+            _new_lines(second),
+            [],
+            "the unpinned poll re-read the pinned poll's console",
+        )
+
+    def test_a_cursor_does_not_migrate_to_a_new_studio(self):
+        """A closed Studio's cursor must not skip the next Studio's lines.
+
+        Under "default" keying, polling unpinned against sid-A seeded a cursor
+        that a later sid-B inherited positionally: where the consoles overlap -
+        the normal case, a restarted place replays its startup lines - sid-B's
+        earlier lines were silently dropped. Keyed by resolved id, sid-B
+        starts fresh on its own console.
+        """
+        client = _MeshClient([{"id": "cursor-a", "name": "A"}], ["boot", "alpha"])
+        asyncio.run(es._call_watch_output(client, {}))
+        client.studios = [{"id": "cursor-b", "name": "B"}]
+        client.console = ["boot", "alpha", "beta"]
+        result = asyncio.run(es._call_watch_output(client, {}))
+        self.assertEqual(
+            _new_lines(result),
+            ["boot", "alpha", "beta"],
+            "sid-B inherited sid-A's cursor and dropped its earlier lines",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

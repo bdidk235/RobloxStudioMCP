@@ -917,8 +917,14 @@ async def _call_watch_output(
 
     studio_id: Optional[str] = arguments.get("studio_id")
     studio = _RobloxStudio(client=client, studio_id=studio_id)
-    # Persistent per-studio state so consecutive calls return only new lines.
-    result = await watch_output(studio, watch_state=get_watch_state(studio_id or "default"))
+    # Key by the resolved Studio, never by the call shape. An omitted pin must
+    # share the explicit pin's cursor: keying it "default" gives one Studio two
+    # cursors (the second poll re-reports everything), and when that Studio
+    # closes, the "default" cursor migrates to whatever attaches next and
+    # silently skips its earlier lines. Ids are re-minted per restart, so a new
+    # id correctly starts a fresh cursor on a new console.
+    resolved = studio_id or await studio.resolve_studio_id()
+    result = await watch_output(studio, watch_state=get_watch_state(resolved))
 
     # `watch_output` returns `new_lines` as a real list, already split by the
     # watch, so there is nothing to split here.
