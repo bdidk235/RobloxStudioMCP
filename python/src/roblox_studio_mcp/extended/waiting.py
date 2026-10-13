@@ -313,13 +313,27 @@ async def wait_for(
 
     while True:
         polls += 1
+        # A poll can never outlive the wait that owns it. Measured 2026-09-30:
+        # a condition that never executed rode MAX_HUNG_POLLS bare
+        # POLL_TIMEOUTs and ignored the caller's `timeout_seconds` entirely, so
+        # a 4 s wait spent 90 s. Bounding each await by what is left of the
+        # budget is what makes `timeout_seconds` mean something on the hang
+        # path; POLL_TIMEOUT still caps any single poll.
+        remaining = deadline - now()
+        if remaining <= 0:
+            # The budget is spent. A hang that spent it is the wedge and gets
+            # the restart-naming error; a clean spend is "not yet" and gets a
+            # verdict. Both exits are reachable, so neither is an assertion.
+            if hung:
+                raise _hang_reason(condition)
+            return _verdict(False, last, polls, budget, delay, repeats, errors)
         try:
             result: CallToolResult = await asyncio.wait_for(
                 studio.call(
                     "execute_luau",
                     {"code": probe, "datamodel_type": datamodel_type},
                 ),
-                timeout=poll_timeout,
+                timeout=min(poll_timeout, remaining),
             )
         except asyncio.TimeoutError:
             # The Studio side never replied. Cancelling frees this end only;
@@ -333,16 +347,12 @@ async def wait_for(
                 "poll %d hung (no reply within %.0fs)" % (polls, poll_timeout)
             )
             if hung >= MAX_HUNG_POLLS:
-                raise ToolError(
-                    "TIMEOUT",
-                    "condition never executed: %d consecutive polls hung with "
-                    "no reply. Studio-side command execution is likely wedged "
-                    "- an unparseable condition does this - and reconnecting "
-                    "this server will not clear it. Restart the Studio, fix "
-                    "the condition, and try again." % MAX_HUNG_POLLS,
-                    condition=condition,
-                )
-            await nap(delay)
+                raise _hang_reason(condition)
+            # Clamped like the nap below: an unclamped sleep on the hang path
+            # goes straight past the deadline it is supposed to respect, which
+            # is the same defect as the unbounded poll - the caller's budget
+            # ignored on exactly the path that most needs it.
+            await nap(min(delay, max(0.0, deadline - now())))
             delay = min(delay * BACKOFF, MAX_POLL)
             continue
         except Exception as exc:  # noqa: BLE001 - a poll failure is data, not a crash
@@ -352,7 +362,9 @@ async def wait_for(
             if err.code == "DATAMODAL_UNAVAILABLE":
                 raise err
             errors.append(err.message[:160])
-            await nap(delay)
+            # Clamped: a poll that failed must not sleep past the deadline
+            # either, or a wait that ended still spends its whole budget.
+            await nap(min(delay, max(0.0, deadline - now())))
             delay = min(delay * BACKOFF, MAX_POLL)
             continue
 
@@ -407,7 +419,25 @@ async def wait_for(
         else:
             delay = min(delay * 1.25, MAX_POLL)
 
-    raise AssertionError("unreachable")
+    return _verdict(False, last, polls, budget, delay, repeats, errors)
+
+
+def _hang_reason(condition: str) -> ToolError:
+    """The wedge error, in one place.
+
+    Raised two ways: after MAX_HUNG_POLLS consecutive hangs, or when hangs spend
+    the whole budget first. Both mean the same thing to a caller, so they say
+    the same thing - including that reconnecting this server will **not** clear
+    it, because the wedge is Studio-side.
+    """
+    return ToolError(
+        "TIMEOUT",
+        "condition never executed: consecutive polls hung with no reply. "
+        "Studio-side command execution is likely wedged - an unparseable "
+        "condition does this - and reconnecting this server will not clear it. "
+        "Restart the Studio, fix the condition, and try again.",
+        condition=condition,
+    )
 
 
 def _verdict(

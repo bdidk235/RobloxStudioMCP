@@ -14,6 +14,9 @@ with the restart named. These tests pin that, without needing a live Studio.
 
 import asyncio
 import unittest
+from unittest import mock
+
+from roblox_studio_mcp.extended import waiting as waiting_module
 
 from roblox_studio_mcp.extended.errors import (
     ALL_CODES, AMBIGUOUS_STUDIO, CAPABILITY_DENIED, DATAMODAL_UNAVAILABLE,
@@ -50,6 +53,15 @@ def fast_wait_raises(studio, **kw):
         return fast_wait(studio, **kw)
     except ToolError as exc:
         return exc
+
+
+async def _catch(awaitable):
+    """Run ``awaitable`` and hand back the ToolError it raises, if any."""
+    try:
+        await awaitable
+    except ToolError as exc:
+        return exc
+    raise AssertionError("expected a ToolError")
 
 
 class TestProbeWrapper(unittest.TestCase):
@@ -309,6 +321,42 @@ class _ScriptedStudio:
         return CallToolResult(content=[{"type": "text", "text": step}])
 
 
+class TestBudgetBoundsTheLoop(unittest.TestCase):
+    """Every sleep in the wait is clamped to what is left of the budget.
+
+    The hang path and the error path had their own unclamped naps, so a wait
+    that had already run out of time kept sleeping through its deadline. This
+    pins the general rule: the virtual clock never passes the budget, whatever
+    a poll did.
+    """
+
+    def test_a_failing_poll_does_not_sleep_past_the_deadline(self):
+        class Boom:
+            def __init__(self):
+                self.calls = 0
+
+            async def call(self, name, arguments=None):
+                self.calls += 1
+                raise RuntimeError("studio exploded")
+
+        studio = Boom()
+        clock = VirtualClock()
+        verdict = asyncio.run(
+            wait_for(
+                studio,
+                "1 +",
+                0.3,
+                clock=clock,
+                sleep=clock.sleep,
+                poll_timeout=5.0,
+            )
+        )
+        self.assertFalse(verdict["satisfied"])
+        self.assertTrue(verdict["timed_out"])
+        self.assertLessEqual(clock.now, 0.3, "a failed poll slept past the deadline")
+        self.assertLessEqual(verdict["polls"], 3, "the budget did not stop the loop")
+
+
 class TestHungPolls(unittest.TestCase):
     """Measured 2026-09-30, twice: an unparseable condition wedged Studio-side
     command execution, the poll's await never resolved, and the sequential
@@ -324,6 +372,53 @@ class TestHungPolls(unittest.TestCase):
         self.assertIn("never executed", err.message)
         self.assertIn("Restart the Studio", err.message)
         self.assertEqual(studio.calls, MAX_HUNG_POLLS)
+
+    def test_a_hang_cannot_outlive_the_wait_that_owns_it(self):
+        """`timeout_seconds` has to bound the hang path, not just the loop.
+
+        Measured 2026-09-30: a condition that never executed rode
+        MAX_HUNG_POLLS bare POLL_TIMEOUTs, so a caller asking for 4 s waited 90.
+        Bounding each poll's await by what is left of the budget makes the
+        caller's number mean something on the exact path that ignored it.
+
+        Three seams have to be driven separately, and confusing them is how the
+        first draft of this test failed: the poll await is real time
+        (`asyncio.wait_for`) while the *budget* lives on the virtual clock, so
+        the poll count proves the budget stopped the wait before its three
+        hangs were spent, and a spy on `wait_for` proves the bound is actually
+        applied - the number it was handed, not how long anything slept. With
+        the bound reverted this reads 5.0, not 0.3.
+        """
+        studio = _ScriptedStudio(["hang"])
+        clock = VirtualClock()
+        handed: list = []
+        real_wait_for = asyncio.wait_for
+
+        async def spy(awaitable, timeout=None):
+            handed.append(timeout)
+            return await real_wait_for(awaitable, timeout=timeout)
+
+        with mock.patch.object(waiting_module.asyncio, "wait_for", spy):
+            err = asyncio.run(
+                _catch(
+                    wait_for(
+                        studio,
+                        "1 +",
+                        0.3,
+                        clock=clock,
+                        sleep=clock.sleep,
+                        poll_timeout=5.0,
+                    )
+                )
+            )
+        self.assertEqual(err.code, TIMEOUT)
+        self.assertIn("Restart the Studio", err.message)
+        self.assertTrue(handed, "no poll was ever awaited")
+        self.assertLessEqual(handed[0], 0.3, "the poll ignored the caller's budget")
+        self.assertEqual(
+            studio.calls, 2, "the budget must abort before MAX_HUNG_POLLS"
+        )
+        self.assertLessEqual(clock.now, 0.3, "the wait slept past its own deadline")
 
     def test_a_reply_resets_the_hang_count(self):
         # hang, hang, reply, hang, hang, hang: the reply in the middle proves
