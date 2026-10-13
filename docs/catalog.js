@@ -221,9 +221,9 @@ window.CATALOG = [
         req: [], opt: [],
         ret: "{pluginGuis: [{pluginGuiId, ...}]}." },
       { n: "capture_plugin_gui", o: "raw",
-        d: "Screenshot one visible plugin GUI by pluginGuiId. Studio itself must be visible; hidden GUIs fail.",
+        d: "NOT RECOMMENDED - worse than not having it. Returns screen contents at the widget's position, not a widget render (Roblox's own description admits this when Studio is occluded or minimized); on Windows observed returning the whole screen, and null when occluded. Use extended_capture instead.",
         req: ["plugin_gui_id"], opt: [],
-        ret: "Image data." },
+        ret: "Image data (of the wrong thing - see above)." },
     ],
   },
   {
