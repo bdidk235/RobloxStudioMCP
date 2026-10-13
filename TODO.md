@@ -171,7 +171,7 @@
 
 - [ ] **`platform.parse_ps_row` and `platform.attached_pids` (lsof) are unproven on a Mac.** Both are unit-tested against captured macOS-shaped rows, but `lsof -iTCP:13469 -sTCP:ESTABLISHED -t` is inferred from the Windows equivalent's semantics, not observed.
 
-- [ ] **The gating measurement is still not made, and I am not going to call it settled.** Four converging pieces of evidence that the `UIThreadNotifier ... for process 'N'` line is present on macOS: 1. FLog is one documented format across Player/RCC/Studio. 2. The filename format is byte-for-byte the same shape. 3. The channel is engine-level, emitted by shared C++. 4. **`Superwheat/renium` uses that exact marker on macOS** - its `studio_log_for_process` sits behind both the `#[cfg(windows)]` and `#[cfg(target_os = "macos")]` process enumeration, so its macOS branch would simply never work if the line were absent.
+- [ ] **The gating measurement is still not made, and I am not going to call it settled.** Four converging pieces of evidence that the `UIThreadNotifier ... for process 'N'` line is present on macOS: 1. FLog is one documented format across Player/RCC/Studio. 2. The filename format is byte-for-byte the same shape. 3. The channel is engine-level, emitted by shared C++. 4. **`Superwheat/renium` uses that exact marker on macOS** - its `studio_log_for_process` sits behind both the `#[cfg(windows)]` and `#[cfg(target_os = "macos")]` process enumeration, so its macOS branch would simply never work if the line were absent. (Correction 2026-10-11: the repo is real - github.com/Superwheat/renium, Rust sync tool, verified by direct fetch after a research subagent wrongly reported it nonexistent. But the marker claim itself is still unverified from their source; only existence was checked, not the function.)
 
 - [ ] **FLog has four format types and this project only parses one.** Type 4 is `ISO8601Z,TimeSinceStarted,Thread,LogLevel [FLog::...]`; type 1 is `UnixTime,Identifier,LogLevel [FLog::...]`, type 3 is `TimeSinceStarted Thread: message`. The parser's negative lookahead for `\d{4}-` assumes type 4. That is a **Windows-side** robustness gap too, not just a macOS one: an older-format log would be read as having no PID.
 
@@ -323,8 +323,19 @@ instance.
   dump is wire order — one raised KeyError), tuple-vs-dict steer comparison,
   and the doctor tests launching the fake proxy via `cmd.exe` (now
   `sys.executable`, portable). Full suite: 877 passed.
-- [ ] **2. Operator runbook (TODO:256).** Docs-only: the six-step chain launch → attach → resolve → capture → play → stop with every declared code's recovery. No Studio needed.
-- [ ] **3. `os.fdopen` fd-leak guard in capture `_write_atomic`.** If `fdopen` itself raises, `handle_fd` leaks; close it in the failure path. Tiny, unit-testable, no Studio needed.
+- [x] **DONE 2026-10-13 — 2. Operator runbook (TODO:256).** `docs/RUNBOOK.md`:
+  the six-step chain launch -> attach -> resolve -> capture -> play -> stop, and
+  all 16 error codes with the recovery each one calls for, sourced from
+  `extended/errors.py` (`_PATTERNS`, `_RECOVERY`) and the raise sites rather
+  than invented. Records that `screen_capture` returns null when Studio is not
+  visible, that `capture_plugin_gui` is not recommended (screen contents at the
+  widget position, deny-listed here), and that macOS log-marker/PID attribution
+  is inferred, never observed. Docs-only, no Studio needed. Suite: 883 passed.
+- [x] **DONE 2026-10-13 — 3. `os.fdopen` fd-leak guard in capture `_write_atomic`.**
+  `fdopen` failing left a bare fd with no file object to close it; the outer
+  handler only unlinked the temp path, so the descriptor leaked alongside it.
+  Closed in the failure path with a portable test (`fstat` on a closed fd
+  raises on POSIX and Windows alike), pinned against the pre-fix code.
 - [ ] **4. Route-1 PID tie (review residual).** Name-based check can't separate same-place Studios; tie the newcomer via mesh PID mapping or console token, or downgrade `verified`. Needs design + live multi-Studio verification.
 - [ ] **Research in flight (2026-10-11, three background subagents):** macOS Studio-MCP usage, existing-solution comparison, macOS observability primitives (`lsof`, FLog formats, window capture). Findings land here before any macOSverification is claimed.
 
