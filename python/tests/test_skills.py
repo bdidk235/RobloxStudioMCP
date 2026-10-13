@@ -28,6 +28,7 @@ from typing import List, Optional
 from unittest import mock
 
 from roblox_studio_mcp import __file__ as _PACKAGE_FILE
+import roblox_studio_mcp.roblox as roblox_mod
 from roblox_studio_mcp import (
     CallToolResult,
     Tool,
@@ -495,8 +496,20 @@ class TestBuiltinSkillRelay(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_studio_names_the_fix(self):
         client = _RelayClient([])
-        with self.assertRaises(MCPToolError) as ctx:
-            await es._call_skill(client, {"skill_name": "rbx-debug"})
+        _resolve = roblox_mod.RobloxStudio.resolve_studio_id
+
+        def _fast_resolve(self, **kwargs):
+            # The 60 s readiness window is deliberate (a fresh proxy's Studio
+            # uplink takes seconds to warm) and pinned by test_core.py. This
+            # arm is about the error contract, not the window, so it rides a
+            # 1 s one instead of paying the suite a minute.
+            return _resolve(self, timeout=1.0, **kwargs)
+
+        with mock.patch.object(
+            roblox_mod.RobloxStudio, "resolve_studio_id", _fast_resolve
+        ):
+            with self.assertRaises(MCPToolError) as ctx:
+                await es._call_skill(client, {"skill_name": "rbx-debug"})
         self.assertIn("No Roblox Studio instances are connected", str(ctx.exception))
         self.assertEqual(classify(ctx.exception).code, "NO_STUDIO")
 
