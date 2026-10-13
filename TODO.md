@@ -121,7 +121,12 @@
 
 - [x] **`TODO.md`'s description of the `save_path` failure was wrong** - it said the message survived while the `INTERNAL_ERROR` item said it was discarded, and the two contradicted each other. **Both are now moot**: re-measured 2026-10-05, the code raises `INVALID_ARGUMENT` with the recovery message intact (`capture.py:415-439`), so this file and `skills/rsx-capture.md` agree again.
 
-- [ ] **Unsourced figures across the skills** (640 classes, 50 methods on `StudioTestService`, `GetClass` returns nil, 0.002 px JPEG localisation, the ViewportFrame readback claim, ~139-char console sample). Each reads as measured against these files' own provenance standard. Either cite or label — "wrong notes that survive because nothing contradicts them".
+- [x] **DONE 2026-10-14 — Unsourced figures across the skills.** All six claims
+  now carry terse `(unverified)` labels at the exact claim sites, via the blind
+  A/B adjudication (P2 over P1 on placement and restraint) merged as `1b08f53`:
+  0.002 px (`rsx-capture.md`), ReadPixels/ViewportFrame (`rsx-capture.md`),
+  139-char sample (`rsx-console.md`), GetClass nil / 50 methods / ~640 classes
+  (`rsx-discovery.md`). Nothing invented, no provenance claimed.
 
 - [x] **`extended_capture`'s `save_path` failure raised an undeclared code.** **Fixed before this pass** — re-measured 2026-10-05 at `capture.py:415-439`: it raises `INVALID_ARGUMENT` (in `ALL_CODES`) and the `CAPTURE_OK_RECOVERY` message survives, with `capture.py:416-426` recording why. The tracker was stale on all three counts — the code, the discarded message, and the `UNKNOWN` the caller saw.
 
@@ -135,7 +140,7 @@
 
 - [x] **RETRACTED 2026-10-03 — moot: the repo is Python-only and the Node client is gone, so there is no second implementation left to wire up.** ~~The one real difference: identity resolution — and the code is already written.** `logid.ts` (86 KB) and `locks.ts` are ported and tested; `logid.test.ts` has 60-odd references. What is missing is the **call site**: `instance.ts` never imports `logid.ts`, so `listStudioProcesses` derives role and place from the command line (`processRows`, `roleFromCommandLine`, `placeFromCommandLine`) and `stopProcess(pid)` has no PID to be given. With two Studios on one place — the current state on this machine, both named `Place1` — Node **cannot say which is which**, so `action=stop` refuses rather than terminating the wrong process. **Closing it is now a wiring change, not a port: import `logid.ts` where `processRows` supplies role and place, and decide what a log with no PID does — it must be an error, never a silent "no identity".** Corrected 2026-10-03; this item previously said the module was unported and put the figure at 1,012 lines, which was wrong.~~
 
-- [ ] **The description budget is effectively full, 16 tools.** Re-measured 2026-10-05: **3,025 of 3,200**, 175 chars of headroom (live figures in `contract/tools.json`). *Two revisions of this item carried the figure: one said 2,897, true when written and since drifted; the other quoted none at all, so the figures moved and the sentence did not.* This is a hard blocker on adding a 17th tool, and a 17th tool is a decision for the user, not an accident — worth knowing *before* designing one.
+- [ ] **The description budget is effectively full, 16 tools.** Re-measured 2026-10-14: **3,104 of 3,200**, 96 chars of headroom (live figures in `contract/tools.json`). *History: 2,897 when first written (drifted); 3,025 on 2026-10-05 (175 headroom); +122 since, almost all the `extended_skill` rbx-relay note.* This is a hard blocker on adding a 17th tool, and a 17th tool is a decision for the user, not an accident — worth knowing *before* designing one.
 
 - [ ] **The PrintWindow *implementation* is not in the repo - only its measurement is.** Worth being precise about, because the 48-205 ms figure reads as though the code exists. It does not: no `PrintWindow` call exists in `python/src`. The chain up to the PID is built (`logid.resolve`), but the window tail is not written, so shipping it is new code, not wiring.
 
@@ -147,7 +152,7 @@
 
 - [ ] **`screen_capture` PNG** (request P0.2b) is **not possible** - it is a relayed Studio tool and we cannot add parameters to it. `extended_capture` supersedes the need.
 
-- [ ] **Schema is now about half the footprint, by count.** Re-measured 2026-10-05: **3,144 schema chars against 3,025 description chars — 51%**. *Corrected: this said "7,141 of 9,502", which put schema at 75% and overstated the absolute size by ~2.3×. The conclusion survives; the numbers did not.* Needs a decision on whether the `replaceAll` alias earns its place.
+- [ ] **Schema is now about half the footprint, by count.** Re-measured 2026-10-14: **3,091 schema chars against 3,104 description chars — 49.9%**. *History: "7,141 of 9,502" (75%, overstated ~2.3×); 3,144 vs 3,025 (51%) on 2026-10-05. The conclusion survives; the numbers keep not.* Needs a decision on whether the `replaceAll` alias earns its place.
 
 ### To do (recorded 2026-09-30, not yet built)
 
@@ -269,7 +274,10 @@ Four verifiers (one per review source, model `step-5-preview-free`, live-Studio 
 
 - [ ] **README:274 "every platform difference is confined to one file" is false.** There are three: `roblox.py:43` (`cmd.exe /c mcp.bat` per non-darwin platform, i.e. Linux raises before handshake), `platform.py:132-149`, and `registry.py:285-296` (the tree's only XDG path). The "bounded, not open-ended" port estimate rests on this.
 
-- [ ] **README "762 tests" is stale** — the Windows suite with the pyright gate is **781 passed, 2 skipped**.
+- [x] **CLOSED 2026-10-14 — premise gone, nothing to fix.** README carries no
+  test-count figure at all (verified by grep: no `762`, no `781`, no `passed`
+  anywhere in the file) — whatever edit removed the `762` already landed
+  without closing this item, so the stale-claim hunt ends here.
 
 - [ ] **A dead `REQUEST-luau-return-shapes.md` pointer survives outside `skills/`.** `extensions.py:769` and `tests/test_array_escape.py:5` still cite the report as being "in this repo"; `git log --all` shows it was never committed. I removed it from the skill and missed these two. `test_skill_refs.py` only scans `skills/*.md`, so nothing guards `python/src` or `python/tests` — widen the gate or drop the pointer.
 
