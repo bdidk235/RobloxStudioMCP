@@ -501,9 +501,10 @@ class TestBuiltinSkillRelay(unittest.IsolatedAsyncioTestCase):
         def _fast_resolve(self, **kwargs):
             # The 60 s readiness window is deliberate (a fresh proxy's Studio
             # uplink takes seconds to warm) and pinned by test_core.py. This
-            # arm is about the error contract, not the window, so it rides a
-            # 1 s one instead of paying the suite a minute.
-            return _resolve(self, timeout=1.0, **kwargs)
+            # arm is about the error contract, not the window, and the mocked
+            # mesh can never warm, so riding any of it is pure cost. 0.0 keeps
+            # the real resolution path - empty mesh, same raise, same code.
+            return _resolve(self, timeout=0.0, **kwargs)
 
         with mock.patch.object(
             roblox_mod.RobloxStudio, "resolve_studio_id", _fast_resolve

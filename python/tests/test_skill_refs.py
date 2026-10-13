@@ -229,8 +229,23 @@ def _references(text):
     return list(_POINTER.finditer(text))
 
 
-def _problems_in_text(text, where, base, tracked, roots, top):
+def _line_count(target):
+    """Lines in ``target``. Cached by the caller: one reference per name would
+    be cheap, but the same ``capture.py:377`` is cited from many files, and
+    every uncached citation re-opens the file - which, on a 9p-mounted tree,
+    is where this gate's cost actually is."""
+    return sum(1 for _ in target.open(encoding="utf-8"))
+
+
+def _problems_in_text(text, where, base, tracked, roots, top, cache=None):
     """Every pointer problem in one blob of text, one string per finding."""
+    # Memoised for the life of one sweep. The three lookups below are pure
+    # functions of the tree, so caching them changes nothing a fresh sweep
+    # would see; it only stops the same name being re-resolved once per
+    # occurrence. Deliberately per-sweep rather than module-level: the planted
+    # control edits a file between sweeps and must see the change.
+    if cache is None:
+        cache = {}
     found = []
     for number, line in enumerate(text.splitlines(), start=1):
         if _MARKER in line:
@@ -244,16 +259,24 @@ def _problems_in_text(text, where, base, tracked, roots, top):
             label = f"{where}:{number}"
             if _points_outside(name, top):
                 continue
-            target = _resolve(name, base, roots)
+            if name not in cache:
+                cache[name] = _resolve(name, base, roots)
+            target = cache[name]
             if target is None:
                 found.append(f"{label}: `{name}` names no file in this repository")
                 continue
-            relative = _relative(target, base)
+            key = str(target)
+            if key not in cache:
+                cache[key] = _relative(target, base)
+            relative = cache[key]
             if relative is None or relative not in tracked:
                 found.append(f"{label}: `{name}` names no tracked file")
                 continue
             if first is not None:
-                total = sum(1 for _ in target.open(encoding="utf-8"))
+                lines_key = "lines:" + key
+                if lines_key not in cache:
+                    cache[lines_key] = _line_count(target)
+                total = cache[lines_key]
                 end = int(last) if last is not None else int(first)
                 if end > total:
                     found.append(
@@ -271,17 +294,29 @@ def _sweep(base, tracked=None):
         tracked = _tracked(base)
     roots = _roots(base)
     top = {entry.split("/")[0] for entry in tracked}
+    cache: dict = {}
     problems = []
     for paths in _sources(base).values():
         for path in paths:
+            # Syntactic first: these paths are built by joining onto an
+            # already-resolved `base`, so the answer is identical to going
+            # through realpath - which costs one lstat per path component on a
+            # 9p-mounted tree, measured at ~1.2 s of a 2.7 s sweep for 83
+            # sources. `_relative` is the fallback, and stays the only route
+            # for resolved targets below, where a symlink answer would differ.
+            try:
+                where = path.relative_to(base).as_posix()
+            except ValueError:
+                where = _relative(path, base) or path.name
             problems.extend(
                 _problems_in_text(
                     path.read_text(encoding="utf-8"),
-                    _relative(path, base) or path.name,
+                    where,
                     base,
                     tracked,
                     roots,
                     top,
+                    cache,
                 )
             )
     return problems

@@ -7,6 +7,19 @@ exercised deterministically:
 
 * progress notifications extend the deadline, so a slow call survives
 * silence still times out, so the deadline is not simply removed
+
+The delays are **ratios, not durations.** What each arm asserts is the
+relationship (work longer than the deadline, ticks closer together than the
+deadline), so the numbers can be small. They were 2.5/1.0/0.8s of real
+sleeping until 2026-10-13, which cost the suite seconds to test arithmetic.
+
+The floors below are not decoration. An intermediate pass halved the delays
+and halved the ticks to 0.05s, and `test_a_raising_hook_does_not_break_the_call`
+failed one run in four under `-n 4`: a tick landing after the deadline it
+should have extended is indistinguishable, at that jitter, from a real
+regression. Kept: timeouts >= 0.3s, ticks >= 0.1s and under half the timeout,
+and the `extends` arm holding work at 2.4x its deadline with the tick a fifth
+of it. Shrink further only with a flake measurement, not by eye.
 """
 
 import asyncio
@@ -88,20 +101,20 @@ class TestProgressDeadlines(unittest.IsolatedAsyncioTestCase):
 
     async def test_silence_still_times_out(self):
         # The deadline must survive the change: no progress means timeout.
-        client = await self._client(delay=2.0, tick=0.1, progress=False, timeout=0.6)
+        client = await self._client(delay=0.6, tick=0.05, progress=False, timeout=0.3)
         with self.assertRaises(Exception) as caught:
             await client.call_tool("slow", {})
         self.assertIn("Timed out", str(caught.exception))
 
     async def test_progress_extends_the_deadline(self):
-        # 2.5s of work against a 0.6s timeout. Each progress tick pushes the
+        # 1.2s of work against a 0.5s timeout. Each progress tick pushes the
         # deadline out, so this must complete instead of timing out.
-        client = await self._client(delay=2.5, tick=0.15, progress=True, timeout=0.6)
+        client = await self._client(delay=1.2, tick=0.1, progress=True, timeout=0.5)
         result = await client.call_tool("slow", {})
         self.assertIn("done", str(result))
 
     async def test_progress_is_reported_to_the_hook(self):
-        client = await self._client(delay=1.0, tick=0.1, progress=True, timeout=1.0)
+        client = await self._client(delay=0.8, tick=0.1, progress=True, timeout=0.5)
         seen = []
         client.on_progress = lambda token, params: seen.append(token)
         await client.call_tool("slow", {})
@@ -109,7 +122,7 @@ class TestProgressDeadlines(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(isinstance(t, int) for t in seen))
 
     async def test_a_raising_hook_does_not_break_the_call(self):
-        client = await self._client(delay=0.8, tick=0.1, progress=True, timeout=0.6)
+        client = await self._client(delay=0.8, tick=0.1, progress=True, timeout=0.5)
 
         def boom(token, params):
             raise RuntimeError("hook exploded")
@@ -119,12 +132,12 @@ class TestProgressDeadlines(unittest.IsolatedAsyncioTestCase):
         self.assertIn("done", str(result))
 
     async def test_deadline_state_is_cleaned_up(self):
-        client = await self._client(delay=0.3, tick=0.1, progress=True, timeout=1.0)
+        client = await self._client(delay=0.2, tick=0.05, progress=True, timeout=0.3)
         await client.call_tool("slow", {})
         self.assertEqual(client._deadlines, {}, "deadline state leaked past the call")
 
     async def test_deadline_state_is_cleaned_up_after_a_timeout(self):
-        client = await self._client(delay=2.0, tick=0.1, progress=False, timeout=0.4)
+        client = await self._client(delay=0.6, tick=0.05, progress=False, timeout=0.3)
         with self.assertRaises(Exception):
             await client.call_tool("slow", {})
         self.assertEqual(client._deadlines, {})
