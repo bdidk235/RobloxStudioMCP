@@ -807,6 +807,96 @@ class TestServerDisabledTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[0]["error"]["code"], -32602)
 
 
+class TestDisabledToolsEnv(unittest.TestCase):
+    """`ROBLOX_STUDIO_MCP_DISABLED_TOOLS` is the only production path into the
+    list/call filters both proxies already honour. Deployment disables tools
+    there, not by forking the server."""
+
+    def test_absent_or_blank_means_nothing_disabled(self):
+        from roblox_studio_mcp.extended_server import _disabled_from_env
+
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ROBLOX_STUDIO_MCP_DISABLED_TOOLS", None)
+            self.assertIsNone(_disabled_from_env())
+        with mock.patch.dict(
+            os.environ, {"ROBLOX_STUDIO_MCP_DISABLED_TOOLS": "  ,  "}
+        ):
+            self.assertIsNone(_disabled_from_env())
+
+    def test_comma_and_space_separated_names(self):
+        from roblox_studio_mcp.extended_server import _disabled_from_env
+
+        with mock.patch.dict(
+            os.environ,
+            {"ROBLOX_STUDIO_MCP_DISABLED_TOOLS": "capture_plugin_gui, upload_image subagent"},
+        ):
+            self.assertEqual(
+                _disabled_from_env(),
+                ["capture_plugin_gui", "upload_image", "subagent"],
+            )
+
+    def test_main_passes_the_env_set_to_serve(self):
+        import roblox_studio_mcp.extended_server as es
+
+        with mock.patch.dict(
+            os.environ, {"ROBLOX_STUDIO_MCP_DISABLED_TOOLS": "capture_plugin_gui"}
+        ), mock.patch.object(es, "serve") as serve:
+            es.main()
+        serve.assert_called_once_with(disabled_tools=["capture_plugin_gui"])
+
+    def test_main_passes_nothing_when_unset(self):
+        import roblox_studio_mcp.extended_server as es
+
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ROBLOX_STUDIO_MCP_DISABLED_TOOLS", None)
+            with mock.patch.object(es, "serve") as serve:
+                es.main()
+        serve.assert_called_once_with(disabled_tools=None)
+
+
+class TestExtendedListHidesDisabled(unittest.IsolatedAsyncioTestCase):
+    """End to end through the extended proxy: the denied seven vanish from the
+    merged list while everything else stays advertised."""
+
+    DENIED = [
+        "generate_texture",
+        "generate_mesh",
+        "segment_mesh",
+        "generate_material",
+        "subagent",
+        "upload_image",
+        "capture_plugin_gui",
+    ]
+
+    async def test_denied_relayed_tools_are_not_listed(self):
+        import roblox_studio_mcp.extended_server as es
+
+        relayed = [{"name": name} for name in
+                   ["execute_luau", "screen_capture"] + self.DENIED]
+
+        class FakeClient:
+            disabled_tools = set(TestExtendedListHidesDisabled.DENIED)
+
+            async def request(self, method, params):
+                self.calls.append((method, params))
+                return {"tools": relayed}
+
+            def __init__(self):
+                self.calls = []
+
+        sent = []
+        with mock.patch.object(es, "_send", side_effect=lambda m: sent.append(m)):
+            await es._handle_message(
+                FakeClient(),
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+            )
+        names = [t["name"] for t in sent[0]["result"]["tools"]]
+        for denied in self.DENIED:
+            self.assertNotIn(denied, names)
+        self.assertIn("execute_luau", names)
+        self.assertIn("extended_capture", names)
+
+
 class TestInsertValidation(unittest.IsolatedAsyncioTestCase):
     async def test_missing_file_raises(self):
         studio = FakeStudio()

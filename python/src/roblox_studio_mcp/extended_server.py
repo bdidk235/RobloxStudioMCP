@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import sys
 from typing import (
@@ -2035,9 +2036,23 @@ async def serve(
             await client.close()
 
 
+def _disabled_from_env() -> Optional[List[str]]:
+    """Tool names to hide, from the server's environment.
+
+    The list and call filters already honour ``disabled_tools`` on the client;
+    this is the only production path that feeds them, so a deployment disables
+    tools by setting ``ROBLOX_STUDIO_MCP_DISABLED_TOOLS`` to comma- or
+    space-separated names rather than by forking the server. Absent or blank
+    means nothing disabled. An explicitly passed client keeps its own set.
+    """
+    raw = os.environ.get("ROBLOX_STUDIO_MCP_DISABLED_TOOLS", "")
+    names = [name for name in re.split(r"[\s,]+", raw) if name]
+    return names or None
+
+
 def main() -> None:
     try:
-        asyncio.run(serve())
+        asyncio.run(serve(disabled_tools=_disabled_from_env()))
     except KeyboardInterrupt:
         pass
 
