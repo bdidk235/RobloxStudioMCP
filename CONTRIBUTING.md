@@ -147,17 +147,6 @@ The two habits that produced the long bodies, both subtraction failures:
 restating a measurement that takes one sentence, and carrying an investigation
 that belongs in `EVIDENCE.md`.
 
-## Commit signing
-
-Commits are SSH-signed and `commit.gpgsign` is on, so a plain `git commit` is
-already signed. **Do not pass `--no-gpg-sign`** — that was a workaround for a
-key that did not exist, and the workaround outlived its cause.
-
-If a commit shows as unverified on GitHub, the public key is not registered
-under *Signing keys* (a different list from *Authentication keys*). Note that
-`git verify-commit` **cannot** detect that: it proves the signature is sound,
-not that GitHub recognises it. Only a pushed commit answers that.
-
 ## Working with a live Studio
 
 Any Studio instance you did not launch yourself is off limits unless a user puts
