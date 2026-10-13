@@ -50,7 +50,7 @@ import asyncio
 import json
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -107,8 +107,8 @@ def snapshot_from(dump_path: str) -> Dict[str, Any]:
         return build_snapshot(json.load(handle))
 
 
-def main(argv: List[str] = None) -> int:  # noqa: ANN401 - argparse passthrough
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main(argv: Optional[List[str]] = None) -> int:  # noqa: ANN401 - argparse passthrough
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     target = parser.add_mutually_exclusive_group()
     target.add_argument(
         "--live",
@@ -132,6 +132,7 @@ def main(argv: List[str] = None) -> int:  # noqa: ANN401 - argparse passthrough
     args = parser.parse_args(argv)
 
     if args.live:
+        dump_path = args.dump
         dump = asyncio.run(capture())
         write_json(dump_path, dump)
         print(
@@ -152,10 +153,10 @@ def main(argv: List[str] = None) -> int:  # noqa: ANN401 - argparse passthrough
             snapshot = build_snapshot(json.load(handle))
         print("rebuilt from %s" % os.path.relpath(dump_path, ROOT))
 
-    write_json(SNAPSHOT, snapshot)
+    write_json(SNAPSHOT_PATH, snapshot)
     print(
         "wrote %s: %d tools (trust: %s)"
-        % (os.path.relpath(SNAPSHOT, ROOT), snapshot["tool_count"], snapshot["trust"])
+        % (os.path.relpath(SNAPSHOT_PATH, ROOT), snapshot["tool_count"], snapshot["trust"])
     )
     return 0
 
