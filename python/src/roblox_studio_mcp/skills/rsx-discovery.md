@@ -33,12 +33,12 @@ non-existent for several rounds because of exactly that filter.
 a fallback rather than trusting one or the other.
 
 - `StudioService` resolves through `GetService` but `GetMethodsOfClass` returns
-  **nil** for it, and `GetClass` returns nil.
+  **nil** for it, and `GetClass` returns nil (unverified).
 - `ScriptDebuggerService` is the same.
 - `settings()` does not exist under `execute_luau`.
-- `StudioTestService` *is* reflection-visible, and has 50 methods.
+- `StudioTestService` *is* reflection-visible, and has 50 methods (unverified).
 
-`GetClasses()` returns about 640 classes; filtering on `Permits.GetService`
+`GetClasses()` returns about 640 classes (unverified); filtering on `Permits.GetService`
 gives the service roster.
 
 ## An invalid member read throws and discards your output
