@@ -1896,3 +1896,82 @@ there the extension *is* the claim.
 
 *Settles against:* the suite regressing past ~25 s, or a `realpath`-shaped
 profile reappearing in the pointer sweep.
+
+## macOS research (2026-10-11): sourced, and most of it still unverified
+
+Three research arms (Studio-MCP usage on macOS, existing-solution comparison,
+macOS observability primitives) reported on 2026-10-11. **This is web-sourced,
+not measured on a Mac** - provenance is the point of recording it, and the
+split below is the one the reports made themselves.
+
+### Tool safety, from our own Windows measurement
+
+`capture_plugin_gui` returns **screen contents at the widget's position, not a
+widget render** - Roblox's own tool description concedes this when Studio is
+occluded or minimised. Observed on Windows returning the whole screen, and null
+when occluded. Roblox's text explains the *kind* of output, not its extent, and
+it promises screen contents rather than null, so either the tools changed after
+the description (they are new) or minimised and occluded take different paths.
+**Not a Windows-vs-macOS difference by construction:** the mechanism is a screen
+crop, which no apple ScreenCaptureKit per-window path shares. Deny-listed in
+this project's config; `docs/catalog.js` records the behaviour.
+
+### `lsof` for Studio attribution
+
+`lsof -iTCP:<port> -sTCP:ESTABLISHED -t` needs **no sudo for the invoking
+user's own loopback sockets** (two independent guides agree; an older Stack
+Overflow report of nothing returned was never root-caused). On **Sequoia+** it
+is not system-wide ground truth: a MacRumors thread documents `sudo lsof -i`
+missing Safari/WebKit traffic that `netstat`, Activity Monitor, tcpdump and
+Wireshark all see. Confounder first: `lsof`'s 9-char command truncation and
+Apple's `com.apple.WebKit.Networking` rename make a name-grep miss on a healthy
+system too, so **match PIDs by number, never by COMMAND**. Two candidate causes
+were raised and neither established: UDP/QUIC traffic invisible to a TCP query,
+and Safari connections held over a Unix-domain socket. No poster produced a
+changelog, a `man` diff, or entitlement proof.
+
+*Consequence for this project:* `platform.parse_ps_row` and
+`platform.attached_pids` (the `lsof`) stay **inferred on macOS**. Keep `lsof`
+primary but corroborate emptiness with a second primitive.
+
+### Studio logs on macOS
+
+`~/Library/Logs/Roblox` is the strongest-sourced player-log location (a platform
+table cross-confirming the Windows `%localappdata%\Roblox\logs` family, where
+the per-launch timestamped filename plus `archive/` retention is verified). The
+official Roblox Studio-log article **403'd every fetch** and is cited by URL
+only. The doc that would have nailed the FLog line format
+(`worships/roblox-fastlog-viewer/docs/fastlog.md`) is **404** - repo appears
+gone.
+
+So the specific claim this project cares about, that the
+`UIThreadNotifier ... for process 'N'` line is present on macOS, remains
+**unverified from any fetched source**. `Superwheat/renium` was cited as the
+fourth converging piece: the repo **is real** (github.com/Superwheat/renium,
+Rust Studio-to-folder sync, verified by direct fetch after a research subagent
+wrongly reported it nonexistent), but **only existence was checked - not the
+`studio_log_for_process` function** the claim rests on. The marker claim is
+therefore still open, and `TODO.md` carries the correction.
+
+### Per-window capture on macOS
+
+`CGWindowListCreateImage` is **deprecated, not removed** (macOS 14 warning
+text quoted from a real build log; WebKit tracks moving off it to
+ScreenCaptureKit). Replacement is documented and fetched: `SCShareableContent` ->
+`SCContentFilter` -> `SCStream`, and the single-frame `SCScreenshotManager`
+(macOS 14+). Whether macOS 15 *obsoletes* it outright is **unverified** -
+project-specific warnings-as-errors reports only, bodies behind a login.
+Permissions are per-app TCC with a full quit-and-relaunch, and Sequoia adds
+monthly re-prompts, a persistent orange indicator, and one-session grants. There
+is **no permission-free headless path**; MDM pre-authorisation is the only
+enterprise bypass found.
+
+*Consequence for this project:* a macOS per-window capture route is
+**designable but unbuilt**, and it would need the Screen Recording grant in the
+calling binary's name - including for `screencapture -l <windowid>` over SSH,
+which must run in the loginwindow bootstrap context
+(`launchctl bsexec <loginwindow-pid>`).
+
+*Settles against:* a real macOS Studio log showing (or not showing) the
+`UIThreadNotifier` line, and a real `lsof` run there - neither of which this
+repository has.
