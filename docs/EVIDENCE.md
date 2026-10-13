@@ -1852,3 +1852,47 @@ timing shapes are not evidence).
 
 *Settles against:* a fresh `pip install -e ".[dev]"` whose packaging tests
 fail on `bdist_wheel`.
+
+## One test owned the suite's runtime, and it was a mock (2026-10-13)
+
+`pytest python/tests` measured **71.26 s**, of which **60.07 s was one test**:
+`test_skills.py::TestBuiltinSkillRelay::test_no_studio_names_the_fix`. That arm
+hands the skill relay a client reporting *zero* attached Studios, and the
+handler answers that through `RobloxStudio.resolve_studio_id`, which rides a
+**60 s** readiness window (`RESOLVE_TIMEOUT = 60.0`, widened on purpose: a
+fresh proxy's Studio uplink lags its handshake by seconds, so an empty mesh is
+transient, not a failure). So a fully mocked test paid, in full, a timeout that
+exists for a real proxy warming up - to assert an error string.
+
+The window is not the defect, and it was not shortened. The test now rides 0 s
+of it: the real resolution path still runs (empty mesh, same raise, same code),
+and the window itself stays pinned by `test_core.py::TestResolveReadiness`.
+
+**The rest, by measurement rather than by eye.** cProfile over the pointer
+sweep: source-file reads were 0.42 s of a 4.76 s gate; the rest was
+**1200 `lstat` calls inside `realpath` (1.23 s)** plus 242 `stat` calls for
+name resolution, because this tree is on the **9p bridge** (`/mnt/c`), where
+each metadata call round-trips into Windows. Fixed with a per-sweep memo for
+the three pure lookups (name -> target, target -> relative, target -> line
+count) and a syntactic `relative_to` for source paths that are already
+base-joined: 5.24 s -> 1.41 s. The `test_progress.py` delay arms were scaled
+from 2.5/1.0/0.8 s of sleeping to ~0.2 s by decoupling each assertion from the
+timing it happened to be expressed in.
+
+**Where the remaining ~18 s goes** (11 clean runs, 14.5-21.9 s, variance from
+the bridge): the planted-pointer control's `copytree` of this tree over 9p
+(3.4-6.0 s, noisy), the pointer sweep (1.4 s), and ~2.5 s of **fixed** cost per
+invocation - four xdist workers each importing a 0.3 s package. No single test
+is dominant now; the mean is 0.112 s.
+
+**A flake was found on the way and the first fix was wrong.** Halving the
+delays to 0.05 s ticks against 0.3 s deadlines made
+`test_a_raising_hook_does_not_break_the_call` fail ~1 run in 12 under `-n 4`.
+Raising the numbers again would have hidden it; the actual fix was
+decoupling - that arm's claim (a raising hook does not break the call) says
+nothing about scheduling, so it no longer depends on a tick landing inside a
+window. Only `test_progress_extends_the_deadline` keeps a tight ratio, because
+there the extension *is* the claim.
+
+*Settles against:* the suite regressing past ~25 s, or a `realpath`-shaped
+profile reappearing in the pointer sweep.
