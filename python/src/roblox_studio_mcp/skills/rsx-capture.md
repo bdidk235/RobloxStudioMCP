@@ -29,7 +29,7 @@ Do not conclude a parameter works because the call succeeded.
 
 ## The DCT codec smears exactly what rendering work measures
 
-JPEG is fine for a hard edge, measured to localise to 0.002 px. But it smears
+JPEG is fine for a hard edge, measured to localise to 0.002 px (unverified). But it smears
 1 px high-contrast features, which is precisely what sub-pixel and edge work
 turns on.
 
@@ -327,7 +327,7 @@ gate discussed above; do not settle that from memory.
 
 ## ViewportFrame readback is a separate, genuine limit
 
-It exposes neither `ReadPixels` nor `ReadPixelsAsync` in Edit **or** Client, and
+It exposes neither `ReadPixels` nor `ReadPixelsAsync` in Edit **or** Client (unverified), and
 `ScreenCaptureService` is not a service name. Readback is plugin-only and this
 transport does not expose it.
 

@@ -47,7 +47,7 @@ once because it is exactly what gets guessed wrong.
 measured.** On some consumers the buffer arrives as one line with literal `\n`
 escapes, so `splitlines()` finds one line where there are sixty. Through the
 agent caller path it arrives with **real** newlines and `splitlines()` works
-correctly (139-char sample, 2026-10-01).
+correctly (139-char sample, 2026-10-01, unverified).
 
 An earlier version of this skill asserted the one-line shape universally. That
 was wrong, and the code is what disproves it rather than a second measurement:
