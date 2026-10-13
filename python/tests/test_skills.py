@@ -28,6 +28,12 @@ from typing import List, Optional
 from unittest import mock
 
 from roblox_studio_mcp import __file__ as _PACKAGE_FILE
+from roblox_studio_mcp import (
+    CallToolResult,
+    Tool,
+)
+from roblox_studio_mcp.errors import MCPToolError
+from roblox_studio_mcp.extended.errors import classify
 from roblox_studio_mcp import extended_server as es
 from roblox_studio_mcp.extended import skills as skills_module
 from roblox_studio_mcp.extended.skills import (
@@ -415,6 +421,126 @@ class TestPackaging(unittest.TestCase):
                 + (proc.stderr or "")[-3000:]
             )
         return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+class _RelayClient:
+    """Fake proxy: one canned mesh plus one canned built-in skill answer.
+
+    Speaks just enough of the client surface for the relay: tool listing (so
+    studio_id injection engages), the mesh list (so exactly-one resolution
+    runs), and the built-in skill call itself.
+    """
+
+    def __init__(self, studios, skill_text="BUILTIN BODY"):
+        self.studios = studios
+        self.skill_text = skill_text
+        self.calls = []
+
+    async def list_tools(self):
+        return [
+            Tool("list_roblox_studios"),
+            Tool(
+                "skill",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {"type": "string"},
+                        "studio_id": {"type": "string"},
+                    },
+                    "required": ["skill_name", "studio_id"],
+                },
+            ),
+        ]
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        if name == "list_roblox_studios":
+            return CallToolResult.from_dict(
+                {
+                    "content": [
+                        {"type": "text", "text": json.dumps({"studios": self.studios})}
+                    ]
+                }
+            )
+        if name == "skill":
+            return CallToolResult.from_dict(
+                {"content": [{"type": "text", "text": self.skill_text}]}
+            )
+        raise AssertionError(f"unexpected tool call: {name}")
+
+
+def _relay_text(result):
+    return result["content"][0]["text"]
+
+
+class TestBuiltinSkillRelay(unittest.IsolatedAsyncioTestCase):
+    """`extended_skill` serves `rbx-*` names through Studio's built-in tool.
+
+    Local `rsx-*` skills never touch the wire; an `rbx-` name is relayed and
+    the answer says so outright, because a built-in answer read as ours would
+    inherit trust it was never measured for.
+    """
+
+    async def test_an_rbx_name_relays_with_builtin_provenance(self):
+        client = _RelayClient([{"id": "sid-1", "name": "Game"}])
+        result = await es._call_skill(client, {"skill_name": "rbx-debug"})
+        text = _relay_text(result)
+        self.assertIn("built-in `skill` tool", text)
+        self.assertIn("BUILTIN BODY", text)
+        self.assertNotIn("no skill named", text)
+        skill_calls = [c for c in client.calls if c[0] == "skill"]
+        self.assertEqual(len(skill_calls), 1)
+        self.assertEqual(skill_calls[0][1]["studio_id"], "sid-1")
+        self.assertEqual(skill_calls[0][1]["skill_name"], "rbx-debug")
+
+    async def test_no_studio_names_the_fix(self):
+        client = _RelayClient([])
+        with self.assertRaises(MCPToolError) as ctx:
+            await es._call_skill(client, {"skill_name": "rbx-debug"})
+        self.assertIn("No Roblox Studio instances are connected", str(ctx.exception))
+        self.assertEqual(classify(ctx.exception).code, "NO_STUDIO")
+
+    async def test_two_studios_refuse_and_name_studio_id(self):
+        client = _RelayClient(
+            [{"id": "sid-1", "name": "A"}, {"id": "sid-2", "name": "B"}]
+        )
+        with self.assertRaises(MCPToolError) as ctx:
+            await es._call_skill(client, {"skill_name": "rbx-debug"})
+        self.assertIn("studio_id", str(ctx.exception))
+        self.assertEqual(
+            [c[0] for c in client.calls if c[0] == "skill"],
+            [],
+            "refusal must happen before any skill call",
+        )
+
+    async def test_an_explicit_studio_id_pins_without_resolution(self):
+        client = _RelayClient(
+            [{"id": "sid-1", "name": "A"}, {"id": "sid-2", "name": "B"}]
+        )
+        result = await es._call_skill(
+            client, {"skill_name": "rbx-debug", "studio_id": "sid-9"}
+        )
+        self.assertIn("BUILTIN BODY", _relay_text(result))
+        skill_calls = [c for c in client.calls if c[0] == "skill"]
+        self.assertEqual(skill_calls[0][1]["studio_id"], "sid-9")
+        self.assertEqual(
+            [c[0] for c in client.calls if c[0] == "list_roblox_studios"],
+            [],
+            "a pinned id must not trigger mesh resolution",
+        )
+
+    async def test_a_non_rbx_unknown_keeps_the_local_near_miss(self):
+        client = _RelayClient([{"id": "sid-1", "name": "Game"}])
+        with self.assertRaises(SkillError) as ctx:
+            await es._call_skill(client, {"skill_name": "rsx-nope"})
+        self.assertIn("no skill named", str(ctx.exception))
+        self.assertEqual(client.calls, [])
+
+    async def test_the_index_ignores_a_studio_id(self):
+        client = _RelayClient([{"id": "sid-1", "name": "Game"}])
+        result = await es._call_skill(client, {"studio_id": "sid-9"})
+        self.assertIn("<available_skills>", _relay_text(result))
+        self.assertEqual(client.calls, [])
 
 
 if __name__ == "__main__":

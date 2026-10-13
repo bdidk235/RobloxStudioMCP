@@ -279,9 +279,11 @@ def skill_index(skills: Optional[List[Skill]] = None) -> str:
     lines.append("</available_skills>")
     lines.append("")
     lines.append(
-        "Transport traps only. For engine topics use the relayed 'skill' tool: "
-        "rbx-debug, rbx-device-simulator-lua, rbx-perf-profiling, "
-        "rbx-scene-analysis, rbx-unit-test, rbx-docs-search."
+        "Transport traps only. For engine topics, ask extended_skill for an "
+        "rbx-* name (fetched live from Studio's built-in skill tool) or call "
+        "the relayed 'skill' tool directly: rbx-debug, "
+        "rbx-device-simulator-lua, rbx-perf-profiling, rbx-scene-analysis, "
+        "rbx-unit-test, rbx-docs-search."
     )
     return "\n".join(lines)
 

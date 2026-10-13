@@ -635,8 +635,10 @@ _EXTENDED_TOOLS.extend(
             name="extended_skill",
             description=(
                 "Fetch a transport skill shipped inside this package; omit "
-                "skill_name for the index.  Read one before driving the "
-                "transport: these cover its traps, not the engine."
+                "skill_name for the index. Names starting with rbx- are "
+                "fetched live from Studio's built-in skill tool (needs an "
+                "attached Studio) and marked as such. Read one before "
+                "driving the transport: these cover its traps, not the engine."
             ),
             input_schema={
                 "type": "object",
@@ -644,6 +646,10 @@ _EXTENDED_TOOLS.extend(
                     "skill_name": {
                         "type": "string",
                         "description": "Skill to fetch. Omit to list what is available.",
+                    },
+                    "studio_id": {
+                        "type": "string",
+                        "description": _STUDIO_ID_DESCRIPTION,
                     },
                 },
             },
@@ -1296,7 +1302,7 @@ async def _call_manage_instance(
 async def _call_skill(
     client: MCPClient, arguments: Dict[str, Any]
 ) -> Dict[str, Any]:
-    from .extended.skills import call_skill
+    from .extended.skills import SkillError, call_skill
 
     name = arguments.get("skill_name")
     if name is not None and not isinstance(name, str):
@@ -1305,8 +1311,47 @@ async def _call_skill(
             f"skill_name must be a string when given, got {describe(name)}. "
             f"Omit it for the index of available skills.",
         )
-    text, _meta = call_skill(name or None)
+    studio_id = arguments.get("studio_id")
+    if studio_id is not None and not isinstance(studio_id, str):
+        raise ToolError(
+            "INVALID_ARGUMENT",
+            f"studio_id must be a string when given, got {describe(studio_id)}. "
+            f"Omit it when exactly one Studio is attached.",
+        )
+    if name is None:
+        # The index is local-only. A studio_id alongside it answers nothing,
+        # so it is ignored rather than refused - a caller that always passes
+        # one stays working.
+        text, _meta = call_skill(None)
+        return {"content": [{"type": "text", "text": text}], "isError": False, "is_error": False}
+    try:
+        text, _meta = call_skill(name)
+    except SkillError:
+        if not name.startswith("rbx-"):
+            raise
+        text = await _relay_builtin_skill(client, name, studio_id)
     return {"content": [{"type": "text", "text": text}], "isError": False, "is_error": False}
+
+
+async def _relay_builtin_skill(
+    client: MCPClient, name: str, studio_id: Optional[str]
+) -> str:
+    """Fetch an rbx- skill through Studio's built-in skill tool.
+
+    Local skills are this package's transport traps; engine knowledge lives
+    behind the relayed tool, so an rbx- name is passed through rather than
+    answered. The provenance is said outright in the returned text, because a
+    built-in answer read as ours would inherit trust it was never measured
+    for. Studio resolution follows the same exactly-one rule as every other
+    Studio-touching tool: zero or several attached Studios raise the same way
+    they do elsewhere, and an explicit studio_id pins one.
+    """
+    studio = _RobloxStudio(client=client, studio_id=studio_id)
+    result = await studio.call("skill", {"skill_name": name})
+    return (
+        "_Fetched live from Studio's built-in `skill` tool (the rbx-* "
+        "family) - not from this package._\n\n---\n\n" + result.text() + "\n"
+    )
 
 
 async def _call_capture(

@@ -25,12 +25,12 @@ two apart is what stops an engine fact and a transport fact being confused.
 
 ## The other family, and how to route
 
-**These are two separate skill systems reached by two different tools.**
-`extended_skill` serves the table above. The relayed `skill` tool serves
-Roblox's, and those are the ones to consult for anything about the engine.
-Neither tool serves the other's names: asking `extended_skill` for an `rbx-*`
-name, or the relayed `skill` for an `rsx-*` name, gets you a near-miss
-suggestion at best, not the document.
+**Two skill systems, one entry point for reads.** `extended_skill` serves the
+table above, and relays an `rbx-*` name to Studio's built-in `skill` tool,
+marking the answer as built-in. The relayed `skill` tool serves Roblox's set
+directly, and those are the ones to consult for anything about the engine.
+Only the relayed `skill` refuses the other's names: asking it for an `rsx-*`
+name gets you a near-miss suggestion at best, not the document.
 
 **No plugin is involved in either.** `extended_*` is not a Studio plugin — it is
 this project's client in front of the MCP Studio already ships and already has
