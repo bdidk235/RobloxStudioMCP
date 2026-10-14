@@ -1998,3 +1998,20 @@ megabyte inline result buys nothing this run had not already shown).
 *Settles for:* the reviewer's "one recorded live run on Windows" criterion, for
 the read tier. Play-mode, pixel-capture, and launch/stop paths remain
 unrecorded on a live instance.
+
+### Heavier tiers on the same instance, user idle (2026-10-14)
+
+With the user away from the keyboard, the pixel and play tiers ran against the
+same open `Place1` (id `540231d8-...`):
+
+- `extended_capture`: **1406x754 lossless PNG, 731,952 bytes**, valid PNG magic
+  in the returned bytes. (Viewport differs from the 1226x756 measured 2026-10-11;
+  the window was resized since. Size, not content, was verified - the ~1 MB
+  base64 result was not rendered.)
+- `extended_run_tests` (defaults, 2 s): `{passed: true, console_lines: [],
+  errors: []}` on the empty baseplate.
+- Post-run `get_studio_state`: Edit mode, Edit datamodel - the runner's
+  `try/finally` stop restored the pre-run mode as documented.
+
+Not run: `stop` (terminates the user's process - never without asking), new
+launches (unasked process creation), `save_path` capture writes.
