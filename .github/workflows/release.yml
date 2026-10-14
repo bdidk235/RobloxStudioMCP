@@ -7,9 +7,12 @@ on:
 # PyPI Trusted Publishing (OIDC): no tokens, no secrets. The publisher is
 # registered at pypi.org/manage/project/roblox-studio-mcp/settings/publishing
 # with owner bdidk235, repository RobloxStudioMCP, workflow file release.yml.
-# All three must match EXACTLY or minting fails with an unhelpful error, so do
-# not rename this file (or the repo) without re-registering. No environment is
-# configured on either side: adding one later means adding it in both places.
+# All three plus the environment must match EXACTLY or minting fails with an
+# unhelpful error, so do not rename this file (or the repo), and keep the
+# `environment:` key below in sync with both this file and the publisher
+# registration. The environment also carries the approval gate: add required
+# reviewers under the repo's Settings -> Environments so a tag alone cannot
+# publish without a human confirming the tree is green first.
 #
 # The tag must equal the version in python/pyproject.toml; the job refuses
 # otherwise. A tag nobody can map to a version is how 0.1.0's filenames got
@@ -24,6 +27,7 @@ jobs:
   publish:
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
       id-token: write
