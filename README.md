@@ -168,9 +168,9 @@ this table.
 
 ### Or ask your agent to do it for you
 
-Paste this at your agent, with the clone path filled in:
+Paste this at your agent:
 
-> Install the `roblox-studio-mcp` Python package,
+> Install the `roblox-studio-mcp` package with `pip install roblox-studio-mcp`,
 > add `python -m roblox_studio_mcp.extended_server` as an MCP server.
 > 
 > Confirm it is reachable by listing tools.
