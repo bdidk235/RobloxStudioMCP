@@ -124,7 +124,7 @@ skills/             those skills, packaged into the wheel as data
 
 ## Install
 
-**On PyPI as [`roblox-studio-mcp`](https://pypi.org/project/roblox-studio-mcp/) `0.1.1`.** Install it directly:
+**On PyPI as [`roblox-studio-mcp`](https://pypi.org/project/roblox-studio-mcp/) `0.2.0`.** Install it directly:
 
 ```powershell
 pip install roblox-studio-mcp
