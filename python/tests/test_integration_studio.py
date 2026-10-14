@@ -2,9 +2,9 @@
 
 Skipped unless ``ROBLOX_STUDIO_MCP_INTEGRATION=1`` is set. Studio must be
 open with a place loaded and the MCP server enabled (Assistant -> Manage
-MCP Servers). In CI this is handled by the ``python-studio`` job — see
-``.github/workflows/ci.yml`` — which installs Studio, waits for it with
-``python -m examples.wait_for_studio``, then runs this suite.
+MCP Servers). There is no CI job for this: the workflow has a single
+``python-test`` job with no Studio, so these never run there — run them
+locally after ``python -m examples.wait_for_studio``.
 
 The probe script uses a fixed DataModel path so reruns are idempotent
 (``write_script`` just reports ``"unchanged"``).

@@ -583,10 +583,10 @@ _EXTENDED_TOOLS.extend(
         Tool(
             name="extended_breakpoints",
             description=(
-                "Set or remove one breakpoint on a running server script. Each "
-                "hit prints one console line; read them with "
-                "extended_watch_output.  log_expression MUST fail, or no hit is "
-                "reported.  Toggles.  See the rsx-breakpoints skill."
+                "Set or remove one breakpoint on a running server script. Needs "
+                "a play session. Each hit prints one console line; read them "
+                "with extended_watch_output.  log_expression MUST fail, or no "
+                "hit is reported.  Toggles.  See the rsx-breakpoints skill."
             ),
             input_schema={
                 "type": "object",
@@ -1393,7 +1393,8 @@ async def _call_studio_identity(
         "note": (
             "GetDebugId identifies the DataModel root, not the process. Read it "
             "in Edit mode; a play session reports a different value for the same "
-            "Studio. Whether it survives a Studio restart is unverified."
+            "Studio. It does not survive a Studio restart: measured 0_186696 "
+            "before, 0_186502 after, same place and machine."
         ),
     }
     if identity is None:
