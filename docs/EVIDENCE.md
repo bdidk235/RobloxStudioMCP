@@ -2015,3 +2015,57 @@ same open `Place1` (id `540231d8-...`):
 
 Not run: `stop` (terminates the user's process - never without asking), new
 launches (unasked process creation), `save_path` capture writes.
+
+### Full-scope live battery on a throwaway baseplate (2026-10-14, evening)
+
+User-scoped a contentless baseplate (`Place1`, id `540231d8-...`) with "do
+anything, including full stop testing". Irreversible steps ordered last. Their
+Studio was idle throughout; a second Studio was launched and stopped as the
+operator's own instance.
+
+**Pixel paths died mid-session, and it is environmental, not the tools.**
+`extended_capture` succeeded once (1406x754 lossless PNG), then failed every
+later call with `ERR no contentId` (CaptureScreenshot callback never fires):
+with `save_path`, without it after a retry, after ~15 minutes, and on a
+freshly launched Studio that had never captured. `screen_capture` on the same
+instance hung past the 120 s leg. Meanwhile `execute_luau` (`return 1 + 1`
+-> `2`), console reads, and the mesh all work. So the DataModel path is alive
+and the compositor path is dead on both Studios - the signature of a Windows
+session that stopped compositing (minimised/locked/RDP-away) after the first
+capture, not of a code defect. The `save_path` failure was a red herring:
+same error with and without it. Unretried pending the display state.
+
+**Launch + mesh, live.** `make_place` + `launch` returned verified:true, pid
+14772, fresh id `e7b38e2d-...`; mesh showed both rows with distinct debug ids
+(`0_181877` vs `0_181460`). An unpinned `extended_studio_identity` with two
+attached refused with both candidates named - the exactly-one rule observed
+live. (Unpinned *relayed* calls never reach that rule: their schemas require
+`studio_id`, so the client refuses first.)
+
+**Stop on the operator's own instance: full path, graceful.** Dry run reported
+pid 14772 via log-command-line match, mesh-witnessed, nothing killed, no token
+printed. Real stop terminated via `taskkill /PID (WM_CLOSE)` with
+`forced: false` - no save-dialog hang on the temp throwaway - and the mesh
+returned to 1.
+
+**Stop on the user-opened instance: correctly refused.** Dry run:
+`resolved: false`, "no Studio log mentions place 'Place1'" (File > New carries
+no place path for the log route to match), candidates `[20688]`,
+`needs_console_write: true`. The real stop returned the same refusal and killed
+nothing. Whether the console-token fallback printed is not visible in the
+result; `execute_luau` proven alive minutes later means the print path was at
+least reachable. This is the route-1 residual live: a Studio the tool did not
+launch and whose log names no place cannot be corroborated, so A5 refuses -
+working as designed, and the reason user-opened Studios are unstoppable here.
+
+**Two record corrections from this battery.** (1) There is no `confirm`
+parameter on stop - schema is action/studio_id/dry_run/place_path only, and no
+`confirm` string exists in source. `dry_run` is the sole authorisation
+mechanism; "confirm" was plan language that never landed. (2) Today's captures
+left one `Payload_*` scratch module per attempt under
+`PluginGuiService/RBXCapture` in the user's place, and no delete tool exists
+to remove them (TODO:167) - capture litters by construction.
+
+*Still open:* pixel-path retest once the display state is known; completing
+the console-token stop on a place-path-less Studio; whether a locked session
+explains both outages (one user question covers all three).
