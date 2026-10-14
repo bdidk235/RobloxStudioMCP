@@ -71,6 +71,10 @@ The client follows this shape around that protocol:
   different value for the same Studio.
 - Wire format (`studio_id`, `datamodel_type`,
   `target_path`, …); local naming is Python `snake_case`.
+- File root — read/write paths are confined to a root that defaults to the
+  server's working directory at call time. Launched from a broad directory
+  (a home folder, a drive root), the model can read anything under it, so set
+  `ROBLOX_STUDIO_MCP_FILE_ROOT` to the narrowest directory the work needs.
 
 ## Layout
 

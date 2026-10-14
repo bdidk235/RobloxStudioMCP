@@ -82,9 +82,12 @@ class TestLaunchUriShape(unittest.TestCase):
         )
 
     def test_the_real_universe_id_is_buildable(self):
-        # Both values are measured to open the place: 8 of 8 launches on the real
-        # id, 6 of 6 on 0, zero errors. The earlier claim that the real id "failed
-        # 3 times in 16" did not reproduce and is withdrawn.
+        # Live-observed, not asserted: both values opened the place in a
+        # 2026-10-02 session (8 of 8 on the real id, 6 of 6 on 0, zero
+        # errors), and the earlier claim that the real id "failed 3 times in
+        # 16" did not reproduce and is withdrawn. This test pins only the URI
+        # shape; no suite leg can host Studio, so the opening itself is
+        # recorded in docs/EVIDENCE.md, not proven here.
         self.assertEqual(
             run(build_launch_uri(PLACE, REAL_UNIVERSE)),
             f"roblox-studio:1+task:EditPlace+placeId:{PLACE}+universeId:{REAL_UNIVERSE}",
