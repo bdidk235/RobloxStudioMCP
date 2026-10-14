@@ -434,7 +434,12 @@ class TheChainOrderIsTheContract(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(got["resolved"])
         self.assertEqual(got["pid"], 10)
-        self.assertNotIn("console token", str(got.get("how", "")))
+        # The `how` label is the chain-order contract: it must name the route
+        # that answered, so its presence is asserted positively. `assertNotIn`
+        # alone passes vacuously when the key is missing, which is exactly how
+        # a dropped reporting field would hide (external review, 2026-10-14).
+        self.assertTrue(got.get("how"), "how must name the route that answered")
+        self.assertNotIn("console token", str(got["how"]))
 
     async def test_declining_the_console_reports_instead_of_printing(self) -> None:
         """`allow_console_write=False` is the caller's veto. It has to produce
