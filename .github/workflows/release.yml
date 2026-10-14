@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# PyPI Trusted Publishing (OIDC): no tokens, no secrets. The publisher is
+# registered at pypi.org/manage/project/roblox-studio-mcp/settings/publishing
+# with owner bdidk235, repository RobloxStudioMCP, workflow file release.yml.
+# All three must match EXACTLY or minting fails with an unhelpful error, so do
+# not rename this file (or the repo) without re-registering. No environment is
+# configured on either side: adding one later means adding it in both places.
+#
+# The tag must equal the version in python/pyproject.toml; the job refuses
+# otherwise. A tag nobody can map to a version is how 0.1.0's filenames got
+# burned (PyPI forbids reuse), so the mapping is checked, not assumed.
+#
+# This runs alongside CI on the same push, not after it: there is no
+# cross-workflow gate, so a tag on a red tree still publishes. Do not tag red -
+# `python scripts/pypi_release.py publish` already refuses a dirty tree, and a
+# tag is the same deliberate act.
+
+jobs:
+  publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Refuse a tag/version mismatch
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          TOML=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "$TAG" = "$TOML" || { echo "tag v$TAG != pyproject $TOML"; exit 1; }
+
+      - name: Build sdist and wheel
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
