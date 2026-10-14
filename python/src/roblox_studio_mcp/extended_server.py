@@ -172,10 +172,9 @@ _EXTENDED_TOOLS: List[Tool] = [
     Tool(
         name="extended_update_script",
         description=(
-            "Batch exact string replacements in a game-tree script, in order, "
-            "each on the result of the last.  Unlike raw multi_edit, one bad "
-            "edit does not sink the others: missing, ambiguous and no-op edits "
-            "are skipped with warnings unless you make them strict."
+            "Batch ordered string replacements in a game-tree script; one bad "
+            "edit skips with a warning instead of sinking the call, unlike "
+            "multi_edit. Strict mode available."
         ),
         input_schema={
             "type": "object",
@@ -635,11 +634,9 @@ _EXTENDED_TOOLS.extend(
         Tool(
             name="extended_skill",
             description=(
-                "Fetch a transport skill shipped inside this package; omit "
-                "skill_name for the index. Names starting with rbx- are "
-                "fetched live from Studio's built-in skill tool (needs an "
-                "attached Studio) and marked as such. Read one before "
-                "driving the transport: these cover its traps, not the engine."
+                "Fetch a transport skill (its traps, not the engine); omit "
+                "skill_name for the index. rbx-* names relay to Studio's "
+                "built-in skill tool, marked as built-in."
             ),
             input_schema={
                 "type": "object",
@@ -658,13 +655,9 @@ _EXTENDED_TOOLS.extend(
         Tool(
             name="extended_manage_instance",
             description=(
-                "Studio instances and places.  list -> mesh[].studio_id per "
-                "attached Studio (unjoined: pair a process's place_file with a "
-                "mesh name yourself).  launch -> the studio_id it opened, pass "
-                "it on.  places -> candidate paths + place_id.  make_place -> "
-                "a throwaway path to launch.  stop -> TERMINATES a process, "
-                "irreversibly.  Launch needs a place; a Studio joins the mesh "
-                "only with one open."
+                "Studios and places: list/launch/stop/places/make_place. stop "
+                "TERMINATES a process, irreversibly. Launch needs a place. "
+                "list returns processes and mesh unjoined: pair them yourself."
             ),
             input_schema={
                 "type": "object",
