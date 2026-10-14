@@ -1975,3 +1975,26 @@ which must run in the loginwindow bootstrap context
 *Settles against:* a real macOS Studio log showing (or not showing) the
 `UIThreadNotifier` line, and a real `lsof` run there - neither of which this
 repository has.
+
+## Live run on a user-opened Studio (2026-10-14)
+
+User put their open Studio in scope and asked for a live test. Read-only tier
+plus execute-level reads; no play-mode change, no stop, no pixel capture (the
+capture path executes the heaviest code in someone else's open place and its
+megabyte inline result buys nothing this run had not already shown).
+
+- Attach: one instance, `Place1`, id `540231d8-...` (freshly minted, as expected).
+- State: Edit mode, Edit datamodel only.
+- Identity: `0_181877`, `place_id 0`, `game_id 0` — an unpublished baseplate,
+  matching the template-recovery profile. The returned note is the corrected
+  string (restart non-survival with measured ids), which also confirms the
+  running server picked up the current code.
+- Console delta (`extended_watch_output`): one line, the baseplate template
+  asset load (`asset/?id=95206881`). Otherwise quiet.
+- `list_plugin_guis`: 100+ entries (builtin `edit_builtin_*` plus cloud
+  plugins), all Edit datamodel. Works as documented; the deny-listed
+  `capture_plugin_gui` was not invoked.
+
+*Settles for:* the reviewer's "one recorded live run on Windows" criterion, for
+the read tier. Play-mode, pixel-capture, and launch/stop paths remain
+unrecorded on a live instance.
