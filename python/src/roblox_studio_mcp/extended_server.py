@@ -557,7 +557,8 @@ _EXTENDED_TOOLS.extend(
             name="extended_run_tests",
             description=(
                 "Play the place; console as {passed, console_lines, errors}. "
-                "Green-check only. See rsx-playtest."
+                "Green-check only: it cannot say why a test failed. See "
+                "rsx-playtest."
             ),
             input_schema={
                 "type": "object",
@@ -656,8 +657,9 @@ _EXTENDED_TOOLS.extend(
             name="extended_manage_instance",
             description=(
                 "Studios and places: list/launch/stop/places/make_place. stop "
-                "TERMINATES a process, irreversibly. Launch needs a place. "
-                "list returns processes and mesh unjoined: pair them yourself."
+                "TERMINATES a process, irreversibly: dry-run it first. Launch "
+                "needs a place. list returns processes and mesh unjoined: "
+                "pair them yourself."
             ),
             input_schema={
                 "type": "object",
@@ -705,7 +707,9 @@ _EXTENDED_TOOLS.extend(
                 "Wait until a Luau condition is true, polling host-side, then "
                 "return a verdict with the last value.  Use it when a result "
                 "takes time: you cannot sleep between calls.  Return true, "
-                "false or nil; anything else errors - 0 is truthy in Lua."
+                "false or nil; anything else errors - 0 is truthy in Lua.  "
+                "An unparseable condition wedges Studio-side: fix the "
+                "condition, never raise the budget."
             ),
             input_schema={
                 "type": "object",
@@ -741,8 +745,9 @@ _EXTENDED_TOOLS.extend(
             description=(
                 "Lossless PNG of the viewport, for when the pixels are the "
                 "measurement.  screen_capture is JPEG-only and smears 1px edges: "
-                "use it for a look, this to measure.  Costs seconds and megabytes.  "
-                "See the rsx-capture skill."
+                "use it for a look, this to measure.  This survives an "
+                "invisible Studio; screen_capture returns null there.  Costs "
+                "seconds and megabytes.  See the rsx-capture skill."
             ),
             input_schema={
                 "type": "object",

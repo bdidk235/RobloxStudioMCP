@@ -590,6 +590,20 @@ class TestExtendedToolDescriptions(unittest.TestCase):
         # Polling the wrong tool re-sends the whole buffer every iteration.
         self.assertIn("get_console_output", by_name["extended_watch_output"])
 
+    def test_added_steering_survives_shortening(self):
+        from roblox_studio_mcp.extended_server import _EXTENDED_TOOLS
+
+        by_name = {t.name: t.description for t in _EXTENDED_TOOLS}
+        # A stop without a dry run is irreversible, so the order is load-bearing.
+        self.assertIn("dry-run it first", by_name["extended_manage_instance"])
+        # The runner reports a verdict; asking it why is a dead end.
+        self.assertIn("cannot say why", by_name["extended_run_tests"])
+        # The measured wedge: lengthening the budget feeds it, fixing the
+        # condition starves it.
+        self.assertIn("never raise the budget", by_name["extended_wait_for"])
+        # The one capture that works with no visible window.
+        self.assertIn("invisible Studio", by_name["extended_capture"])
+
     def test_debug_id_is_documented_as_not_restart_durable(self):
         # Measured, same place file: 0_186696 before a restart, 0_186502 after.
         # An earlier docstring claimed it was expected to survive, which is why
