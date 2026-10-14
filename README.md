@@ -170,11 +170,10 @@ this table.
 
 Paste this at your agent, with the clone path filled in:
 
-> Install the RobloxStudioMCP Python package from `<path>/python` with
-> `pip install -e .`, then register its extended MCP server in my config:
-> stdio, command `python -m roblox_studio_mcp.extended_server`. Confirm it is
-> reachable by listing tools. Roblox Studio is already open with a place
-> loaded and its MCP server enabled.
+> Install the `roblox-studio-mcp` Python package,
+> add `python -m roblox_studio_mcp.extended_server` as an MCP server.
+> 
+> Confirm it is reachable by listing tools.
 
 Once connected, point it at the skills: `extended_skill` with no arguments
 returns the index (`rsx-transport` first — the truncation and bulk-write traps
