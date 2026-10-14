@@ -54,4 +54,11 @@ jobs:
           python -m build
 
       - name: Publish to PyPI
+        # `packages-dir` is NOT affected by the job-level `working-directory`
+        # above (that applies to `run:` steps); this action resolves its default
+        # `dist/` from the workspace root, while the build step - which inherits
+        # the working-directory - wrote python/dist. Missed once: a green build
+        # and a publish that could not find what it built.
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist
