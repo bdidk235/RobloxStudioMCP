@@ -2069,3 +2069,22 @@ to remove them (TODO:167) - capture litters by construction.
 *Still open:* pixel-path retest once the display state is known; completing
 the console-token stop on a place-path-less Studio; whether a locked session
 explains both outages (one user question covers all three).
+
+### Pixel outage resolved: screen-off, confirmed by retest (2026-10-14/15)
+
+User confirmed the Windows screen was off; with it back on, retested on the
+same `Place1`:
+
+- `extended_capture` plain: 1406x754 lossless PNG again. Outage was
+  environmental, not the tool.
+- `extended_capture` with `save_path`: succeeded, file landed at the server
+  cwd (`.../RobloxStudioMCP/live-tier-test.png`, removed after verification):
+  valid PNG magic, 1406x754, 731,944 bytes, **no `.part` leftovers**. This is
+  the first live exercise of the atomic-write path including the `fdopen`
+  failure guard (previously mock-only). The earlier `save_path` failure is
+  fully explained by the outage - same `ERR no contentId`, same recovery.
+- `screen_capture` (relayed): fast `null`, not the earlier 120 s hang. So the
+  hang was the dying session and the null is the steady state: the screen is
+  on but Studio itself is not visibly composited (minimised or covered), which
+  is exactly the documented null condition. Two different failure modes, one
+  tool - worth distinguishing in future reports.
