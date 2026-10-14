@@ -75,6 +75,9 @@ class ConsoleWritesAreALastResort(unittest.IsolatedAsyncioTestCase):
                 live_identities=lambda pids, started=None: {pids[0]: identity}
                 if identity
                 else {},
+                # Approximation: equality only, without the real matcher's
+                # Template-place-id-AutoRecovery prefix branch. Routing is
+                # under test here, not matching.
                 name_matches_identity=lambda name, ident: bool(
                     name and ident and name == ident.get("place_path")
                 ),
@@ -207,6 +210,9 @@ class TheMeshDiffIsTheFirstRoute(unittest.IsolatedAsyncioTestCase):
                 live_identities=lambda pids, started=None: (
                     {pids[0]: identity} if identity else {}
                 ),
+                # Approximation: membership only, without the real matcher's
+                # Template-place-id-AutoRecovery prefix branch. Routing is
+                # under test here, not matching.
                 name_matches_identity=lambda name, ident: bool(name) and name in accepted,
             ),
             _resolve_by_console_token=token,
@@ -304,6 +310,9 @@ class RouteOneVerifiesThePid(unittest.IsolatedAsyncioTestCase):
                 live_identities=lambda pids, started=None: (
                     {pids[0]: identity} if identity else {}
                 ),
+                # Approximation: membership only, without the real matcher's
+                # Template-place-id-AutoRecovery prefix branch. Routing is
+                # under test here, not matching.
                 name_matches_identity=lambda name, ident: bool(name) and name in accepted,
             ),
             _resolve_by_console_token=token,
