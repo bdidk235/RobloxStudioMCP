@@ -2511,3 +2511,39 @@ many nodes carry one (`nodes_with_id`, `nodes_without_id`).
 **One caveat the requester should know:** a live id and the file's `UniqueId`
 are different values in different namespaces, so a live snapshot cannot be
 paired with a saved file by id. Live-to-live pairing is what this serves.
+
+### The encoding of absence: a coverage counter can only count what the encoding lets it count
+
+Found by a peer session's rule breaking this repo's shape, before anyone
+built against it. The instance: the snapshot's per-instance id was emitted as
+an **empty string** when the instance could not answer. A consumer testing
+`node.get("debugId") is not None` reads `""` as **present**, and so pairs two
+id-less nodes with each other.
+
+**The class, stated properly.** The wrong pairs were not a mistake in the
+pairing code - the pairing could have been perfect and the diff still wrong.
+The fabricated correspondence was manufactured by the *encoding of absence*.
+And the coverage counters could not have caught it: they would have reported
+**full coverage**, because by the encoding's own definition every node "had"
+an id. **Reporting your own coverage is not the same as being correct, and
+the two have to be checked separately.** A counter counts what the encoding
+lets it count; if absence is encoded as something some readers call presence,
+the counter reports a clean bill of health over a silently wrong diff.
+
+**The fix here:** an absent id is **null**, not `""`. Null says "no id here"
+under every reading - `node["debugId"]` gives `None` (and a `KeyError` on a
+three-field node stays loud), `.get()` gives `None`, truthiness is false, and
+`is not None` is false. The empty string satisfied only the first three. The
+report says it in words, so a consumer that reads only the report never has to
+infer the rule.
+
+**The consumer-side rule that came out of it, worth more than the fix:** an id
+counts only if it is a **non-empty string**. `""`, null and a missing key all
+mean "no id to pair on". That is robust across every shape this tool has
+published, which turns a version pin into a courtesy rather than a gate.
+
+The general form, for the next time: **when a value may be absent, ask what a
+reader who does not know the convention will conclude from it.** An empty
+string, a zero, and an empty collection are all values; only null and a
+missing key read as absence. The cost of the wrong choice is not a crash -
+it is a wrong answer that reports itself as complete.
