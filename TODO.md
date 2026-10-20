@@ -317,7 +317,8 @@ Four verifiers (one per review source, model `step-5-preview-free`, live-Studio 
 
 ### Housekeeping
 
-- [ ] The throwaway baseplate is a `roblox-studio-*.rbxl` file in the platform temp dir (one `mkstemp` file per `make_place`), launched with `--task EditFile --localPlaceFile`. Worth deleting when done — see `cleanup_throwaway_place`.
+- [x] **DONE 2026-10-20 — the throwaway-place lifecycle is exercised live, end to end.** `make_place` writes one `mkstemp` entry (`roblox-studio-*.rbxl`) into the platform temp dir, `action=launch` opens it with `--task EditFile --localPlaceFile`, and `cleanup_throwaway_place` removes it. The whole chain was run on 2026-10-20 to measure the per-instance id (the attached Studio was closed, so an instance of my own was launched for it): `make_place` → `C:\Users\User\AppData\Local\Temp\roblox-studio-0lccqtzr.rbxl`; `action=launch` → pid 20916, `verified: true`, mesh name `roblox-studio-0lccqtzr.rbxl`; `action=stop` with `dry_run: true` first (resolved by the mesh name against the process's own log command line, `would_stop: true`), then the real stop (`stopped: true`); `cleanup_throwaway_place` → **True**, and the file was confirmed gone. The scratch instances the probes left behind were removed in the same session, and `RobloxStudioBeta.exe` was confirmed to have no process left.
+  **The standing obligation is unchanged and is now a stated rule, not a note:** a place made by `make_place` is a *file the caller owns*, and nothing deletes it automatically — the caller deletes it with `cleanup_throwaway_place`, which refuses to remove anything it did not make (not a `roblox-studio-*.rbxl` name, not in the platform temp dir, already gone, or still held open by Studio). The helper's guard is unit-tested (`test_throwaway_cleanup.py`); this entry records that the live path around it works.
 
 ### Active work plan (2026-10-11)
 
