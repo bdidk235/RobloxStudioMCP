@@ -73,6 +73,14 @@ def file_root() -> Path:
     two reasons: the process may legitimately change directory (and the
     default must follow), and an operator change must take effect without a
     restart of anything but the server process that already re-reads per call.
+
+    **The root can be a UNC path.** Measured 2026-10-20: a server spawned
+    with a WSL working directory inherits ``\\\\wsl.localhost\\<distro>\\<path>``
+    as its cwd, so the root is that UNC path rather than a drive-letter one.
+    A file written on the WSL side is then reachable by the UNC form, by the
+    WSL-style path and by a relative path alike, and the confinement check
+    still refuses anything outside the root. The root follows the cwd, so the
+    same relative path names different files under different roots.
     """
     override = os.environ.get(FILE_ROOT_ENV_VAR, "").strip()
     if override:

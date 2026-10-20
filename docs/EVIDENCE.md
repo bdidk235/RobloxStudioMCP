@@ -2312,3 +2312,54 @@ instead of truncated.
 
 Pinned by `python/tests/test_tree_snapshot.py::TestCanonical` (4 tests: same
 bytes, different bytes, hashable, and the order is the walk order).
+
+### The file root under a WSL cwd is a UNC path, not `C:\Windows` (2026-10-20)
+
+A peer session was told — and repeated as fact — that a Linux-side adapter
+spawning this server "has to use a Windows-side cwd, since a WSL cwd silently
+becomes `C:\Windows`". Measured, on this machine, it does not. The claim came
+from the peer's own summary rather than from a measurement, which is the same
+error the peer corrected elsewhere in the same exchange; this section is the
+measurement.
+
+**What the Windows process inherits.** The server spawned from a WSL working
+directory (`/tmp/opencode`) starts with
+
+```
+cwd: \\wsl.localhost\ubuntu-ai\tmp\opencode
+```
+
+— a UNC path into the WSL filesystem, not `C:\Windows`. `file_root()` resolves
+to that same UNC path, because the root is the working directory read per
+call.
+
+**A file written on the WSL side is reachable, in every path form an adapter
+would use.** With `/tmp/opencode/probe.luau` written from Linux, the Windows
+process reports the file as existing and readable by all three:
+
+| path form | `os.path.exists` | `_confined()` |
+|---|---|---|
+| `\\wsl.localhost\ubuntu-ai\tmp\opencode\probe.luau` | true | **accepted** |
+| `/tmp/opencode/probe.luau` (WSL-style) | true | **accepted** |
+| `probe.luau` (relative) | true | **accepted** |
+
+All three resolve to the same file, so an adapter may use whichever form is
+convenient — the relative one is the least to get wrong.
+
+**And the confinement still holds.** A path outside the root is still refused:
+`/etc/passwd` resolves to `\\wsl.localhost\ubuntu-ai\etc\passwd`, which is
+outside the root, and the call is refused with `CAPABILITY_DENIED`. So a UNC
+root does **not** turn the boundary into a no-op: the root moved with the cwd
+and the check still compares against it.
+
+**Why it matters to a consumer.** `extended_execute_luau_from_file` confines
+the file to the operator's file root, so a Linux-side adapter had a reason to
+believe it had to place its `.luau` on the Windows side. It does not: it can
+write the file on the WSL side, under the cwd it chose for the child, and pass
+the relative path. The remaining advice is only this — **choose the child's
+cwd deliberately and record it**, because the file root is that cwd, so the
+same relative path means different files under different roots.
+
+No test pins this: the behaviour is WSL-specific (a UNC cwd) and the CI matrix
+runs Windows and macOS without WSL, so a test would be skipped everywhere it
+could matter. The measurement is recorded here instead.
