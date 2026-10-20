@@ -81,9 +81,9 @@ window.CATALOG = [
         req: ["action"], opt: ["studio_id", "place_path", "dry_run"],
         ret: "Per action: instance rows, place candidates, a created path, or a launch/stop result with resolved_by." },
       { n: "extended_tree_snapshot", o: "ext",
-        d: "The instance tree under a path, BOUNDED: every node with its class name and child count, plus flags saying what was cut (node cap, depth cap). A snapshot, not a diff - the comparison is the consumer's, because this server keeps no state. A reply that would not fit the execute_luau return channel is REFUSED, not returned half-read: that channel truncates with no error, so a truncated tree would look complete. Use search_game_tree to find a path first.",
+        d: "The instance tree under a path, BOUNDED: every node with its class name, child count and a per-instance debugId, plus flags saying what was cut (node cap, depth cap). The debugId is stable across a rename and a reparent, so a diff can pair on identity rather than on (path, occurrence) - it is NOT the file's UniqueId, which is capability-gated for every instance under execute_luau and so exists only in a saved place file. A snapshot, not a diff - the comparison is the consumer's, because this server keeps no state. A reply that would not fit the execute_luau return channel is REFUSED, not returned half-read: that channel truncates with no error, so a truncated tree would look complete. Use search_game_tree to find a path first.",
         req: [], opt: ["path (default 'game')", "max_depth (default 3)", "max_nodes (default 200)", "studio_id"],
-        ret: "{root, nodes: [{path, className, children}], count, truncated, depth_limited, max_depth, max_nodes, bytes}." },
+        ret: "{root, nodes: [{path, className, children, debugId}], count, truncated, depth_limited, max_depth, max_nodes, nodes_with_id, nodes_without_id, bytes}." },
     ],
   },
   {

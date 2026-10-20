@@ -132,6 +132,23 @@ registry, so neither a read nor a reflection probe answers it. That is what leav
 `game:GetDebugId()` as the usable in-band identifier, alongside two dead ends
 (`game.JobId` empty outside a session, `game.Parent` `None`). See `rsx-targeting`.
 
+**The gate is wider than that one member — measured 2026-10-20.** It is not
+just the DataModel's own `UniqueId`: *every* instance refuses the read, with
+the same message. A child, a service, and a freshly created one all answer
+"The current thread cannot read 'UniqueId' (lacking capability RobloxScript)".
+So a live read cannot produce the `UniqueId` that Studio writes into a saved
+place file; that id exists only in the file.
+
+**What *is* readable is a per-instance identity: `instance:GetDebugId()`.** It
+is distinct per instance (measured: four children of `Workspace` gave four
+different ids) and it is **stable across a rename and a reparent** (measured:
+one instance kept `0_662740` through both). That is what a diff pairs on —
+pairing on identity rather than on `(path, occurrence)` stops a renamed
+same-named sibling from shifting the others' numbering. It is scoped to the
+Studio session, and it is *not* the file's `UniqueId`, so the two must not be
+assumed to be the same value. `extended_tree_snapshot` carries it as
+`debugId`.
+
 `settings()` belongs with those dead ends rather than under reflection, and it
 used to sit in the wrong place: it **does not exist** under `execute_luau`
 (probed and ruled out; whether it is capability-gated or simply absent is

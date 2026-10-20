@@ -2440,3 +2440,74 @@ macOS half of the matrix is the unreliable half on this account. The four
 Windows legs and the macOS legs that did get a runner have passed every time.
 
 **The one genuine failure in that stretch is fixed separately** — see below.
+
+### The per-instance id: the requested `UniqueId` is gated, and what is readable instead (2026-10-20)
+
+Two sessions asked for the same thing: put each instance's `UniqueId` in the
+snapshot's nodes, so a diff can pair by identity rather than by
+`(path, occurrence)`. The motivation is sound and measured on their side: a
+rename that carried an edit could never be claimed (the content differs
+precisely because it was edited), and renaming one of several same-named
+siblings shifted the others' occurrence numbering, so a real change was
+reported against the wrong instance.
+
+**The requested id cannot be read live, and that is measured, not inferred.**
+The repository's record said `game.UniqueId` — the *DataModel's* — is
+unreadable under `execute_luau` ("The current thread cannot read 'UniqueId'",
+the `RobloxScript` capability). Re-measured on a live Studio, **the gate is
+wider than that member**: every instance refuses, with the same message —
+the DataModel, three services, three children of `Workspace`, and a freshly
+created instance:
+
+```
+pcall(function() return inst.UniqueId end)
+  -> false  "The current thread cannot read 'UniqueId' (lacking capability RobloxScript)"
+```
+
+`GetAttribute("UniqueId")` is `nil` (it is a property, not an attribute), and
+`DebugId` is not a valid member (it is a method). So a live snapshot cannot
+carry the file's `UniqueId`; that value exists only in a saved place file,
+which is the Cloud peer's side.
+
+**What *is* readable is a per-instance identity, and it behaves the way the
+diff needs.** `instance:GetDebugId()`:
+
+| property | measured |
+|---|---|
+| readable | yes, for every instance tried (DataModel, service, child) |
+| distinct per instance | yes — `Camera` `0_197807`, `Baseplate` `0_197818`, `Terrain` `0_197828`, `SpawnLocation` `0_197822` |
+| stable across a rename | yes — `0_662740` before and after |
+| stable across a reparent | yes — `0_662740` before and after |
+| stable across two reads | yes |
+
+**It is shipped as `debugId`, not as `uniqueId`.** The field is named for the
+id it carries: a consumer that assumed the live id and the file's `UniqueId`
+were the same value would pair the wrong instances, silently. It is also
+session-scoped — like the DataModel's own debug id — so it pairs two live
+snapshots and does not survive a Studio restart.
+
+**The four canonical properties, re-measured live with the id in the node:**
+two snapshots of an unchanged tree are **byte-identical** (digest
+`da2f84d126ace5c7…` twice); a scratch Folder appearing changes the digest; and
+removing it restores the **original** digest exactly. The walk order is
+untouched — the id is a field, not a sort key — so a reordering is still
+visible. The digest's *value* changes (a new field), its *properties* do not.
+
+**The cost, measured on a live 1,000-node walk of the same tree:**
+
+| | chars | time |
+|---|---|---|
+| without the id | 76,761 | 61.3 ms |
+| with the id | 84,753 | 95.3 ms cold, 65.1 ms warm |
+
+The id is 8 characters (`0_197818`), not a 36-character GUID, so it costs
+**+7,992 chars and about +8 µs per node**. The node ceiling therefore does
+**not** have to move: a 1,000-node walk still fits the 100,015-character
+return channel (85 KB against the limit), though the margin narrows from 24%
+to 15%. The read is `pcall`-guarded, so an instance that cannot answer does
+not break the walk — it is reported with an empty id, and the report says how
+many nodes carry one (`nodes_with_id`, `nodes_without_id`).
+
+**One caveat the requester should know:** a live id and the file's `UniqueId`
+are different values in different namespaces, so a live snapshot cannot be
+paired with a saved file by id. Live-to-live pairing is what this serves.

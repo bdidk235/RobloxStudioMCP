@@ -298,17 +298,27 @@ class TestCanonical(unittest.TestCase):
 
     WALK = _walk_output(
         [
-            "game.Workspace\tWorkspace\t2",
-            "game.Workspace.Part\tPart\t0",
-            "game.Workspace.Model\tModel\t0",
+            "game.Workspace\tWorkspace\t2\t0_1",
+            "game.Workspace.Part\tPart\t0\t0_2",
+            "game.Workspace.Model\tModel\t0\t0_3",
         ]
     )
     WALK_CHANGED = _walk_output(
         [
-            "game.Workspace\tWorkspace\t2",
-            "game.Workspace.Part\tPart\t0",
-            "game.Workspace.Model\tModel\t0",
-            "game.Workspace.New\tFolder\t0",
+            "game.Workspace\tWorkspace\t2\t0_1",
+            "game.Workspace.Part\tPart\t0\t0_2",
+            "game.Workspace.Model\tModel\t0\t0_3",
+            "game.Workspace.New\tFolder\t0\t0_4",
+        ]
+    )
+    # The same tree, but one instance was replaced by a different one: same
+    # paths, same names, different identities. A path-pairing diff would
+    # report "no change"; an id-pairing one reports a replacement.
+    WALK_REPLACED = _walk_output(
+        [
+            "game.Workspace\tWorkspace\t2\t0_1",
+            "game.Workspace.Part\tPart\t0\t0_9",
+            "game.Workspace.Model\tModel\t0\t0_3",
         ]
     )
 
@@ -347,6 +357,64 @@ class TestCanonical(unittest.TestCase):
                 "game.Workspace.Model",
             ],
         )
+
+    def test_a_replaced_instance_changes_the_digest(self):
+        # Same paths, same names, different identity. Path-pairing would
+        # report no change; identity-pairing reports a replacement, and the
+        # digest has to differ for that to be visible.
+        self.assertNotEqual(
+            self._digest(self._report(self.WALK)),
+            self._digest(self._report(self.WALK_REPLACED)),
+        )
+
+
+class TestPerInstanceId(unittest.TestCase):
+    """The per-instance id: what it is, and what it is not.
+
+    The request was for the file's ``UniqueId``. That read is capability-
+    gated for EVERY instance under ``execute_luau`` (measured 2026-10-20:
+    "The current thread cannot read 'UniqueId' (lacking capability
+    RobloxScript)"), so it cannot be carried by a live snapshot. What IS
+    readable is ``GetDebugId()`` - per instance, distinct per instance, and
+    measured stable across a rename and a reparent. The field is named for
+    the id it carries, not for the one that is gated.
+    """
+
+    def test_the_id_is_parsed(self):
+        studio = _FakeStudio(
+            _walk_output(["game.Workspace\tWorkspace\t2\t0_197818"])
+        )
+        report = asyncio.run(snapshot(studio))
+        self.assertEqual(report["nodes"][0]["debugId"], "0_197818")
+
+    def test_a_line_without_an_id_is_reported_as_absent_not_invented(self):
+        # An older walk had three fields. An absent id is reported absent.
+        studio = _FakeStudio(_walk_output(["game.Workspace\tWorkspace\t2"]))
+        report = asyncio.run(snapshot(studio))
+        self.assertEqual(report["nodes"][0]["debugId"], "")
+        self.assertEqual(report["nodes_with_id"], 0)
+        self.assertEqual(report["nodes_without_id"], 1)
+
+    def test_the_counts_split_the_nodes(self):
+        studio = _FakeStudio(
+            _walk_output(
+                [
+                    "game.Workspace\tWorkspace\t2\t0_1",
+                    "game.Workspace.Part\tPart\t0\t",
+                ]
+            )
+        )
+        report = asyncio.run(snapshot(studio))
+        self.assertEqual(report["nodes_with_id"], 1)
+        self.assertEqual(report["nodes_without_id"], 1)
+
+    def test_the_note_says_it_is_not_the_files_unique_id(self):
+        # A consumer that assumed the live id and the file id were the same
+        # value would pair the wrong instances, silently.
+        studio = _FakeStudio(_walk_output(["game.Workspace\tWorkspace\t0\t0_1"]))
+        report = asyncio.run(snapshot(studio))
+        self.assertIn("UniqueId", report["note"])
+        self.assertIn("capability-gated", report["note"])
 
 
 class TestToolSurface(unittest.TestCase):

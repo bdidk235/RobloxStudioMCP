@@ -850,8 +850,9 @@ _EXTENDED_TOOLS.extend(
             name="extended_tree_snapshot",
             description=(
                 "Read the instance tree under a path, bounded: nodes with "
-                "className and child counts, plus truncated flags. A snapshot, "
-                "not a diff - use search_game_tree to find a path."
+                "className, child counts and a per-instance debugId, plus "
+                "truncated flags. A snapshot, not a diff - use "
+                "search_game_tree to find a path."
             ),
             input_schema={
                 "type": "object",

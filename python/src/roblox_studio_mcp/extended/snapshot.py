@@ -96,6 +96,18 @@ local function esc(s)
     return "\\" .. string.byte(c)
   end))
 end
+-- The per-instance identity. `GetDebugId()` is readable for every instance
+-- and is stable across a rename and a reparent (measured 2026-10-20), which
+-- is what a diff pairs on. It is NOT the file's UniqueId: that read is
+-- capability-gated for EVERY instance ("lacking capability RobloxScript"),
+-- so the name here says which id this is rather than borrowing the other
+-- one's. A read that throws must not break the walk, so it is guarded and
+-- an unreadable id is reported as empty rather than aborting the snapshot.
+local function localId(inst)
+  local ok, v = pcall(function() return inst:GetDebugId() end)
+  if ok and type(v) == "string" then return v end
+  return ""
+end
 local function resolve(spec)
   local cur = game
   local prefix = "game"
@@ -126,7 +138,7 @@ local function walk(kids, depth, prefix)
     local ck = child:GetChildren()
     local p = prefix .. "." .. esc(child.Name)
     count = count + 1
-    lines[#lines + 1] = p .. "\t" .. esc(child.ClassName) .. "\t" .. #ck
+    lines[#lines + 1] = p .. "\t" .. esc(child.ClassName) .. "\t" .. #ck .. "\t" .. localId(child)
     if depth >= MAX_DEPTH then
       if #ck > 0 then depthLimited = true end
     else
@@ -136,7 +148,7 @@ local function walk(kids, depth, prefix)
 end
 local rootKids = start:GetChildren()
 count = 1
-lines[1] = rootPath .. "\t" .. esc(start.ClassName) .. "\t" .. #rootKids
+lines[1] = rootPath .. "\t" .. esc(start.ClassName) .. "\t" .. #rootKids .. "\t" .. localId(start)
 walk(rootKids, 1, rootPath)
 return table.concat(lines, "\n") .. "\n__END__\t" .. count .. "\t" .. tostring(truncated) .. "\t" .. tostring(depthLimited)
 '''
@@ -276,13 +288,16 @@ def parse_snapshot(
     nodes: List[Dict[str, Any]] = []
     for line in lines[:-1]:
         parts = line.split("\t")
-        if len(parts) != 3:
+        if len(parts) not in (3, 4):
             raise ToolError(
                 LUA_ERROR,
-                "the walk returned a line that is not path/class/count: %r"
+                "the walk returned a line that is not path/class/count/id: %r"
                 % line,
             )
-        path, class_name, children = parts
+        path, class_name, children = parts[0], parts[1], parts[2]
+        # A three-field line is an older walk: the id was not read then, and
+        # an absent id is reported as absent rather than invented.
+        debug_id = parts[3] if len(parts) == 4 else ""
         try:
             child_count = int(children)
         except ValueError:
@@ -296,6 +311,7 @@ def parse_snapshot(
                 "path": unescape(path),
                 "className": unescape(class_name),
                 "children": child_count,
+                "debugId": unescape(debug_id),
             }
         )
     return nodes, count, truncated, depth_limited
@@ -348,6 +364,7 @@ async def snapshot(
             path=root,
         )
     nodes, count, truncated, depth_limited = parse_snapshot(text)
+    with_id = sum(1 for node in nodes if node.get("debugId"))
     return {
         "root": root,
         "nodes": nodes,
@@ -358,11 +375,18 @@ async def snapshot(
         "max_nodes": nodes_cap,
         "datamodel_type": datamodel_type,
         "bytes": len(text),
+        "nodes_with_id": with_id,
+        "nodes_without_id": len(nodes) - with_id,
         "note": (
             "Node paths are the names Studio reports, so one may contain a "
             "space (a service called 'Run Service' does). An input path must "
             "be identifier-only, so such a name cannot be addressed as a root "
-            "here - use search_game_tree to find it."
+            "here - use search_game_tree to find it. The per-instance id is "
+            "'debugId': it is stable across a rename and a reparent, so a "
+            "diff can pair on identity rather than on position. It is NOT the "
+            "file's UniqueId - that read is capability-gated for every "
+            "instance under execute_luau (measured), so it exists only in a "
+            "saved place file. This id is scoped to this Studio session."
         ),
     }
 
