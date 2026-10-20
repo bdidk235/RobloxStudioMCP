@@ -2387,3 +2387,44 @@ warning in 3.12 is one release away from an error). It compiles clean.
 `conclusion` before reading the log — "cancelled" with an empty
 `runner_name` is GitHub failing to allocate a runner, and the fix is a
 re-run, not a bisect.
+
+### A real CI failure, and the control that proves the fix (2026-10-20)
+
+A later push came back with one leg red — `windows-latest, 3.10` — and this
+one was a genuine failure, unlike the cancelled legs above:
+`tests/test_progress.py::TestProgressDeadlines::test_silence_still_times_out`,
+`1 failed, 945 passed, 4 skipped`.
+
+**What it actually was.** The arm died in its **setup**, not in its claim:
+
+```
+MCPConnectionError: Timed out waiting for 'initialize': 0.3s per leg
+```
+
+`MCPClient.connect()` applies the client's per-leg deadline to the
+`initialize` handshake, and that handshake has to spawn a Python process. The
+arm's 0.3s deadline was meant for the *tool call* under test; the fake server
+answers `initialize` instantly, so the whole 0.3s went to a cold subprocess
+spawn on a loaded runner. The arm never reached its own assertion.
+
+**The fix, and why it is the fix and not a bigger number.** The connect gets
+its own budget (`CONNECT_TIMEOUT`), and the call's deadline is restored
+afterwards, so the arm still tests a 0.3s deadline where the claim is. This is
+the same decoupling this module's other arms already use, for the same reason
+(the module docstring records an earlier arm that failed 1 run in 12 for
+depending on where a tick landed).
+
+**The control, run rather than asserted.** A fake server that is slow to
+start (1.0s before answering `initialize`) was used to reproduce the CI
+failure and then to test the fix against the same slow starter:
+
+| pattern | result |
+|---|---|
+| old (0.3s governs the connect) | **FAILED IN SETUP** — "Timed out waiting for 'initialize': 0.3s per leg", the CI failure reproduced exactly |
+| new (30s connect, 0.3s call) | connect OK, and the call **timed out at 0.3s as intended** |
+
+So the fix survives the failure mode *and* preserves the claim: the arm still
+asserts that silence times out, rather than passing because the setup got
+roomier. Pinned by a cheap guard
+(`test_the_connect_is_not_governed_by_the_call_deadline`), which reaches the
+assertion only if the connect completed and the call deadline was restored.

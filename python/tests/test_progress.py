@@ -34,6 +34,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from roblox_studio_mcp.client import MCPClient
 
+#: The budget for the CONNECT half of these tests. Generous on purpose: the
+#: fake server is a Python subprocess, and a cold spawn on a loaded CI runner
+#: is not instantaneous. The deadline under test belongs to the tool call,
+#: not to the handshake that precedes it.
+CONNECT_TIMEOUT = 30.0
+
 # A stdio server that answers tools/slow after `delay` seconds, optionally
 # emitting progress notifications every `tick` seconds.
 FAKE = r'''
@@ -96,10 +102,35 @@ class TestProgressDeadlines(unittest.IsolatedAsyncioTestCase):
 
     async def _client(self, delay, tick, progress, timeout):
         script = write_fake(self.tmp, delay, tick, progress)
-        client = MCPClient(sys.executable, [str(script)], timeout=timeout)
+        # The CONNECT gets its own budget; the call keeps the deadline under
+        # test. The client applies its per-leg deadline to the initialize
+        # handshake too, and that handshake has to spawn a Python process -
+        # so with a 0.3s deadline the spawn alone can miss it on a loaded
+        # runner, and the arm fails before reaching its own assertion.
+        #
+        # Measured 2026-10-20: `test_silence_still_times_out` failed on
+        # windows-latest 3.10 with "Timed out waiting for 'initialize': 0.3s
+        # per leg" - a failure in the SETUP, not in the claim. The fix is the
+        # one this module's other arms already use (decoupled from timing
+        # rather than given a bigger number); the number that matters is the
+        # call's, and it is restored below.
+        client = MCPClient(sys.executable, [str(script)], timeout=CONNECT_TIMEOUT)
         await client.connect()
+        client.timeout = timeout
         self.addCleanup(lambda: asyncio.get_event_loop().run_until_complete(client.close()))
         return client
+
+    async def test_the_connect_is_not_governed_by_the_call_deadline(self):
+        # The regression guard for the CI failure above: reaching this line
+        # means the connect completed, and the call's deadline is the one
+        # under test. Without the split, a 0.3s deadline applied to the
+        # spawn would fail here instead of in the arm that means something.
+        client = await self._client(delay=0.6, tick=0.05, progress=False, timeout=0.3)
+        self.assertEqual(
+            client.timeout,
+            0.3,
+            "the call deadline was not restored after the connect",
+        )
 
     async def test_silence_still_times_out(self):
         # The deadline must survive the change: no progress means timeout.
