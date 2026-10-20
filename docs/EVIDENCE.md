@@ -2280,3 +2280,35 @@ assumed: the tool refuses rather than returning half a tree.
 **The cost.** 168 characters of description; the total went from 2,916 to
 **3,084 of 3,200**, leaving **116** — less than a whole tool, so the next
 addition has to be funded by trimming. Nothing was trimmed to fit this one.
+
+### The snapshot is canonical: stable, sensitive, hashable (2026-10-20)
+
+A consumer that diffs two snapshots needs three properties, and a tool that
+merely *works* does not have them. Measured live on the user's scoped Studio,
+each property proved rather than asserted:
+
+| property | what was done | result |
+|---|---|---|
+| **stable** | two snapshots of an unchanged tree | **byte-identical** — same sha256 (`fa38782064e4…`), full reports equal |
+| **sensitive** | one scratch `Folder` added to `Workspace` | digest changed (`21a90aebca19…`), node count 8 → 10 |
+| **hashable** | the report serialised with sorted keys | sha256 of the serialised report, 64 hex chars |
+
+And the round trip: removing the scratch `Folder` restored the **original
+digest exactly** (`fa38782064e4…`), which is both a second proof of
+sensitivity and a proof that the probe left no residue — the read does not
+disturb the tree it reads.
+
+**Why this is the property that separates the snapshot from `search_game_tree`.**
+The relayed `search_game_tree` already returns flat JSON with
+path/className/childSummary, `max_depth` and `head_limit` — an exploratory
+reader exists, and a new tree reader would duplicate it. The difference is
+that a *search* is filtered, limited, and warns when it truncates, and
+truncation that differs between two runs reads as "the tree changed". A diff
+input has to be stable in ordering, bounded, and hashable. The snapshot is:
+`GetChildren` order is walk order (not sorted, because a canonical read that
+silently sorted would hide a reordering), the bounds are enforced rather than
+advisory, and a reply that would not fit the return channel is refused
+instead of truncated.
+
+Pinned by `python/tests/test_tree_snapshot.py::TestCanonical` (4 tests: same
+bytes, different bytes, hashable, and the order is the walk order).

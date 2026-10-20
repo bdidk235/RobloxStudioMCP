@@ -20,6 +20,7 @@ session, and a tool added without that check is a permanent cost.
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import unittest
@@ -282,6 +283,70 @@ class TestSnapshot(unittest.TestCase):
         report = asyncio.run(snapshot(studio))
         self.assertEqual(report["nodes"][0]["path"], "game.Run Service")
         self.assertIn("space", report["note"])
+
+
+class TestCanonical(unittest.TestCase):
+    """A diff input has to be STABLE, SENSITIVE and HASHABLE.
+
+    Measured live on 2026-10-20: two snapshots of an unchanged tree were
+    byte-identical (same sha256), adding one scratch Folder changed the
+    digest, and removing it restored the original digest exactly. A consumer
+    that diffs two snapshots needs all three properties - a snapshot that
+    was not stable would read every run as "the tree changed", and one that
+    was not sensitive would miss a real change.
+    """
+
+    WALK = _walk_output(
+        [
+            "game.Workspace\tWorkspace\t2",
+            "game.Workspace.Part\tPart\t0",
+            "game.Workspace.Model\tModel\t0",
+        ]
+    )
+    WALK_CHANGED = _walk_output(
+        [
+            "game.Workspace\tWorkspace\t2",
+            "game.Workspace.Part\tPart\t0",
+            "game.Workspace.Model\tModel\t0",
+            "game.Workspace.New\tFolder\t0",
+        ]
+    )
+
+    def _report(self, text):
+        return asyncio.run(snapshot(_FakeStudio(text)))
+
+    def _digest(self, report):
+        return hashlib.sha256(
+            json.dumps(report, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+    def test_the_same_tree_gives_the_same_bytes(self):
+        self.assertEqual(
+            json.dumps(self._report(self.WALK), sort_keys=True),
+            json.dumps(self._report(self.WALK), sort_keys=True),
+        )
+
+    def test_a_changed_tree_gives_different_bytes(self):
+        self.assertNotEqual(
+            self._digest(self._report(self.WALK)),
+            self._digest(self._report(self.WALK_CHANGED)),
+        )
+
+    def test_the_report_is_hashable(self):
+        self.assertEqual(len(self._digest(self._report(self.WALK))), 64)
+
+    def test_the_order_is_the_walk_order_not_a_sort(self):
+        # A canonical read that silently sorted its nodes would hide a
+        # reordering, and a diff consumer would never see the change.
+        report = self._report(self.WALK)
+        self.assertEqual(
+            [node["path"] for node in report["nodes"]],
+            [
+                "game.Workspace",
+                "game.Workspace.Part",
+                "game.Workspace.Model",
+            ],
+        )
 
 
 class TestToolSurface(unittest.TestCase):
