@@ -35,7 +35,6 @@ a fallback rather than trusting one or the other.
 - `StudioService` resolves through `GetService` but `GetMethodsOfClass` returns
   **nil** for it, and `GetClass` returns nil (unverified).
 - `ScriptDebuggerService` is the same.
-- `settings()` does not exist under `execute_luau`.
 - `StudioTestService` *is* reflection-visible, and has 50 methods (unverified).
 
 `GetClasses()` returns about 640 classes (unverified); filtering on `Permits.GetService`
@@ -133,6 +132,15 @@ registry, so neither a read nor a reflection probe answers it. That is what leav
 `game:GetDebugId()` as the usable in-band identifier, alongside two dead ends
 (`game.JobId` empty outside a session, `game.Parent` `None`). See `rsx-targeting`.
 
+`settings()` belongs with those dead ends rather than under reflection, and it
+used to sit in the wrong place: it **does not exist** under `execute_luau`
+(probed and ruled out; whether it is capability-gated or simply absent is
+unverified, and the difference does not change the answer). It is one of the
+paths to a process id that do not work — `os.getpid`, `ProcessService`,
+`game.ProcessId`, `DiagnosticsService` and `settings()` are all ruled out —
+and that list is what leaves `game:GetDebugId()` as the only in-band identifier
+that survives a restart. See `rsx-targeting`.
+
 ## A place that did not open says why, in the log
 
 A Studio that attaches to the mesh but never gets a place name is not a mystery.
@@ -194,6 +202,25 @@ Studio's serialiser, which converts Luau arrays to string-keyed objects and
 Vector2 to a comma-separated string. This is not repairable — the two shapes
 are indistinguishable on the wire. See `rsx-transport` for the full table and
 the `HttpService:JSONEncode` workaround.
+
+## What is in the tree
+
+`rbx-scene-analysis` (Roblox's own skill, relayed) answers most questions
+about what is *in* the tree. `extended_tree_snapshot` is the bounded,
+diffable read: every node under a path with its class name and child count,
+plus flags saying what the bounds cut. Use it when the question is "what is
+here"; `search_game_tree` is the one for "where is X".
+
+Two things it does deliberately, both because the alternative is a wrong
+answer rather than a missing one:
+
+- **It is a snapshot, not a diff.** The previous snapshot and the comparison
+  belong to whoever asked for them — this server keeps no state, and a
+  diffing tool would make it keep some.
+- **A read that would not fit the return channel is refused**, not returned
+  half-read. The channel truncates with no error (see `rsx-transport`), so a
+  truncated tree would arrive looking complete, and the flags would say
+  nothing was missing.
 
 ## Reflect last, and only for what a lookup cannot answer
 
