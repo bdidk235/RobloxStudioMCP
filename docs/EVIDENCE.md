@@ -2088,3 +2088,67 @@ same `Place1`:
   on but Studio itself is not visibly composited (minimised or covered), which
   is exactly the documented null condition. Two different failure modes, one
   tool - worth distinguishing in future reports.
+
+### The delete gap is an interface, not a capability (2026-10-20)
+
+Re-measured after a peer session consulted this repo while scoping a
+Linux-side server, and re-scoped because that consultation exposed a framing
+error that had been sitting in `TODO.md` unexamined.
+
+**Measured.** `execute_luau` runs arbitrary Luau by design. Upstream's own
+description (`contract/upstream_live_dump.json`, the `execute_luau` row) is
+about the main thread and chunking; it places no restriction on what the code
+may do, and `:Destroy()` is ordinary Luau. Live proof on the user's scoped
+Studio, 2026-10-15: `game.PluginGuiService.RBXCapture:Destroy()` removed the
+capture scratch, and a follow-up
+`game.PluginGuiService:FindFirstChild("RBXCapture") == nil` returned `true`.
+
+**So `TODO.md`'s "No delete tool" was framed wrong.** It read as a missing
+*capability*. The capability is present and intended; what is missing is a
+*guardrailed interface* - a dry run, an explicit target pin, and refusal when
+the path is ambiguous - the same shape `stop` has, where `dry_run` is the sole
+authorisation mechanism and there is no `confirm` parameter at all (see the
+2026-10-14 live-battery section above). A raw `:Destroy()` arriving as a code
+string takes any path with no dry run, no pin and no refusal, so a typo
+becomes data loss; and because the intent is inside the code, the tool list
+does not show it and neither does the audit trail. That is the whole gap -
+which is why the human's correction ("not a workaround, it is the intended
+way") landed: the framing, not the capability, was the error.
+
+**Sourced, not measured.** `Roblox_Cloud.place_prune` - a separate project on
+this box, owned by another session, not this repo - is described in the live
+catalog as "Remove dead instances from a place: empty Folders, optionally
+name-pattern leftovers. Dry-run by default." That is precisely the shape
+proposed above, already implemented - but for *place files*, not a live
+DataModel. Read from the provider's own tool descriptions; **not run here**, so
+its behaviour is the provider's claim, not a measurement. The remaining gap is
+therefore narrower than `TODO.md` implied: deleting scratch inside a *running*
+Studio.
+
+**Two stale figures corrected.** `TODO.md:143` and `TODO.md:284` both carried
+"3,104 of 3,200 / 96 chars of headroom", measured 2026-10-14 at `3322893`.
+The description rewrites moved it afterwards: `b611d92` took the total
+3,126 → 2,705, and `b090bf7` added four missing steering notes back
+(→ 2,916). Re-measured 2026-10-20 from `contract/tools.json`: **2,916 of
+3,200, 284 chars of headroom**, per-tool cap 450. A ~150-char
+`delete_instance` fits the total again (2,916 + 150 = 3,066), so the budget
+is no longer the obstacle; what remains is the user decision that a 17th tool
+is (TODO:143).
+
+**A third figure, and the method it needed.** `TODO.md:155` paired the schema
+size with the description total ("3,091 schema chars against 3,104 description
+chars — 49.9%"), so the description half went stale with the others. The
+schema half is *not* stale: it is still 3,091, because the rewrites touched
+descriptions only. The ratio moved to **51.5%** (3,091 of 6,007) purely
+because descriptions shrank by 188 — so the schema is now slightly *over*
+half the payload, which the old wording ("about half") understated.
+
+The method was not recorded, so the first attempt measured the wrong thing:
+the *full* input schemas come to 12,358 chars and would overstate the schema
+side ~4×. The 3,091 figure is the **normalised** schema in
+`contract/tools.json` — `sum(len(json.dumps(tool["schema"], sort_keys=True)))`
+over the 16 rows. That method was confirmed by running it against the
+contract as committed at `3322893`, where it reproduces 3,091 exactly; only
+then was it applied to the current contract. Reproducing a number before
+comparing it is the whole difference between a corrected figure and a new
+wrong one. The method is now written into the item.
