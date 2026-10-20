@@ -1915,6 +1915,11 @@ the description (they are new) or minimised and occluded take different paths.
 **Not a Windows-vs-macOS difference by construction:** the mechanism is a screen
 crop, which no apple ScreenCaptureKit per-window path shares. Deny-listed in
 this project's config; `docs/catalog.js` records the behaviour.
+*(Update 2026-10-20: both plugin-GUI tools are **no longer offered upstream** -
+`capture_plugin_gui` and `list_plugin_guis` were dropped by the 2026-10-15
+Studio update, measured. The finding above stands as history, and it is why
+the tool was deny-listed before it disappeared. The catalog entry and the
+runbook row are gone; see "Upstream surface drifted 30 -> 28" below.)*
 
 ### `lsof` for Studio attribution
 
@@ -2152,3 +2157,77 @@ contract as committed at `3322893`, where it reproduces 3,091 exactly; only
 then was it applied to the current contract. Reproducing a number before
 comparing it is the whole difference between a corrected figure and a new
 wrong one. The method is now written into the item.
+
+### Upstream surface drifted 30 → 28, and the "Windows-only" reason was wrong (2026-10-20)
+
+A peer session asked how a Linux-side server could reach this one. The answer
+given — "topology forbids it" — was wrong, and checking it on this machine
+corrected two separate claims at once.
+
+**The correction, measured.** `/mnt/c/Windows/System32/cmd.exe` exists and
+**runs from this WSL shell** (`cmd.exe /c "echo CMD_WORKS"` → `CMD_WORKS`); it
+is simply not on the WSL `PATH`, so a bare `cmd.exe` lookup fails. More
+decisively, this project's own MCP config launches the extended server as a
+Windows binary from the Linux service: `command:
+["/mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe", "-m",
+"roblox_studio_mcp.extended_server"]` with `PYTHONPATH:
+C:/Users/User/Source/RobloxStudioMCP/python/src`. **A Linux-side server can
+spawn this server as a child stdio process and reach the live tree, with
+nothing added here.** The `TODO.md` claim "WSL has no `cmd.exe`" was true only
+of a bare lookup and false in the sense that mattered.
+
+**The upstream surface changed, and the repo's own grader says so.** The
+capture is read-only by construction (handshake + one `tools/list`, no
+DataModel touch). Re-run from *this* WSL shell, driving the **Windows Python**
+by absolute path — the same invocation the MCP config uses:
+
+```
+PYTHONPATH=C:/Users/User/Source/RobloxStudioMCP/python/src \
+  /mnt/c/Users/User/AppData/Local/Programs/Python/Python312/python.exe \
+  contract/build_upstream.py --live
+```
+
+- Two independent captures, a minute apart: **28 tools each, identical name
+  sets, identical `server_info`**.
+- Against the committed 2026-10-11 snapshot, `compare_snapshot` returns two
+  **FAIL** (`capture_plugin_gui`, `list_plugin_guis` — "pinned in the snapshot
+  but absent from the live tools/list"), one **WARNING** (`generate_texture`
+  gained an optional `model` parameter) and one **WARNING** (`skill`'s
+  description length 3011 → 4860, **+1,849 chars** — "the list is paid every
+  session, so a large jump is worth a look"). `checked=30, live_count=28`.
+- Under this repo's own threshold (`TRANSIENT_MISSING_LIMIT = 3`) two missing
+  is a **FAIL**, not the mass-disappearance case a flaky uplink produces — so
+  the grader reads this as "Studio dropped them", and its own remedy applies:
+  refresh the snapshot if the change is real.
+
+**Why they dropped: a Studio update, with the timeline as the evidence.** The
+old dump records its own route — "live tools/list through StudioMCP.exe direct
+(WSL: no cmd.exe; equivalent to mcp.bat resolution)" — a *different route*
+from today's `cmd.exe /c … mcp.bat`. Route was therefore a confound, and it
+was checked rather than assumed: `mcp.bat` resolves to a single
+`StudioMCP.exe` under `%LOCALAPPDATA%\Roblox\Versions\version-4f087c32742644ab\`,
+whose directory is dated **2026-10-15** — after the 2026-10-11 capture — and
+the older version directory is gone, so the old binary cannot be A/B'd now.
+The only Studio install present is that one (the sibling
+`version-11f155f3450f4c8e` is a *Player* install: `RobloxPlayerBeta.exe`, no
+`StudioMCP.exe`). The drop is therefore best explained by the 2026-10-15
+Studio update — **supported by the timeline, not confirmed by direct
+comparison**, because the old binary no longer exists.
+
+**Acted on, not just recorded.** `contract/upstream_live_dump.json` and
+`contract/upstream_tools.json` are refreshed to the 28-tool surface captured
+2026-10-20. The `Plugin GUI (relayed)` catalog category and the runbook row
+for `capture_plugin_gui` are removed: a catalog that advertises tools the
+upstream no longer serves is the "plausible wrong answer" this repo keeps
+paying for. The measured findings about those tools (screen contents at the
+widget's position, the whole screen, null when occluded) stay above as
+history — they were true when measured, and they are why the tool was
+deny-listed before it disappeared.
+
+**What a reader should not conclude.** This is *not* evidence that upstream
+tool text is stable: `skill`'s description grew 1,849 chars in nine days, and
+`generate_texture` gained a parameter. Both are WARNINGs from the grader
+precisely because the list is paid on every call of every session. And the
+`generate_texture` case has a local consequence: it is **deny-listed in this
+project's operator config**, so a disabled tool gained capability while
+disabled — the deny-list's rationale deserves a look, not a silent keep.

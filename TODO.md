@@ -144,6 +144,8 @@
 
 - [ ] **The PrintWindow *implementation* is not in the repo - only its measurement is.** Worth being precise about, because the 48-205 ms figure reads as though the code exists. It does not: no `PrintWindow` call exists in `python/src`. The chain up to the PID is built (`logid.resolve`), but the window tail is not written, so shipping it is new code, not wiring.
 
+- [ ] **Upstream text grows, and our cap does not cover it.** Measured 2026-10-20 on a live capture: `skill`'s description went 3,011 → 4,860 chars (**+1,849**) in nine days, and `generate_texture` gained an optional `model` parameter. Both are the grader's WARNINGs, and the warning says why: "the list is paid on every session". The 3,200-char cap in this repo governs **our** 16 tools only — relayed text is outside it, so upstream can add 1,849 chars of tool list to every session and this repo's budget says nothing. Two consequences: the `generate_texture` case is a **deny-listed tool that gained capability while disabled**, so the deny-list's rationale needs a look rather than a silent keep; and the `capture_plugin_gui` entry in the operator deny-list is now moot (the tool is gone upstream). Neither is a code change - both are operator decisions, and the config lives outside the repo.
+
 - [ ] **`ExecuteMultiplayerTestAsync` still unverified**, and blocked behind a real constraint: a direct call blocks past the 120 s tool-call timeout, while `task.spawn` around it dies with the call's context and can wedge the test service. Those two are in tension, and resolving it needs either a way to hold a call open (a scratch instance acting as a mailbox) or a persistent host. The `-task StartServer` route sidesteps it for `AddPlayers`, but not for ending a test with a result value.
 
 - [ ] **Chrrxs' 7-tool playtest surface still not built.** Their advantage is not `AddPlayers`, which we now have; it is ending a test with a *value* (an assertion result), per-client `LeaveTest`, and a stop path that separates "no test running" from "signal did not propagate". Take their granularity, keep our descriptions. Every call needs `studio_id`, since a play session belongs to one Studio.
@@ -329,6 +331,16 @@ instance.
   dump is wire order — one raised KeyError), tuple-vs-dict steer comparison,
   and the doctor tests launching the fake proxy via `cmd.exe` (now
   `sys.executable`, portable). Full suite: 877 passed.
+  **Update 2026-10-20: the "WSL has no `cmd.exe`" premise in this entry was
+  wrong** — `cmd.exe` runs from WSL by absolute path, and this project's own
+  MCP config launches the extended server as a Windows binary from the Linux
+  service, so the capture is *not* Windows-only; it was re-run from this WSL
+  shell driving the Windows Python. The snapshot has since been **refreshed to
+  28 tools**: the two plugin-GUI entries above were dropped by the 2026-10-15
+  Studio update (measured, two captures, grader verdict FAIL), the catalog
+  category and runbook row for them are removed, and `skill`'s description
+  grew 1,849 chars while `generate_texture` gained a parameter. Full record in
+  `docs/EVIDENCE.md`, "Upstream surface drifted 30 → 28".
 - [x] **DONE 2026-10-13 — 2. Operator runbook (TODO:256).** `docs/RUNBOOK.md`:
   the six-step chain launch -> attach -> resolve -> capture -> play -> stop, and
   all 16 error codes with the recovery each one calls for, sourced from

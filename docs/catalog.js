@@ -214,19 +214,6 @@ window.CATALOG = [
     ],
   },
   {
-    category: "Plugin GUI (relayed)",
-    tools: [
-      { n: "list_plugin_guis", o: "raw",
-        d: "List the plugin GUIs (widgets/windows) in Studio with their pluginGuiIds. Hidden ones are listed too and cannot be captured.",
-        req: [], opt: [],
-        ret: "{pluginGuis: [{pluginGuiId, ...}]}." },
-      { n: "capture_plugin_gui", o: "raw",
-        d: "NOT RECOMMENDED - worse than not having it. Returns screen contents at the widget's position, not a widget render (Roblox's own description admits this when Studio is occluded or minimized); on Windows observed returning the whole screen, and null when occluded. Use extended_capture instead.",
-        req: ["plugin_gui_id"], opt: [],
-        ret: "Image data (of the wrong thing - see above)." },
-    ],
-  },
-  {
     category: "Meta: skills, subagents, jobs, web (relayed)",
     tools: [
       { n: "skill", o: "raw",

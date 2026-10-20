@@ -55,7 +55,6 @@ Every Studio-touching extended tool takes an optional `studio_id`.
 |---|---|
 | `extended_capture` | the pixels are the measurement. Lossless PNG, host-side encoded, byte-exact. A caller-supplied `save_path` is confined to the working directory and written through a temp file and one rename, so a failed write cannot truncate a good capture. |
 | relayed `screen_capture` | a quick look. Small inline JPEG; ignores any format argument; returns **null** when Studio is not visible on a monitor. |
-| relayed `capture_plugin_gui` | **not recommended.** It returns screen contents at the widget's position, not a widget render (Roblox's own description concedes this for an occluded Studio); observed here returning the whole screen, and null when occluded. Deny-listed in this project's config. Use `extended_capture`. |
 
 ### 5. Play, then read the console
 

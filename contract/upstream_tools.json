@@ -1,27 +1,10 @@
 {
   "_comment": "The upstream (relayed) tool surface, captured from a live tools/list through the StudioMCP proxy. Trust label: proxied_upstream - owned by Roblox Studio, not this repo, so it is graded, not asserted byte-for-byte. Refresh after a Studio update with `python contract/build_upstream.py --live` (writes this file and contract/upstream_live_dump.json together), and check any time with `python -m roblox_studio_mcp.doctor --upstream`. Generated file; do not hand-edit.",
   "trust": "proxied_upstream",
-  "captured": "2026-10-11",
-  "source": "live tools/list through StudioMCP.exe direct (WSL: no cmd.exe; equivalent to mcp.bat resolution)",
-  "tool_count": 30,
+  "captured": "2026-10-20",
+  "source": "live tools/list through the StudioMCP proxy (cmd.exe /c \"cd /d %LOCALAPPDATA%\\Roblox && .\\mcp.bat\")",
+  "tool_count": 28,
   "tools": [
-    {
-      "name": "capture_plugin_gui",
-      "description_chars": 509,
-      "required": [
-        "plugin_gui_id",
-        "studio_id"
-      ],
-      "properties": {
-        "plugin_gui_id": {
-          "type": "string"
-        },
-        "studio_id": {
-          "type": "string"
-        }
-      },
-      "read_only": true
-    },
     {
       "name": "character_navigation",
       "description_chars": 58,
@@ -241,6 +224,13 @@
         "instance_path": {
           "type": "string"
         },
+        "model": {
+          "type": "string",
+          "enum": [
+            "Fast",
+            "Quality"
+          ]
+        },
         "studio_id": {
           "type": "string"
         },
@@ -348,19 +338,6 @@
         "path": {
           "type": "string"
         },
-        "studio_id": {
-          "type": "string"
-        }
-      },
-      "read_only": true
-    },
-    {
-      "name": "list_plugin_guis",
-      "description_chars": 329,
-      "required": [
-        "studio_id"
-      ],
-      "properties": {
         "studio_id": {
           "type": "string"
         }
@@ -636,7 +613,7 @@
     },
     {
       "name": "skill",
-      "description_chars": 3011,
+      "description_chars": 4860,
       "required": [
         "skill_name",
         "studio_id"

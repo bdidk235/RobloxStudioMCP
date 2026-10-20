@@ -1,6 +1,6 @@
 {
-  "captured": "2026-10-11",
-  "source": "live tools/list through StudioMCP.exe direct (WSL: no cmd.exe; equivalent to mcp.bat resolution)",
+  "captured": "2026-10-20",
+  "source": "live tools/list through the StudioMCP proxy (cmd.exe /c \"cd /d %LOCALAPPDATA%\\Roblox && .\\mcp.bat\")",
   "server_info": {
     "name": "RobloxStudio",
     "version": "1.0.0"
@@ -34,34 +34,6 @@
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
-    },
-    {
-      "name": "capture_plugin_gui",
-      "description": "Capture a screenshot of a specific open plugin GUI (widget/window) by its pluginGuiId, and return the image data. Obtain the pluginGuiId from the list_plugin_guis tool. Only GUIs that are currently visible on screen can be captured; list_plugin_guis also reports GUIs that exist but are hidden, and capturing those fails. Studio itself must also be visible on the monitor: if it is occluded or minimized, the capture will return whatever is on screen at the widget/window's position instead of the plugin GUI.",
-      "inputSchema": {
-        "properties": {
-          "plugin_gui_id": {
-            "description": "The pluginGuiId of the plugin GUI to capture, as returned by the list_plugin_guis tool.",
-            "type": "string"
-          },
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          }
-        },
-        "required": [
-          "plugin_gui_id",
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "Capture Plugin GUI",
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
         "openWorldHint": false
       }
     },
@@ -148,11 +120,11 @@
     },
     {
       "name": "skill",
-      "description": "Retrieve detailed knowledge, best practices, or reference material for a specific skill.\nSkills provide domain-specific expertise that helps you produce better, more accurate results.\n\n<available_skills>\n  <skill>\n    <name>rbx-create-skill</name>\n    <source>Roblox</source>\n    <description>Guide the user through authoring or modifying a custom skill. Use when the user wants to create, edit, update, or rename a skill.</description>\n  </skill>\n  <skill>\n    <name>rbx-debug</name>\n    <source>Roblox</source>\n    <description>Programmatically add breakpoints and inspect thread information to debug Roblox Studio games via MCP, plugins, or command scripts. Use as a more robust tool to investigate scripting bugs or verify script behavior beyond static analysis.</description>\n  </skill>\n  <skill>\n    <name>rbx-device-simulator-lua</name>\n    <source>Roblox</source>\n    <description>Control the Studio Device Simulator to test UI across device form factors. Use when switching devices, testing orientations, running multi-device comparisons, or verifying UI layout via MCP tools (execute_luau + screen_capture).</description>\n  </skill>\n  <skill>\n    <name>rbx-docs-search</name>\n    <source>Roblox</source>\n    <description>Look up Roblox documentation using the http_get tool \u2014 Engine API reference, creator guides (avatar, characters, Studio workflows), cloud API, and docs indexes. Use when you need accurate API details or how-to guidance.</description>\n  </skill>\n  <skill>\n    <name>rbx-perf-profiling</name>\n    <source>Roblox</source>\n    <description>Analyze fine-grained performance data provided by the MicroProfiler through the LibMP Luau module. Use it to investigate CPU and GPU bottlenecks, identify the causes of frame-time spikes, and analyze memory allocations by subsystem.</description>\n  </skill>\n  <skill>\n    <name>rbx-scene-analysis</name>\n    <source>Roblox</source>\n    <description>Analyze and optimize Roblox scenes using SceneAnalysisService \u2014 rendering, memory, instance composition, unparented instances, and animation/audio assets. Use when investigating performance, memory, or leaks in a place.</description>\n  </skill>\n  <skill>\n    <name>rbx-unit-test</name>\n    <source>Roblox</source>\n    <description>Write, run, and debug Luau unit tests for ModuleScripts in Roblox Studio. Use this skill only when the user asks to add unit tests, improve test coverage, run existing tests, or debug failing tests. Do not use it for playtesting, gameplay QA, or validating visuals and UI feel.</description>\n  </skill>\n</available_skills>\n\nWhen to use skills:\n1. When the task involves a domain covered by an available skill\n2. When you need best practices or conventions before writing or reviewing code\n3. When you are unsure about the correct patterns or APIs for a specific area\n\nImportant:\n1. Invoke the skill BEFORE writing code or taking action, not after\n2. Follow the returned guidance closely in your response\n3. Do not mention a skill without actually invoking it first",
+      "description": "Retrieve detailed knowledge, best practices, or reference material for a specific skill.\nSkills provide domain-specific expertise that helps you produce better, more accurate results.\n\n<available_skills>\n  <skill>\n    <name>rbx-create-skill</name>\n    <source>Roblox</source>\n    <description>Guide the user through authoring or modifying a custom skill. Use when the user wants to create, edit, update, or rename a skill.</description>\n  </skill>\n  <skill>\n    <name>rbx-debug</name>\n    <source>Roblox</source>\n    <description>Programmatically add breakpoints and inspect thread information to debug Roblox Studio games via MCP, plugins, or command scripts. Use as a more robust tool to investigate scripting bugs or verify script behavior beyond static analysis.</description>\n  </skill>\n  <skill>\n    <name>rbx-device-simulator-lua</name>\n    <source>Roblox</source>\n    <description>Control the Studio Device Simulator to test UI across device form factors. Use when switching devices, testing orientations, running multi-device comparisons, or verifying UI layout via MCP tools (execute_luau + screen_capture).</description>\n  </skill>\n  <skill>\n    <name>rbx-docs-search</name>\n    <source>Roblox</source>\n    <description>Look up Roblox documentation using the http_get tool \u2014 Engine API reference, creator guides (avatar, characters, Studio workflows), cloud API, and docs indexes. Use when you need accurate API details or how-to guidance.</description>\n  </skill>\n  <skill>\n    <name>rbx-instrument-analytics</name>\n    <source>Roblox</source>\n    <description>Audit a Roblox experience for analytics-instrumentation opportunities and add Economy, Funnel, and Custom events via AnalyticsService. Supports a read-only audit that proposes an event plan and an instrument mode that creates a centralized analytics module and edits scripts to log events at the right places.</description>\n  </skill>\n  <skill>\n    <name>rbx-luau-heap-profiling</name>\n    <source>Roblox</source>\n    <description>\"Profile Luau heap memory and debug memory leaks in Roblox experiences. Use when the user reports high or growing memory usage, RAM spikes, out-of-memory crashes, or memory that isn't freed after an action, or when they explicitly want to take heap snapshots, compare memory over time, trace retention paths, find leaking objects/tables/instances, or verify that cleanup code actually frees memory. Covers Luau-allocated memory only (tables, closures, threads, strings, instances referenced by Luau) \u2014 not CPU/framerate profiling (MicroProfiler) or engine/C++/asset memory. Requires Studio Play mode and plugin/MCP-level access.\"</description>\n  </skill>\n  <skill>\n    <name>rbx-perf-profiling</name>\n    <source>Roblox</source>\n    <description>Analyze fine-grained performance data provided by the MicroProfiler through the LibMP Luau module. Use it to investigate CPU and GPU bottlenecks, identify the causes of frame-time spikes, and analyze memory allocations by subsystem.</description>\n  </skill>\n  <skill>\n    <name>rbx-process-receipt-misuse</name>\n    <source>Roblox</source>\n    <description>\"Audit Developer Product receipt handling for ProcessReceipt misuse \u2014 out-of-experience (Store tab / EDP / Personalized Shop) purchase blockers, PromptProductPurchaseFinished used for fulfillment, PurchaseGranted returned before a grant succeeds, missing PurchaseId persistence, and overwritten callbacks. Use when the user asks to audit, review, or debug Developer Product purchases, receipt handling, ProcessReceipt code, or why out-of-experience purchases fail. Report-only: do not edit scripts unless the user explicitly asks for a fix.\"</description>\n  </skill>\n  <skill>\n    <name>rbx-scene-analysis</name>\n    <source>Roblox</source>\n    <description>Analyze and optimize Roblox scenes using SceneAnalysisService \u2014 rendering, memory, instance composition, unparented instances, and animation/audio assets. Use when investigating performance, memory, or leaks in a place.</description>\n  </skill>\n  <skill>\n    <name>rbx-unit-test</name>\n    <source>Roblox</source>\n    <description>Write, run, and debug Luau unit tests for ModuleScripts in Roblox Studio. Use this skill only when the user asks to add unit tests, improve test coverage, run existing tests, or debug failing tests. Do not use it for playtesting, gameplay QA, or validating visuals and UI feel.</description>\n  </skill>\n</available_skills>\n\nWhen to use skills:\n1. When the task involves a domain covered by an available skill\n2. When you need best practices or conventions before writing or reviewing code\n3. When you are unsure about the correct patterns or APIs for a specific area\n\nImportant:\n1. Invoke the skill BEFORE writing code or taking action, not after\n2. Follow the returned guidance closely in your response\n3. Do not mention a skill without actually invoking it first",
       "inputSchema": {
         "properties": {
           "skill_name": {
-            "description": "The name of the skill to retrieve. Options: rbx-create-skill, rbx-debug, rbx-device-simulator-lua, rbx-docs-search, rbx-perf-profiling, rbx-scene-analysis, rbx-unit-test",
+            "description": "The name of the skill to retrieve. Options: rbx-create-skill, rbx-debug, rbx-device-simulator-lua, rbx-docs-search, rbx-instrument-analytics, rbx-luau-heap-profiling, rbx-perf-profiling, rbx-process-receipt-misuse, rbx-scene-analysis, rbx-unit-test",
             "type": "string"
           },
           "studio_id": {
@@ -492,29 +464,6 @@
       }
     },
     {
-      "name": "list_plugin_guis",
-      "description": "List the plugin GUIs (widgets/windows) that exist in Studio. Returns each plugin GUI's pluginGuiId along with the owning plugin and data model. Use the pluginGuiId with the capture_plugin_gui tool to screenshot a specific plugin GUI. Hidden GUIs are listed too and cannot be captured, so expect some entries here to fail capture.",
-      "inputSchema": {
-        "properties": {
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          }
-        },
-        "required": [
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "List Plugin GUIs",
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      }
-    },
-    {
       "name": "script_read",
       "description": "Reads a script from the Roblox workspace. The output will be returned with line numbers in format: LINE_NUMBER\u2192LINE_CONTENT.\nWhen using this tool to gather information, ensure you gather the COMPLETE context to fulfill the user's request.\n\nUsage:\n- This tool reads the entire script by default to provide complete context\n- You can read multiple scripts in parallel for efficiency\n- If you need to find specific symbols across multiple scripts, use the grep search tool\n- Avoid re-reading the same script unless the script may have changed since the last read\n- For very large scripts (thousands of lines), consider using grep_search to locate specific functions or patterns first\n\nPath Format:\n- The path needs to be a full path, with no wildcard matching\n- Use dot notation like \"game.ServerScriptService.MyScript\"\n- Script must already exist (use `file_search` or `grep_search` to find the script path first)\n- Will only read existing scripts, never creates new ones\n",
       "inputSchema": {
@@ -524,7 +473,7 @@
             "type": "integer"
           },
           "should_read_entire_file": {
-            "description": "Whether to read the entire script. Defaults to true.",
+            "description": "Whether to read the entire script. Defaults to true. Must be set to false when providing a line range.",
             "type": "boolean"
           },
           "start_line_one_indexed": {
@@ -731,6 +680,50 @@
       }
     },
     {
+      "name": "generate_texture",
+      "description": "Re-textures an existing mesh using AI, given a text prompt describing the desired look. Requires a source MeshPart or Model. Replaces the source in place.",
+      "inputSchema": {
+        "properties": {
+          "hintImage": {
+            "description": "Optional reference image guiding the texture style. When provided, textPrompt may be an empty string.",
+            "type": "object"
+          },
+          "instance_path": {
+            "description": "Full Studio path to the source MeshPart or Model, e.g. \"Workspace.Model1.Part2\". Resolved directly \u2014 no live Studio selection required. If omitted, falls back to the current Studio selection (which must be exactly one MeshPart or Model).",
+            "type": "string"
+          },
+          "model": {
+            "description": "Generation mode. \"Fast\" trades quality for speed. \"Quality\" (default) is a research preview that only supports a single-MeshPart source and can vary in results.",
+            "enum": [
+              "Fast",
+              "Quality"
+            ],
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          },
+          "textPrompt": {
+            "description": "Text description of the desired texture/appearance, e.g. \"rusty metal\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "textPrompt",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Texture Generation",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "segment_mesh",
       "description": "Segments an existing mesh into named sub-parts using AI. Requires a source MeshPart or Model and up to 5 part names (e.g. [\"head\", \"body\", \"tail\"]). Returns a new Model containing the segmented parts, inserted as a sibling of the source.",
       "inputSchema": {
@@ -759,42 +752,6 @@
       },
       "annotations": {
         "title": "Mesh Segmentation",
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "idempotentHint": false,
-        "openWorldHint": false
-      }
-    },
-    {
-      "name": "generate_texture",
-      "description": "Re-textures an existing mesh using AI, given a text prompt describing the desired look. Requires a source MeshPart or Model. Replaces the source in place.",
-      "inputSchema": {
-        "properties": {
-          "hintImage": {
-            "description": "Optional reference image guiding the texture style. When provided, textPrompt may be an empty string.",
-            "type": "object"
-          },
-          "instance_path": {
-            "description": "Full Studio path to the source MeshPart or Model, e.g. \"Workspace.Model1.Part2\". Resolved directly \u2014 no live Studio selection required. If omitted, falls back to the current Studio selection (which must be exactly one MeshPart or Model).",
-            "type": "string"
-          },
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          },
-          "textPrompt": {
-            "description": "Text description of the desired texture/appearance, e.g. \"rusty metal\".",
-            "type": "string"
-          }
-        },
-        "required": [
-          "textPrompt",
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "Texture Generation",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -1158,44 +1115,6 @@
       }
     },
     {
-      "name": "execute_luau",
-      "description": "Executes Luau code in Roblox Studio. Returns the result of the executed code or an error message if the code fails to execute.\n\nCode runs on Studio's main thread; until it yields, Studio is frozen, the script can't be stopped, and the MCP connection may drop. For heavy work (bulk instance creation or edits, procedural or terrain generation, large loops), split it into logical chunks (e.g. per region, or batches of ~1000 items) and call `task.wait()` once per chunk, not per item. When creating many instances, build each chunk in a container outside the DataModel and parent it before that chunk's `task.wait()`. The cost of a .Parent write into the DataModel scales with the total size of the subtree being inserted (all descendants), so parenting one large container is itself a single unyielding operation that can freeze Studio or drop the connection, no matter how incrementally the container was built. Keeping each flushed subtree small (one chunk's worth) bounds the cost of every .Parent write. A loop that waits for state to change (e.g. `while not ready do`) must call `task.wait()` inside it.",
-      "inputSchema": {
-        "properties": {
-          "code": {
-            "description": "The Luau code to execute.",
-            "type": "string"
-          },
-          "datamodel_type": {
-            "description": "The target datamodel to operate on, the tool can only be performed in those datamodel types. call get_studio_state to get current available datamodel types. if the target datamodel is not available in current mode, consider using start_stop_play to switch to the desired mode and then use the tools. This is a required argument.",
-            "enum": [
-              "Edit",
-              "Client",
-              "Server"
-            ],
-            "type": "string"
-          },
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "datamodel_type",
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "Execute Luau",
-        "readOnlyHint": false,
-        "destructiveHint": true,
-        "idempotentHint": false,
-        "openWorldHint": true
-      }
-    },
-    {
       "name": "generate_mesh",
       "description": "Generates a textured mesh from a prompt using AI.",
       "inputSchema": {
@@ -1303,6 +1222,44 @@
         "destructiveHint": false,
         "idempotentHint": false,
         "openWorldHint": false
+      }
+    },
+    {
+      "name": "execute_luau",
+      "description": "Executes Luau code in Roblox Studio. Returns the result of the executed code or an error message if the code fails to execute.\n\nCode runs on Studio's main thread; until it yields, Studio is frozen, the script can't be stopped, and the MCP connection may drop. For heavy work (bulk instance creation or edits, procedural or terrain generation, large loops), split it into logical chunks (e.g. per region, or batches of ~1000 items) and call `task.wait()` once per chunk, not per item. When creating many instances, build each chunk in a container outside the DataModel and parent it before that chunk's `task.wait()`. The cost of a .Parent write into the DataModel scales with the total size of the subtree being inserted (all descendants), so parenting one large container is itself a single unyielding operation that can freeze Studio or drop the connection, no matter how incrementally the container was built. Keeping each flushed subtree small (one chunk's worth) bounds the cost of every .Parent write. A loop that waits for state to change (e.g. `while not ready do`) must call `task.wait()` inside it.",
+      "inputSchema": {
+        "properties": {
+          "code": {
+            "description": "The Luau code to execute.",
+            "type": "string"
+          },
+          "datamodel_type": {
+            "description": "The target datamodel to operate on, the tool can only be performed in those datamodel types. call get_studio_state to get current available datamodel types. if the target datamodel is not available in current mode, consider using start_stop_play to switch to the desired mode and then use the tools. This is a required argument.",
+            "enum": [
+              "Edit",
+              "Client",
+              "Server"
+            ],
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "datamodel_type",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Execute Luau",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
       }
     },
     {
