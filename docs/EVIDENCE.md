@@ -2363,3 +2363,27 @@ same relative path means different files under different roots.
 No test pins this: the behaviour is WSL-specific (a UNC cwd) and the CI matrix
 runs Windows and macOS without WSL, so a test would be skipped everywhere it
 could matter. The measurement is recorded here instead.
+
+### CI: three macOS legs cancelled for want of a runner (2026-10-20)
+
+A push of `c4d0ce5` came back `failure` with three macOS legs not green. The
+cause was not the code, and the distinction matters because a red run on a
+docstring change invites a hunt for a change that did not break anything.
+
+- The three legs were **cancelled**, not failed — no test assertion ran.
+- `runner_name` was **empty** for all three: they were never assigned a
+  runner. They sat queued for 15 minutes (18:19:28 → 18:34:29) and were
+  cancelled at the end of it.
+- The five legs that did run — all four Windows, and macOS 3.11 — passed.
+- `gh run rerun --failed` put them on fresh runners: **8/8 green**, with no
+  code change between the two runs.
+
+The change itself was checked rather than assumed innocent: the docstring
+edit adds UNC paths, so the module was compiled under `-W error` (a
+`\\<` sequence in a non-raw docstring would be an invalid escape, and a
+warning in 3.12 is one release away from an error). It compiles clean.
+
+**What to do next time:** a cancelled leg is not a failed leg. Read
+`conclusion` before reading the log — "cancelled" with an empty
+`runner_name` is GitHub failing to allocate a runner, and the fix is a
+re-run, not a bisect.
