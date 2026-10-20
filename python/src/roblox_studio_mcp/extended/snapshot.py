@@ -296,7 +296,11 @@ def parse_snapshot(
             )
         path, class_name, children = parts[0], parts[1], parts[2]
         # A three-field line is an older walk: the id was not read then, and
-        # an absent id is reported as absent rather than invented.
+        # an absent id is reported as absent rather than invented. The wire
+        # format carries an empty field; the parsed node carries **None**,
+        # because an empty string is a value to a consumer that tests
+        # `is not None` - and pairing two id-less nodes is a fabricated
+        # correspondence. None says "no id here" in every reading.
         debug_id = parts[3] if len(parts) == 4 else ""
         try:
             child_count = int(children)
@@ -311,7 +315,7 @@ def parse_snapshot(
                 "path": unescape(path),
                 "className": unescape(class_name),
                 "children": child_count,
-                "debugId": unescape(debug_id),
+                "debugId": unescape(debug_id) or None,
             }
         )
     return nodes, count, truncated, depth_limited
@@ -386,7 +390,10 @@ async def snapshot(
             "diff can pair on identity rather than on position. It is NOT the "
             "file's UniqueId - that read is capability-gated for every "
             "instance under execute_luau (measured), so it exists only in a "
-            "saved place file. This id is scoped to this Studio session."
+            "saved place file. This id is scoped to this Studio session. "
+            "debugId is null when the instance could not answer - null means "
+            "NO ID, so pair such a node on its path instead, and never pair "
+            "two id-less nodes with each other."
         ),
     }
 

@@ -391,7 +391,19 @@ class TestPerInstanceId(unittest.TestCase):
         # An older walk had three fields. An absent id is reported absent.
         studio = _FakeStudio(_walk_output(["game.Workspace\tWorkspace\t2"]))
         report = asyncio.run(snapshot(studio))
-        self.assertEqual(report["nodes"][0]["debugId"], "")
+        self.assertIsNone(report["nodes"][0]["debugId"])
+        self.assertEqual(report["nodes_with_id"], 0)
+        self.assertEqual(report["nodes_without_id"], 1)
+
+    def test_an_unreadable_id_is_null_and_not_an_empty_string(self):
+        # An empty string is a VALUE to a consumer that tests `is not None`,
+        # and pairing two id-less nodes is a fabricated correspondence. Null
+        # says "no id here" under every reading.
+        studio = _FakeStudio(
+            _walk_output(["game.Workspace\tWorkspace\t2\t"])
+        )
+        report = asyncio.run(snapshot(studio))
+        self.assertIsNone(report["nodes"][0]["debugId"])
         self.assertEqual(report["nodes_with_id"], 0)
         self.assertEqual(report["nodes_without_id"], 1)
 
