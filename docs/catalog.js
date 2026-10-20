@@ -80,6 +80,10 @@ window.CATALOG = [
         d: "Studio instances and places. action=list enumerates attached Studios; action=places lists local place candidates with their place ids; action=make_place creates a throwaway place; action=launch opens one (a Studio only joins the mesh with a place open, so you choose what to launch); action=stop TERMINATES A PROCESS and is irreversible. It requires studio_id and resolves the PID via the Studio log join before terminating.",
         req: ["action"], opt: ["studio_id", "place_path", "dry_run"],
         ret: "Per action: instance rows, place candidates, a created path, or a launch/stop result with resolved_by." },
+      { n: "extended_tree_snapshot", o: "ext",
+        d: "The instance tree under a path, BOUNDED: every node with its class name and child count, plus flags saying what was cut (node cap, depth cap). A snapshot, not a diff - the comparison is the consumer's, because this server keeps no state. A reply that would not fit the execute_luau return channel is REFUSED, not returned half-read: that channel truncates with no error, so a truncated tree would look complete. Use search_game_tree to find a path first.",
+        req: [], opt: ["path (default 'game')", "max_depth (default 3)", "max_nodes (default 200)", "studio_id"],
+        ret: "{root, nodes: [{path, className, children}], count, truncated, depth_limited, max_depth, max_nodes, bytes}." },
     ],
   },
   {

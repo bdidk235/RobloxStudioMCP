@@ -324,6 +324,7 @@ with the one to reach for first.
 | `extended_watch_output` | Console lines since your last poll, filtered and capped. Use instead of `get_console_output` in a loop. |
 | `extended_studio_identity` | This Studio's `game:GetDebugId()`. Session-scoped — see the traps below. |
 | `extended_list_studios` | Every attached Studio with its id and debug id paired. |
+| `extended_tree_snapshot` | The instance tree under a path, bounded: nodes, class names, child counts, and flags for what was cut. A snapshot, not a diff. |
 
 ### Run and wait
 

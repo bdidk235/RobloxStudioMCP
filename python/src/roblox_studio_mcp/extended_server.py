@@ -846,8 +846,78 @@ _EXTENDED_TOOLS.extend(
                 "required": ["file_path"],
             },
         ),
+        Tool(
+            name="extended_tree_snapshot",
+            description=(
+                "Read the instance tree under a path, bounded: nodes with "
+                "className and child counts, plus truncated flags. A snapshot, "
+                "not a diff - use search_game_tree to find a path."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "default": "game",
+                        "description": (
+                            "DataModel dot-path to walk from (e.g. "
+                            "game.Workspace). 'game' itself is the root. "
+                            "Identifier-only, dot-separated Luau names - the "
+                            "path is spliced into code, so a name with a "
+                            "space cannot be addressed; use search_game_tree "
+                            "to find one."
+                        ),
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "default": 3,
+                        "description": (
+                            "Levels below the root to include. 1 = direct "
+                            "children only; 10 max."
+                        ),
+                    },
+                    "max_nodes": {
+                        "type": "integer",
+                        "default": 200,
+                        "description": (
+                            "Total nodes returned, the root included. 1000 "
+                            "max; past that the walk is cut and says so."
+                        ),
+                    },
+                    "studio_id": {
+                        "type": "string",
+                        "description": _STUDIO_ID_DESCRIPTION,
+                    },
+                },
+            },
+        ),
     ]
 )
+
+
+async def _call_tree_snapshot(
+    client: MCPClient, arguments: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Read the live instance tree, bounded. See `extended/snapshot.py`.
+
+    A snapshot and not a diff: the comparison belongs to whoever holds the
+    previous snapshot, and this server keeps no state. The report says what
+    was left out, because a snapshot that silently dropped the bottom of a
+    tree reads as a complete tree.
+    """
+    from .extended.snapshot import DEFAULT_DEPTH, DEFAULT_NODES, snapshot
+
+    studio = _RobloxStudio(client=client, studio_id=arguments.get("studio_id"))
+    report = await snapshot(
+        studio,
+        path=arguments.get("path") or "game",
+        max_depth=arguments.get("max_depth", DEFAULT_DEPTH),
+        max_nodes=arguments.get("max_nodes", DEFAULT_NODES),
+    )
+    return {
+        "content": [{"type": "text", "text": json.dumps(report, indent=2)}],
+        "isError": False, "is_error": False,
+    }
 
 
 async def _call_script_search_read(
@@ -1563,6 +1633,7 @@ _EXTENDED_HANDLERS = {
     "extended_manage_instance": _call_manage_instance,
     "extended_wait_for": _call_wait_for,
     "extended_skill": _call_skill,
+    "extended_tree_snapshot": _call_tree_snapshot,
     "extended_breakpoints": _call_breakpoints,
     "extended_clear_breakpoints": _call_clear_breakpoints,
 }
@@ -1590,6 +1661,7 @@ _READONLY_TOOLS = frozenset({
     "extended_list_studios",
     "extended_studio_identity",
     "extended_skill",
+    "extended_tree_snapshot",
 })
 # `extended_capture` is deliberately absent: with a caller-supplied `save_path`
 # it truncates a host file, so marking it read-only would let clients run it

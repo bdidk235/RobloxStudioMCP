@@ -2231,3 +2231,52 @@ precisely because the list is paid on every call of every session. And the
 `generate_texture` case has a local consequence: it is **deny-listed in this
 project's operator config**, so a disabled tool gained capability while
 disabled — the deny-list's rationale deserves a look, not a silent keep.
+
+### `extended_tree_snapshot`: built, and verified against a live Studio (2026-10-20)
+
+A peer session needed a bounded live-tree read. The maintainer's ruling closed
+the competing delete-tool candidate (`execute_luau` is the intended way — see
+the TODO ruling), which left the slot uncontested, and the tool was built.
+
+**What it is.** `extended_tree_snapshot` reads the instance tree under a path
+and returns nodes with their class name and child count, plus flags saying
+what was cut. **Not a diff** — the previous snapshot and the comparison belong
+to the consumer's store, because this server keeps no state and should not
+grow any. The seam is one-way on purpose.
+
+**Measured live, on the user's scoped Studio**, through the Windows Python
+driving the Studio proxy (read-only: the walk only reads the tree):
+
+| case | result |
+|---|---|
+| `game.Workspace`, depth 3, 200 nodes | 9,596 chars, 200 nodes, `truncated=true`, `depth_limited=true` |
+| `game`, depth 10, 1,000 nodes | 70,171 chars, 1,000 nodes, `truncated=true`, `depth_limited=false` |
+| `game.NoSuchThing` | `ERR NOT_FOUND` → `NOT_FOUND` |
+| `game`, depth 10, 2,000 nodes (over the cap) | 99,691 chars, **trailer missing** → `SIZE_LIMIT` |
+
+The last row is the negative control, and it is the one that matters: the
+`execute_luau` return channel truncates **with no error**, so a snapshot that
+lost its tail would have been handed back as a complete tree. The walk ends
+with a trailer line, and a missing trailer is a refusal. Measured, not
+assumed: the tool refuses rather than returning half a tree.
+
+**Two things the live run corrected**, which the unit tests could not have:
+
+1. **The truncation point is not the number the capture path quotes.** The
+   repository's recorded figure is 100,015 characters (measured 2026-09-30 in
+   `extended/capture.py`); the live reply cut at **99,691** characters of
+   returned text. The limit evidently applies to the response payload rather
+   than the text alone. The guard does not depend on the number - it detects
+   the missing trailer - so it is correct either way, but the quoted figure is
+   a payload limit, not a text limit.
+2. **Real instance names contain spaces.** The tree includes a service called
+   `Run Service`, so the *output* paths carry names an *input* path cannot
+   address: the input path is spliced into generated Luau and is therefore
+   identifier-only (`writer.validate_game_tree_path`, regex-only by design —
+   it exists after a PoC-measured injection). The result says so, because a
+   consumer that reads `game.Run Service` out of a snapshot and feeds it back
+   would otherwise get `INVALID_ARGUMENT` with no explanation.
+
+**The cost.** 168 characters of description; the total went from 2,916 to
+**3,084 of 3,200**, leaving **116** — less than a whole tool, so the next
+addition has to be funded by trimming. Nothing was trimmed to fit this one.
