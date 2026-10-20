@@ -2428,3 +2428,15 @@ asserts that silence times out, rather than passing because the setup got
 roomier. Pinned by a cheap guard
 (`test_the_connect_is_not_governed_by_the_call_deadline`), which reaches the
 assertion only if the connect completed and the call deadline was restored.
+
+**It recurred, so it is a property of the account rather than a one-off.**
+The next push (`091d35a`) came back with two macOS legs cancelled the same
+way — again `runner_name` empty, again the legs that ran were green — and
+`gh run rerun --failed` again put them on fresh runners with 8/8 green and no
+code change in between. Two pushes, two cancellations, both macOS-only, both
+resolved by a re-run. Worth knowing for two reasons: a red run on this repo
+may mean "GitHub had no macOS runner", not "the code is broken", and the
+macOS half of the matrix is the unreliable half on this account. The four
+Windows legs and the macOS legs that did get a runner have passed every time.
+
+**The one genuine failure in that stretch is fixed separately** — see below.
