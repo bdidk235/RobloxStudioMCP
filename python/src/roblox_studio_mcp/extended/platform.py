@@ -545,8 +545,14 @@ def _process_rows_native() -> Optional[List[Dict[str, Any]]]:
         ]
 
     try:
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        ntdll = ctypes.WinDLL("ntdll")
+        # `WinDLL` is Windows-only in the checker's stubs, so it is reached
+        # through getattr - the same pattern as the socket query below. The
+        # `is_windows()` gate above guarantees it exists here.
+        windll = getattr(ctypes, "WinDLL", None)
+        if windll is None:
+            return None
+        kernel32 = windll("kernel32", use_last_error=True)
+        ntdll = windll("ntdll")
     except Exception:  # noqa: BLE001 - no kernel32 means no native path
         return None
 
