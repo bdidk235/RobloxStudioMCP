@@ -480,15 +480,216 @@ def parse_ps_row(line: str) -> Optional[Dict[str, Any]]:
     return {"pid": int(pid), "created": created, "command_line": command}
 
 
+def _process_rows_native() -> Optional[List[Dict[str, Any]]]:
+    """The Studio processes, read without spawning anything.
+
+    A PowerShell spawn costs about a second here, and the process list is read
+    on every launch poll, every stop resolution and every survey. Toolhelp
+    enumerates the processes in milliseconds; the command line - which is
+    where the role and the place file come from - is read from each
+    process's PEB.
+
+    Returns ``None`` when the native read cannot answer **completely**. A
+    Studio whose command line could not be read would arrive with no role and
+    no place, which is a wrong answer rather than a missing one, so the
+    caller falls back to the query that always answers.
+
+    The shape is the shape the query produced, so nothing downstream changes:
+    ``created`` is still the ``/Date(ms)/`` form.
+    """
+    if not is_windows():
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except Exception:  # noqa: BLE001 - no ctypes means no native path
+        return None
+
+    TH32CS_SNAPPROCESS = 0x00000002
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    PROCESS_VM_READ = 0x0010
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    class PROCESS_BASIC_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("ExitStatus", ctypes.c_void_p),
+            ("PebBaseAddress", ctypes.c_void_p),
+            ("AffinityMask", ctypes.c_void_p),
+            ("BasePriority", ctypes.c_void_p),
+            ("UniqueProcessId", ctypes.c_void_p),
+            ("InheritedFromUniqueProcessId", ctypes.c_void_p),
+        ]
+
+    class UNICODE_STRING(ctypes.Structure):
+        _fields_ = [
+            ("Length", ctypes.c_ushort),
+            ("MaximumLength", ctypes.c_ushort),
+            # An address, not a string: declaring it as a char pointer makes
+            # ctypes dereference it as one, and the read is of another
+            # process's memory.
+            ("Buffer", ctypes.c_void_p),
+        ]
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        ntdll = ctypes.WinDLL("ntdll")
+    except Exception:  # noqa: BLE001 - no kernel32 means no native path
+        return None
+
+    # Every prototype declared. A guessed one does not fail: it returns
+    # success and reads back a plausible wrong answer.
+    kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.Process32FirstW.restype = wintypes.BOOL
+    kernel32.Process32FirstW.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(PROCESSENTRY32W)
+    ]
+    kernel32.Process32NextW.restype = wintypes.BOOL
+    kernel32.Process32NextW.argtypes = [
+        ctypes.c_void_p, ctypes.POINTER(PROCESSENTRY32W)
+    ]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.ReadProcessMemory.restype = wintypes.BOOL
+    kernel32.ReadProcessMemory.argtypes = [
+        wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    kernel32.GetProcessTimes.restype = wintypes.BOOL
+    kernel32.GetProcessTimes.argtypes = [
+        wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+    ]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    ntdll.NtQueryInformationProcess.restype = ctypes.c_long
+    ntdll.NtQueryInformationProcess.argtypes = [
+        wintypes.HANDLE, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong,
+        ctypes.POINTER(ctypes.c_ulong),
+    ]
+
+    is64 = ctypes.sizeof(ctypes.c_void_p) == 8
+    # PEB.ProcessParameters, and RTL_USER_PROCESS_PARAMETERS.CommandLine.
+    peb_params_offset = 0x20 if is64 else 0x10
+    params_command_offset = 0x70 if is64 else 0x40
+
+    def read_memory(handle: Any, address: int, size: int) -> Optional[bytes]:
+        buffer = ctypes.create_string_buffer(size)
+        read = ctypes.c_size_t(0)
+        ok = kernel32.ReadProcessMemory(
+            handle, ctypes.c_void_p(address), buffer, size, ctypes.byref(read)
+        )
+        if not ok or read.value != size:
+            return None
+        return buffer.raw[:size]
+
+    def command_line(handle: Any) -> Optional[str]:
+        info = PROCESS_BASIC_INFORMATION()
+        status = ntdll.NtQueryInformationProcess(
+            handle, 0, ctypes.byref(info), ctypes.sizeof(info), None
+        )
+        if status != 0 or not info.PebBaseAddress:
+            return None
+        raw = read_memory(handle, info.PebBaseAddress + peb_params_offset,
+                          ctypes.sizeof(ctypes.c_void_p))
+        if not raw:
+            return None
+        params = int.from_bytes(raw, "little")
+        if not params:
+            return None
+        blob = read_memory(handle, params + params_command_offset,
+                           ctypes.sizeof(UNICODE_STRING))
+        if not blob:
+            return None
+        text = UNICODE_STRING.from_buffer_copy(blob)
+        if not text.Length or not text.Buffer:
+            return None
+        data = read_memory(handle, text.Buffer, text.Length)
+        if not data:
+            return None
+        return data.decode("utf-16-le", "replace")
+
+    def created_at(handle: Any) -> Optional[int]:
+        created, exited, kernel, user = (wintypes.FILETIME() for _ in range(4))
+        if not kernel32.GetProcessTimes(
+            handle, ctypes.byref(created), ctypes.byref(exited),
+            ctypes.byref(kernel), ctypes.byref(user),
+        ):
+            return None
+        ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
+        return int((ticks / 10_000_000) - 11644473600)
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if not snapshot or snapshot == INVALID_HANDLE_VALUE:
+        return None
+    rows: List[Dict[str, Any]] = []
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+            return []
+        while True:
+            if entry.szExeFile.lower() == STUDIO_BINARY_WINDOWS.lower():
+                handle = kernel32.OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+                    False, entry.th32ProcessID,
+                )
+                if not handle:
+                    return None
+                try:
+                    line = command_line(handle)
+                    born = created_at(handle)
+                finally:
+                    kernel32.CloseHandle(handle)
+                if line is None or born is None:
+                    # A Studio we cannot read is a Studio with no role and no
+                    # place. That is a wrong answer, so the caller is told to
+                    # use the query instead.
+                    return None
+                rows.append({
+                    "pid": int(entry.th32ProcessID),
+                    "created": "/Date(%d)/" % int(born * 1000),
+                    "command_line": line,
+                })
+            if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                break
+    except Exception:  # noqa: BLE001 - a failed native read is no native read
+        return None
+    finally:
+        kernel32.CloseHandle(snapshot)
+    return rows
+
+
 def process_rows() -> List[Dict[str, Any]]:
     """Every running Studio instance, normalised.
 
-    Windows: ``Get-CimInstance Win32_Process`` filtered to the binary name.
+    Windows: the kernel's own process table, read with ``CreateToolhelp32Snapshot``
+    and the command line taken from each process's PEB. The shell query is the
+    fallback, and it is kept because the native read can be incomplete: a
+    Studio whose command line cannot be read would arrive with no role and no
+    place, which is a wrong answer rather than a missing one.
     macOS: ``ps -axo``, which needs no privilege and starts far faster than
-    PowerShell does - worth knowing, because on Windows the equivalent query costs
-    **1.9 s per spawn**, measured, and that dominated a resolve.
+    PowerShell does.
     """
     if is_windows():
+        native = _process_rows_native()
+        if native is not None:
+            return native
         data = _powershell_json(
             "Get-CimInstance Win32_Process -Filter \"Name='%s'\" | "
             "Select-Object ProcessId,CreationDate,CommandLine | ConvertTo-Json -Compress"

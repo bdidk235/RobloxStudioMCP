@@ -2547,3 +2547,135 @@ reader who does not know the convention will conclude from it.** An empty
 string, a zero, and an empty collection are all values; only null and a
 missing key read as absence. The cost of the wrong choice is not a crash -
 it is a wrong answer that reports itself as complete.
+
+## The process list cost a second per call, and most of it was a duplicate (2026-10-22)
+
+Asked: why does the extended studio list take so long. Measured, same machine,
+same moment, medians of three:
+
+| step | cost |
+| --- | --- |
+| `Get-CimInstance Win32_Process` (one PowerShell spawn) | **1.093 s** |
+| `_mesh_holders_native` (the ctypes socket query) | 0.094 s |
+| `attached_pids()` - ctypes **plus a second process enumeration** | 1.094 s |
+| `attached_pids(studio_pids=...)` - ctypes only | 0.079 s |
+| `list_studio_processes(attachment=True)` | **2.109 s** |
+| `list_studio_processes(attachment=False)` | 0.953 s |
+
+**Two costs, and the bigger one was duplicated work.** The attachment lookup
+intersects the socket holders with the Studio processes, and it was computing
+the second set with a *second, uncached* PowerShell spawn - the very set the
+caller already had. `platform.attached_pids` already took a `studio_pids`
+argument for exactly this, documented and unused. Passing it removed a whole
+spawn: the warm-cache case went from 1.1 s to 0.08 s.
+
+**The ctypes call was not the suspect.** The user's hypothesis was that the
+ctypes socket query was slow; it is 0.094 s against 1.093 s for the process
+enumeration, and it is not on the registry list's path at all. It *is* on the
+launch path, where the enumeration is read twice - once with the attachment
+lookup and once per poll.
+
+**And the enumeration itself did not need PowerShell.** `CreateToolhelp32Snapshot`
+enumerates the processes in 0.016 s, and the command line - where the role and
+the place file come from - can be read from each process's PEB
+(`NtQueryInformationProcess` for the PEB, then `ProcessParameters` and its
+`CommandLine`). Measured against the query it replaces, same two pids, same
+command lines, creation times matching to the millisecond:
+
+| | median |
+| --- | --- |
+| the native read | **0.015 s** |
+| `Get-CimInstance` | 1.062 s |
+
+**68x, with the same answer.** The end-to-end effect on the tool, measured
+through the layer with the change reverted and restored - the negative control,
+not an inference:
+
+| `extended_manage_instance(action="list")` | before | after |
+| --- | --- | --- |
+| first call | 2.827 s | 1.275 s |
+| second | 1.983 s | 0.084 s |
+| third | 2.751 s | 0.080 s |
+
+`extended_list_studios(refresh=true)` was 0.225 s in **both** runs - it does
+not read the process list, so it is the control that shows the change is
+specific to the path that was slow.
+
+**The native read declines rather than guessing.** A Studio whose command
+line cannot be read would arrive with no role and no place, which is a wrong
+answer rather than a missing one, so `_process_rows_native` returns ``None``
+and the query answers instead. The native path is used only when it produced
+a complete answer.
+
+**Two traps, both paid for in a crash and a wrong answer.** `PROCESSENTRY32W`
+carries a *wide* `szExeFile`; declaring it as bytes matches nothing and looks
+like "no Studio is running". And `UNICODE_STRING.Buffer` is an **address**:
+declaring it as a character pointer makes ctypes dereference it as a string,
+and the read of another process's memory killed the interpreter. Both are the
+same lesson the socket query records: declare the prototype, or the call
+returns something plausible.
+
+**What was rejected, and why.** A persistent PowerShell host was measured at
+0.984 s per query - the CIM query is the cost, not the startup, so keeping the
+host alive buys nothing. `tasklist` is 0.343 s but carries no command line.
+`pwsh` is not installed here. `pywin32` is available in the Windows python,
+but it would add a dependency to a package that has none.
+
+## Two Studios on one place, and the launch answered with the wrong one (2026-10-22)
+
+The open item was "route-1 PID tie: name-based check can't separate
+same-place Studios; tie the newcomer via mesh PID mapping or console token, or
+downgrade `verified`". It needed a live multi-Studio setup, so one was built:
+a throwaway place, launched twice.
+
+**The first launch was right.** `place_path` -> `roblox-studio-_91ojr5d.rbxl`,
+pid 9484, `studio_id 2b495bf0...`, `verified: true`.
+
+**The second launch named the first Studio.** The same place, a new process
+(pid 22116), and the answer was:
+
+```
+studio_id: 2b495bf0-be62-4a66-b713-2461dd97b0db   <- the FIRST Studio's id
+pid: 22116                                          <- the process it started
+verified: (absent)
+```
+
+The mesh held two rows with the **same name** and different ids
+(`2b495bf0...`, `a4cfdc9b...`), so the launch reported a Studio it had not
+started. Every later call on that id would have gone to the wrong Studio.
+
+**The mechanism, read off the code.** The launch polls for the new *process*
+every 2 s while the Studio takes ~10 s to open the file and attach. On the
+first poll the new Studio has no mesh row yet, so the before/after diff
+finds no arrival, and the code fell through to the **name** route - which
+compared the launched process's own log identity against the mesh names. The
+pre-existing Studio had the same place open, so its name matched, and it was
+credited. The route that could not go wrong (the diff) was never reached,
+because the retry loop only runs when the identification *fails*.
+
+**The fix, in two parts.** A row that was already attached before the launch
+cannot be the newcomer, so the name route now excludes those rows - which
+turns the misattribution into a refusal, and the refusal into a retry, and the
+retry into the diff answering correctly.
+
+**There is no mesh PID mapping to tie with.** The TODO offered "mesh PID
+mapping" as the first option, and it does not exist: a mesh row is
+`{id, name}` and a Studio's log states
+`{pid, place_path, session_guid, started}`. The two ids are unrelated -
+neither is derived from the other, checked against md5/sha1/sha256 of the
+session guid - and no log line records a mesh connection. So the tie has to
+be at the **process** level: a place name identifies a process only while no
+other live process has that place open.
+
+**Which is what `verified` now means.** A credit is verified when every other
+live Studio claiming the same place name is already accounted for by a row
+that was attached before the launch - so it cannot have produced the new row.
+A claimant that *started during* the launch window owns no pre-existing row
+and could have produced it, so that case is provisional, with the reason
+carried in the answer (`provisional_because`). The ordinary two-Studio case -
+the other Studio attached before the launch - stays verified, because the
+count lines up: two claimants, two pre-existing rows.
+
+**The limit that remains, stated rather than implied:** a mesh row with no
+live process behind it cannot be detected. In practice every mesh row has
+one - the mesh is local - so the check sees it.

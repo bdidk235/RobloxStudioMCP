@@ -287,16 +287,6 @@ class TheMeshDiffIsTheFirstRoute(unittest.IsolatedAsyncioTestCase):
 
 
 class RouteOneVerifiesThePid(unittest.IsolatedAsyncioTestCase):
-    """A lone mesh arrival is not enough to credit it to the launched pid.
-
-    The diff answers "which mesh id is new", not "which process is mine". A
-    pre-existing Studio that attaches between the snapshot and the spawn is
-    also exactly one arrival, and crediting it misattributes the launch - the
-    same wrong-Studio failure the stop path was rewritten to prevent. So the
-    launched pid's own log identity confirms the pairing, a mismatch abstains,
-    and an unreadable identity is reported as `verified: False` rather than
-    presented as certain.
-    """
 
     async def _run(self, rows, before_ids, identity=None, matching=(), **kw):
         accepted = set(matching)
@@ -355,15 +345,22 @@ class RouteOneVerifiesThePid(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("verified", got)
 
     async def test_same_place_foreign_arrival_is_credited_on_name_match(self):
-        """Pins the honest limit of the route-1 check: it is name-based.
+        """The limit that remains: a row with no process behind it.
 
         A foreign Studio with the SAME place open attaches first; ours has no
         mesh entry yet. The real `name_matches_identity` (not the mock the
         other tests use) compares basenames, so the foreign row matches our
         pid's log and comes back `verified: True` - although nothing ties the
-        row to pid 777. This test asserts that outcome on purpose: a future
-        PID-tying fix must change this test deliberately, and until then the
-        suite must not imply the check is stronger than a name comparison.
+        row to pid 777.
+
+        What changed is the *verdict when the foreign process is visible*: a
+        mesh row always has a live process behind it, and a process that
+        claims the same place name is a process that could have produced that
+        row. See `ASharedNameIsProvisional` below, which is that case.
+
+        So this test now pins the remaining limit rather than the old
+        behaviour: a row with **no** visible process is credited, because
+        there is nothing to check it against.
         """
         rows = _rows(("old", "Mine.rbxl"), ("stranger", "Mine.rbxl"))
         real_matcher = inst.logid.name_matches_identity
@@ -386,6 +383,84 @@ class RouteOneVerifiesThePid(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(got["studio_id"], "stranger", got)
         self.assertTrue(got["verified"], got)
         self.assertEqual(real_matcher, inst.logid.name_matches_identity)
+
+
+class ASharedNameIsProvisional(unittest.IsolatedAsyncioTestCase):
+    """A place name identifies a process only while nothing else claims it.
+
+    A mesh row carries no pid and a Studio's log carries no mesh id, so the
+    place name is the only tie between a row and a process. When another live
+    Studio has the same place open, the name no longer identifies one
+    process - and the credit says so instead of claiming certainty.
+    """
+
+    async def _run(self, rows, before_ids, identities, pid=777, **kw):
+        async def token(client, studio_id, candidates):
+            raise AssertionError("no console write should be needed")
+
+        with mock.patch.object(
+            inst.logid,
+            "live_identities",
+            lambda pids, started=None: identities,
+        ), mock.patch.object(
+            inst, "_resolve_by_console_token", token
+        ):
+            return await inst._identify_launched(
+                _Studio(rows), pid, "Mine.rbxl", before_ids=before_ids, **kw
+            )
+
+    async def test_a_claimant_that_started_during_the_launch_downgrades_it(self):
+        # The foreign Studio attached during this launch, so it owns no
+        # pre-existing row and could have produced the new one. Crediting the
+        # row as certain would be the wrong-Studio failure the stop path was
+        # rewritten to prevent, so the answer is provisional and says why.
+        rows = _rows(("old", "Mine.rbxl"), ("stranger", "Mine.rbxl"))
+        identities = {
+            777: {"place_path": "Mine.rbxl", "task": "EditFile"},
+            888: {"place_path": "Mine.rbxl", "task": "EditFile"},
+        }
+        got = await self._run(
+            rows, {"old"}, identities, live_pids=[777, 888], before_pids={777}
+        )
+        self.assertEqual(got["studio_id"], "stranger")
+        self.assertFalse(got["verified"], got)
+        self.assertIn("888", got["provisional_because"])
+
+    async def test_a_claimant_that_was_already_attached_keeps_the_credit(self):
+        # The ordinary two-Studio case: the other Studio was attached before
+        # the launch, so it already owns a row and cannot have produced the
+        # new one. The name still points at this process alone.
+        rows = _rows(("old", "Mine.rbxl"), ("new", "Mine.rbxl"))
+        identities = {
+            777: {"place_path": "Mine.rbxl", "task": "EditFile"},
+            888: {"place_path": "Mine.rbxl", "task": "EditFile"},
+        }
+        got = await self._run(
+            rows, {"old"}, identities, live_pids=[777, 888], before_pids={777, 888}
+        )
+        self.assertEqual(got["studio_id"], "new")
+        self.assertTrue(got["verified"], got)
+
+    async def test_a_row_attached_before_the_launch_is_never_credited(self):
+        # Measured: launching a second Studio on a place another Studio
+        # already had open answered with the *first* Studio's id, so every
+        # later call on that id went to the wrong one.
+        rows = _rows(("old", "Mine.rbxl"))
+        identities = {777: {"place_path": "Mine.rbxl", "task": "EditFile"}}
+        got = await self._run(
+            rows, {"old"}, identities, live_pids=[777], before_pids={777},
+            allow_console_write=False,
+        )
+        self.assertIsNone(got["studio_id"], got)
+        self.assertEqual(got["console_writes"], 0)
+
+    async def test_a_name_nobody_else_claims_is_verified(self):
+        rows = _rows(("new", "Mine.rbxl"))
+        identities = {777: {"place_path": "Mine.rbxl", "task": "EditFile"}}
+        got = await self._run(rows, set(), identities, live_pids=[777],
+                              before_pids={777})
+        self.assertEqual(got["studio_id"], "new")
+        self.assertTrue(got["verified"], got)
 
 
 class TheChainOrderIsTheContract(unittest.IsolatedAsyncioTestCase):

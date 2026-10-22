@@ -57,7 +57,7 @@ import subprocess
 import tempfile
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 from ..roblox import RobloxStudio
 from . import logid, platform
@@ -144,7 +144,13 @@ def list_studio_processes(
     ``attached`` field is informational; nothing joins on it.
     """
     rows = _process_rows(max_age)
-    attached = set(attached_studio_pids()) if with_attachment else set()
+    # The pids are already in hand, so the attachment lookup is given them:
+    # without that it enumerates the processes a second time, and that second
+    # spawn is uncached - measured at 0.98s against 0.08s for the socket query
+    # itself. So the attachment flag was costing a second PowerShell spawn per
+    # call, on top of the first one.
+    known = [int(row.get("pid", 0) or 0) for row in rows]
+    attached = set(attached_studio_pids(known)) if with_attachment else set()
 
     out: List[Dict[str, Any]] = []
     for row in rows:
@@ -165,13 +171,18 @@ def list_studio_processes(
     return out
 
 
-def attached_studio_pids() -> List[int]:
+def attached_studio_pids(studio_pids: Optional[List[int]] = None) -> List[int]:
     """PIDs of Studios holding an established connection to the mesh.
 
     ``StudioMCP.exe`` proxies also hold connections, and the listener is itself
     a connection holder, so results are filtered to Studio processes.
+
+    ``studio_pids`` are the Studio processes the caller already knows about.
+    Passing them skips the process enumeration inside the lookup, which is a
+    second PowerShell spawn (measured: 0.98s to enumerate, 0.08s for the socket
+    query that answers the question).
     """
-    return platform.attached_pids()
+    return platform.attached_pids(studio_pids=studio_pids)
 
 
 def role_from_command_line(cmd: str) -> str:
@@ -759,6 +770,8 @@ async def launch_instance(
                     target_pid,
                     os.path.basename(resolved),
                     before_ids=before_ids,
+                    live_pids=sorted(before | new_pids),
+                    before_pids=set(before),
                     allow_console_write=allow_console_write,
                 )
                 if identified.get("studio_id"):
@@ -777,6 +790,14 @@ async def launch_instance(
                         answer["console_writes"] = identified["console_writes"]
                     if "verified" in identified:
                         answer["verified"] = identified["verified"]
+                    if not answer.get("verified"):
+                        # An id that is not verified is still the best
+                        # candidate, and the caller has to know that, with
+                        # the reason attached.
+                        answer["provisional_because"] = (
+                            identified.get("provisional_because")
+                            or identified.get("how")
+                        )
                     return answer
                 # A new process existing is NOT the same as its Studio being on the
                 # mesh. The poll below spots the process host-side within a second
@@ -867,6 +888,8 @@ async def _identify_launched(
     expected_place: str,
     *,
     before_ids: Optional[Set[str]] = None,
+    live_pids: Optional[Iterable[int]] = None,
+    before_pids: Optional[Set[int]] = None,
     allow_console_write: bool = False,
 ) -> Dict[str, Any]:
     """Find the mesh entry for a process we just started.
@@ -895,6 +918,11 @@ async def _identify_launched(
     ``before_ids`` is ``None`` - not ``set()`` - when the mesh could not be read
     before the spawn, because an empty set would make every attached Studio look
     new. See :func:`_mesh_ids`.
+
+    ``verified`` means the place name identifies *this* process. A mesh row
+    carries no pid and a log carries no mesh id (measured), so the
+    name is the only tie available, and it is a tie only while no other live
+    process has the same place open.
     """
     studios = await client.list_studios()
     rows = studios if isinstance(studios, list) else getattr(studios, "studios", [])
@@ -906,6 +934,66 @@ async def _identify_launched(
     def _name(row: Any) -> Optional[str]:
         return row.get("name") if isinstance(row, dict) else getattr(row, "name", None)
 
+    all_pids = sorted(set(int(p) for p in (live_pids or ())) | {int(pid)})
+    identities = logid.live_identities(all_pids)
+    our_identity = identities.get(int(pid))
+
+    # Other live processes with the same place open, and the rows they may
+    # already own. A process whose log could not be read counts as a claimant:
+    # the count is a lower bound, and that is the safe direction.
+    claimants = sorted(
+        other for other, ident in identities.items()
+        if other != int(pid) and logid.name_matches_identity(expected_place, ident)
+    )
+    unreadable = sorted(other for other in all_pids if other not in identities)
+    pre_rows_named = 0
+    if before_ids is not None:
+        pre_rows_named = sum(
+            1 for row in rows
+            if _sid(row) in before_ids and _name(row) == expected_place
+        )
+
+    def _proven() -> bool:
+        """Whether a new row with this name must be the launched process's.
+
+        True when every other claimant is already accounted for by a row that
+        was attached before the launch: that claimant cannot have produced the
+        new row, so the name points at this process alone. A claimant that
+        started *during* the launch window owns no pre-existing row, so it
+        could have produced the new row - and the name does not say which.
+        """
+        if before_ids is None or unreadable:
+            return False
+        known = before_pids or set()
+        if any(claimant not in known for claimant in claimants):
+            return False
+        return len(claimants) <= pre_rows_named
+
+    def _shared_note() -> str:
+        """Why a credit is provisional, in one sentence."""
+        if before_ids is None:
+            return (
+                "the mesh could not be read before the launch, so a Studio "
+                "already on this place cannot be excluded"
+            )
+        if unreadable:
+            return "the log of %d live process(es) could not be read" % len(unreadable)
+        fresh = [c for c in claimants if c not in (before_pids or set())]
+        if fresh:
+            return (
+                "another Studio with the same place open (pid %s) started "
+                "during this launch, so the new row could be its" % (
+                    ", ".join(str(c) for c in fresh),
+                )
+            )
+        return (
+            "the place name %r is also claimed by %d other live Studio(s) "
+            "(pid %s)" % (
+                expected_place, len(claimants),
+                ", ".join(str(c) for c in claimants),
+            )
+        )
+
     # Route 1: the diff. Skipped entirely when there is no snapshot.
     # A single arrival is credited ONLY against the pid this launch actually
     # started. The diff alone cannot do that: it answers "which mesh id is
@@ -915,20 +1003,15 @@ async def _identify_launched(
     # pairing; with no readable identity the row is still returned, but marked
     # `verified: False` so the caller knows the attribution is provisional.
     #
-    # Honest limit, stated where the check runs rather than only in the `how`
-    # text: the confirmation below is name-based (`name_matches_identity`
-    # compares basenames), so it cannot separate two Studios with the same
-    # place open. If a foreign same-place Studio is the lone arrival, it
-    # matches and is credited `verified: True`.
+    # The name check is a basename comparison, so it cannot separate two
+    # Studios with the same place open. The verdict accounts for that: a
+    # shared name is no longer worth `verified: True`.
     if before_ids is not None:
         arrived = [row for row in rows if _sid(row) and _sid(row) not in before_ids]
         if len(arrived) == 1:
             row = arrived[0]
             newcomer, newcomer_name = _sid(row), _name(row)
-            try:
-                newcomer_identity = logid.live_identities([pid]).get(pid)
-            except Exception:  # noqa: BLE001 - an unreadable log is unverified, not fatal
-                newcomer_identity = None
+            newcomer_identity = our_identity
             if newcomer_identity is not None and not logid.name_matches_identity(
                 newcomer_name, newcomer_identity
             ):
@@ -937,7 +1020,8 @@ async def _identify_launched(
                 # rather than crediting the wrong Studio.
                 pass
             elif newcomer_identity is not None:
-                return {
+                proven = _proven()
+                answer = {
                     "studio_id": newcomer,
                     "mesh_name": newcomer_name,
                     "how": (
@@ -945,9 +1029,12 @@ async def _identify_launched(
                         "present after, and the new process's own log command "
                         "line confirms it opened this place"
                     ),
-                    "verified": True,
+                    "verified": proven,
                     "console_writes": 0,
                 }
+                if not proven:
+                    answer["provisional_because"] = _shared_note()
+                return answer
             else:
                 return {
                     "studio_id": newcomer,
@@ -984,22 +1071,34 @@ async def _identify_launched(
                 ],
             }
 
-    identity = logid.live_identities([pid]).get(pid)
+    identity = our_identity
     if identity:
         matches = []
         for row in rows:
             sid = _sid(row)
+            # A row attached before this launch cannot be the newcomer.
+            # Measured: without this, launching a second Studio on a
+            # place another Studio already had open answered with the *first*
+            # Studio's id, and every later call on that id went to the wrong
+            # one.
+            if before_ids is not None and sid in before_ids:
+                continue
             if sid and logid.name_matches_identity(_name(row), identity):
                 matches.append((sid, _name(row)))
         if len(matches) == 1:
             sid, name = matches[0]
-            return {
+            proven = _proven()
+            answer = {
                 "studio_id": sid,
                 "mesh_name": name,
                 "how": "the new process's own log command line, no console write",
+                "verified": proven,
                 "task": identity.get("task"),
                 "console_writes": 0,
             }
+            if not proven:
+                answer["provisional_because"] = _shared_note()
+            return answer
 
     # Route 3. Gated, and counted.
     #
@@ -1051,6 +1150,9 @@ async def _identify_launched(
                 "studio_id": sid,
                 "mesh_name": _name(row),
                 "how": found.get("how"),
+                # The token was echoed by THIS process, so the row is tied to
+                # it by the only evidence that can tie a row to a process.
+                "verified": True,
                 "console_writes": writes,
             }
     return {
