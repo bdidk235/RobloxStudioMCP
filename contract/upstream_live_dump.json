@@ -1,5 +1,5 @@
 {
-  "captured": "2026-10-20",
+  "captured": "2026-11-05",
   "source": "live tools/list through the StudioMCP proxy (cmd.exe /c \"cd /d %LOCALAPPDATA%\\Roblox && .\\mcp.bat\")",
   "server_info": {
     "name": "RobloxStudio",
@@ -8,6 +8,7 @@
   "tools": [
     {
       "name": "upload_image",
+      "title": "Upload Image",
       "description": "Upload a batch of images from http server to Roblox Asset Server, returning imagePath to assetId map, such as {\"http://localhost/image.png\" : \"rbxassetid://12345678\", \"https://www.figma.com/api/mcp/asset/6dcff81e-b394-4640-b3b1-123456789\" : \"rbxassetid://12345679\"}.",
       "inputSchema": {
         "properties": {
@@ -34,11 +35,89 @@
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "open_cloud_invoke",
+      "title": "Open Cloud Request",
+      "description": "Sends an authenticated request to a Roblox Open Cloud API and returns the status code and response body.\n\nAuthentication is handled automatically: the request runs with the Assistant's permissions, using an access token limited to the Open Cloud scopes the creator has granted. Never pass API keys or auth headers yourself.\n\nUsage:\n- endpoint is the path under https://apis.roblox.com, starting with / and including any query string (for example /cloud/v2/universes/123/developer-products). Full URLs are not accepted.\n- body is a JSON-encoded string, sent with Content-Type: application/json.\n- scopes lists the Open Cloud scopes the endpoint needs, for example [\"universe:write\"]. Optional, but passing them produces a precise error if the creator has not granted one.\n- Read the endpoint's reference at https://create.roblox.com/docs/cloud with http_get to find its endpoint, method, body shape, and required scopes.\n\nErrors:\n- A denied or ungranted scope, or a 403 response, means the creator has not allowed that permission. Ask them to enable it in the Assistant MCP Permissions settings. Do not try to work around it.\n- A 401 response means the token was rejected. Retry once.\n\nExamples:\n- open_cloud_invoke(method: \"GET\", endpoint: \"/cloud/v2/universes/123\", scopes: [\"universe:read\"])\n- open_cloud_invoke(method: \"PATCH\", endpoint: \"/cloud/v2/universes/123?updateMask=voiceChatEnabled\", body: '{\"voiceChatEnabled\":true}', scopes: [\"universe:write\"])\n\nFile uploads:\n- files uploads local asset files as a multipart/form-data request. Each entry is { name, path, contentType? }: name is the form field (the Assets API uses \"fileContent\"), path is an absolute path on the creator's machine, and contentType defaults from the file extension.\n- With files, body must be a JSON object whose keys become form fields. Object values are JSON-encoded, so pass the Assets API \"request\" field as an object.\n- Only asset files can be uploaded (bmp, fbx, flac, glb, gltf, jpeg, jpg, mov, mp3, mp4, ogg, png, rbxm, rbxmx, tga, wav), up to 5 files of 20 MB each.\n- Files must be inside a directory the creator has approved in Assistant Settings -> MCP Permissions. If a file is rejected, ask the creator to approve its directory there.\n- Asset uploads return an operation. Poll GET /assets/v1/operations/{operationId} until done is true to get the asset ID.\n- open_cloud_invoke(method: \"POST\", endpoint: \"/assets/v1/assets\", body: '{\"request\":{\"assetType\":\"Model\",\"displayName\":\"Tree\",\"description\":\"A tree\",\"creationContext\":{\"creator\":{\"userId\":\"123\"}}}}', files: [{ name: \"fileContent\", path: \"/Users/me/tree.fbx\" }], scopes: [\"asset:read\", \"asset:write\"])\n",
+      "inputSchema": {
+        "properties": {
+          "body": {
+            "description": "JSON-encoded request body. Omit for GET and DELETE. With files, a JSON object of form fields.",
+            "type": "string"
+          },
+          "endpoint": {
+            "description": "Open Cloud path under https://apis.roblox.com, starting with / and including any query string.",
+            "type": "string"
+          },
+          "files": {
+            "description": "Local files to upload as multipart/form-data. Requires POST, PUT, or PATCH.",
+            "items": {
+              "properties": {
+                "contentType": {
+                  "description": "MIME type for the file part. Defaults from the file extension.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Form field name, such as \"fileContent\".",
+                  "type": "string"
+                },
+                "path": {
+                  "description": "Absolute path to a local asset file.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "method": {
+            "description": "HTTP method.",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ],
+            "type": "string"
+          },
+          "scopes": {
+            "description": "Open Cloud scopes the endpoint requires, such as \"universe:read\" or \"game-pass:write\".",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "method",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Open Cloud Request",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
       }
     },
     {
       "name": "search_game_tree",
+      "title": "Game Tree",
       "description": "Explore the Roblox game hierarchy tree with flat JSON output.\nReturns an array of JSON objects representing instances in the Data Model, showing names, paths, and relationships.\nUse optional filters to narrow down results by path, instance type, or keywords.\nFor detailed inspection of a specific instance's properties and attributes, use the Inspect Instance tool.\n\nOUTPUT FORMAT:\nArray of objects with:\n{\n  \"name\": \"InstanceName\",\n  \"className\": \"Part\", \n  \"fullPath\": \"Workspace.Folder.InstanceName\",\n  \"parentName\": \"Folder\",\n  \"childSummary\": \"5 children (3 Part, 2 Script)\",  // Present if depth limit reached and children exist\n  \"unexploredChildCount\": 5  // Present if depth limit reached with matching children\n}\n\nDEPTH LIMITING:\n- Default max_depth: 3 levels from start point (absolute traversal depth)\n- Absolute max: 10 levels\n- max_depth limits how deep into the hierarchy we traverse, regardless of filters\n- Beyond max_depth, children are summarized with counts by class type\n- Nodes at depth limit show: \"unexploredChildCount\" and \"childSummary\"\n\nEXAMPLES (every call must pass datamodel_type: use \"Edit\" in edit mode, or \"Client\"/\"Server\" during a playtest -- \"Edit\" is rejected while playing):\n- Full tree (3 levels): search_game_tree(datamodel_type: \"Edit\")\n- Workspace only: search_game_tree(datamodel_type: \"Edit\", path: \"Workspace\")\n- ServerScriptService: search_game_tree(datamodel_type: \"Edit\", path: \"ServerScriptService\")\n- All base scripts: search_game_tree(datamodel_type: \"Edit\", instance_type: \"BaseScript\")\n- All parts: search_game_tree(datamodel_type: \"Edit\", instance_type: \"Part\")\n- By keywords: search_game_tree(datamodel_type: \"Edit\", keywords: \"player, character\")\n- Deep exploration: search_game_tree(datamodel_type: \"Edit\", max_depth: 6)\n- Combined filters: search_game_tree(datamodel_type: \"Edit\", path: \"Workspace\", instance_type: \"Part\", keywords: \"red\")\n- Client tree during a playtest: search_game_tree(datamodel_type: \"Client\", path: \"Players\")\n- Server tree during a playtest: search_game_tree(datamodel_type: \"Server\", path: \"Workspace\")\n",
       "inputSchema": {
         "properties": {
@@ -92,6 +171,7 @@
     },
     {
       "name": "script_search",
+      "title": "File Search",
       "description": "Fast script search based on fuzzy matching against script names.\nUse if you know part of the script name but don't know where it's located exactly.\nResponse will be capped to 10 results.\nMake your query more specific if need to filter results further.\nNote: Pattern matching is not supported such as asterisk (*) or question mark (?) wildcards.\n",
       "inputSchema": {
         "properties": {
@@ -120,11 +200,12 @@
     },
     {
       "name": "skill",
-      "description": "Retrieve detailed knowledge, best practices, or reference material for a specific skill.\nSkills provide domain-specific expertise that helps you produce better, more accurate results.\n\n<available_skills>\n  <skill>\n    <name>rbx-create-skill</name>\n    <source>Roblox</source>\n    <description>Guide the user through authoring or modifying a custom skill. Use when the user wants to create, edit, update, or rename a skill.</description>\n  </skill>\n  <skill>\n    <name>rbx-debug</name>\n    <source>Roblox</source>\n    <description>Programmatically add breakpoints and inspect thread information to debug Roblox Studio games via MCP, plugins, or command scripts. Use as a more robust tool to investigate scripting bugs or verify script behavior beyond static analysis.</description>\n  </skill>\n  <skill>\n    <name>rbx-device-simulator-lua</name>\n    <source>Roblox</source>\n    <description>Control the Studio Device Simulator to test UI across device form factors. Use when switching devices, testing orientations, running multi-device comparisons, or verifying UI layout via MCP tools (execute_luau + screen_capture).</description>\n  </skill>\n  <skill>\n    <name>rbx-docs-search</name>\n    <source>Roblox</source>\n    <description>Look up Roblox documentation using the http_get tool \u2014 Engine API reference, creator guides (avatar, characters, Studio workflows), cloud API, and docs indexes. Use when you need accurate API details or how-to guidance.</description>\n  </skill>\n  <skill>\n    <name>rbx-instrument-analytics</name>\n    <source>Roblox</source>\n    <description>Audit a Roblox experience for analytics-instrumentation opportunities and add Economy, Funnel, and Custom events via AnalyticsService. Supports a read-only audit that proposes an event plan and an instrument mode that creates a centralized analytics module and edits scripts to log events at the right places.</description>\n  </skill>\n  <skill>\n    <name>rbx-luau-heap-profiling</name>\n    <source>Roblox</source>\n    <description>\"Profile Luau heap memory and debug memory leaks in Roblox experiences. Use when the user reports high or growing memory usage, RAM spikes, out-of-memory crashes, or memory that isn't freed after an action, or when they explicitly want to take heap snapshots, compare memory over time, trace retention paths, find leaking objects/tables/instances, or verify that cleanup code actually frees memory. Covers Luau-allocated memory only (tables, closures, threads, strings, instances referenced by Luau) \u2014 not CPU/framerate profiling (MicroProfiler) or engine/C++/asset memory. Requires Studio Play mode and plugin/MCP-level access.\"</description>\n  </skill>\n  <skill>\n    <name>rbx-perf-profiling</name>\n    <source>Roblox</source>\n    <description>Analyze fine-grained performance data provided by the MicroProfiler through the LibMP Luau module. Use it to investigate CPU and GPU bottlenecks, identify the causes of frame-time spikes, and analyze memory allocations by subsystem.</description>\n  </skill>\n  <skill>\n    <name>rbx-process-receipt-misuse</name>\n    <source>Roblox</source>\n    <description>\"Audit Developer Product receipt handling for ProcessReceipt misuse \u2014 out-of-experience (Store tab / EDP / Personalized Shop) purchase blockers, PromptProductPurchaseFinished used for fulfillment, PurchaseGranted returned before a grant succeeds, missing PurchaseId persistence, and overwritten callbacks. Use when the user asks to audit, review, or debug Developer Product purchases, receipt handling, ProcessReceipt code, or why out-of-experience purchases fail. Report-only: do not edit scripts unless the user explicitly asks for a fix.\"</description>\n  </skill>\n  <skill>\n    <name>rbx-scene-analysis</name>\n    <source>Roblox</source>\n    <description>Analyze and optimize Roblox scenes using SceneAnalysisService \u2014 rendering, memory, instance composition, unparented instances, and animation/audio assets. Use when investigating performance, memory, or leaks in a place.</description>\n  </skill>\n  <skill>\n    <name>rbx-unit-test</name>\n    <source>Roblox</source>\n    <description>Write, run, and debug Luau unit tests for ModuleScripts in Roblox Studio. Use this skill only when the user asks to add unit tests, improve test coverage, run existing tests, or debug failing tests. Do not use it for playtesting, gameplay QA, or validating visuals and UI feel.</description>\n  </skill>\n</available_skills>\n\nWhen to use skills:\n1. When the task involves a domain covered by an available skill\n2. When you need best practices or conventions before writing or reviewing code\n3. When you are unsure about the correct patterns or APIs for a specific area\n\nImportant:\n1. Invoke the skill BEFORE writing code or taking action, not after\n2. Follow the returned guidance closely in your response\n3. Do not mention a skill without actually invoking it first",
+      "title": "Skill",
+      "description": "Retrieve detailed knowledge, best practices, or reference material for a specific skill.\nSkills provide domain-specific expertise that helps you produce better, more accurate results.\n\n<available_skills>\n  <skill>\n    <name>rbx-configs-experimentation</name>\n    <source>Roblox</source>\n    <description>\"IMPORTANT: Before writing hard-coded constants, using DataStores for simple tunable values, or suggesting a manual server restart to change a value \u2014 call this skill. Roblox's built-in ConfigService updates in-game values live without restarting servers and runs A/B experiments to measure impact on retention, engagement, and monetization. Use it to set up, integrate, debug, and optimize Experience Configs and experiments. Trigger when the creator wants to change game values without a restart (boss health, prices, drop rates, event timing, difficulty), add feature flags or toggles, run A/B tests or experiments, build live-ops or seasonal/timed content, tune balance across the player base, or mentions ConfigService, GetConfigAsync, or GetConfigForPlayerAsync.\"</description>\n  </skill>\n  <skill>\n    <name>rbx-create-skill</name>\n    <source>Roblox</source>\n    <description>Guide the user through authoring or modifying a custom skill. Use when the user wants to create, edit, update, or rename a skill.</description>\n  </skill>\n  <skill>\n    <name>rbx-debug</name>\n    <source>Roblox</source>\n    <description>Programmatically add breakpoints and inspect thread information to debug Roblox Studio games via MCP, plugins, or command scripts. Use as a more robust tool to investigate scripting bugs or verify script behavior beyond static analysis.</description>\n  </skill>\n  <skill>\n    <name>rbx-device-simulator-lua</name>\n    <source>Roblox</source>\n    <description>Control the Studio Device Simulator to test UI across device form factors. Use when switching devices, testing orientations, running multi-device comparisons, or verifying UI layout via MCP tools (execute_luau + screen_capture).</description>\n  </skill>\n  <skill>\n    <name>rbx-docs-search</name>\n    <source>Roblox</source>\n    <description>Look up Roblox documentation using the http_get tool \u2014 Engine API reference, creator guides (avatar, characters, Studio workflows), cloud API, and docs indexes. Use when you need accurate API details or how-to guidance.</description>\n  </skill>\n  <skill>\n    <name>rbx-import-asset</name>\n    <source>Roblox</source>\n    <description>Import a 3D model from an external modelling program (Blender, Maya, 3ds Max, Cinema 4D, Houdini, SketchUp, or any tool that exports glTF/GLB or FBX) into the open Studio place by exporting it, uploading it through Open Cloud with open_cloud_invoke, inserting it, and verifying that geometry, textures, colours, scale, orientation, anchoring, and placement survived. Use whenever the user asks to bring, move, import, send, or copy a model, scene, or mesh from another program or a local model file into Studio. MCP clients only.</description>\n  </skill>\n  <skill>\n    <name>rbx-instrument-analytics</name>\n    <source>Roblox</source>\n    <description>Audit a Roblox experience for analytics-instrumentation opportunities and add Economy, Funnel, and Custom events via AnalyticsService. Supports a read-only audit that proposes an event plan and an instrument mode that creates a centralized analytics module and edits scripts to log events at the right places.</description>\n  </skill>\n  <skill>\n    <name>rbx-luau-heap-profiling</name>\n    <source>Roblox</source>\n    <description>\"Profile Luau heap memory and debug memory leaks in Roblox experiences. Use when the user reports high or growing memory usage, RAM spikes, out-of-memory crashes, or memory that isn't freed after an action, or when they explicitly want to take heap snapshots, compare memory over time, trace retention paths, find leaking objects/tables/instances, or verify that cleanup code actually frees memory. Covers Luau-allocated memory only (tables, closures, threads, strings, instances referenced by Luau) \u2014 not CPU/framerate profiling (MicroProfiler) or engine/C++/asset memory. Requires Studio Play mode and plugin/MCP-level access.\"</description>\n  </skill>\n  <skill>\n    <name>rbx-network-simulator</name>\n    <source>Roblox</source>\n    <description>Simulate, emulate, or throttle network conditions in Roblox Studio \u2014 latency, ping, jitter, and packet loss \u2014 for playtesting. ALWAYS use this skill when the user says things like \"simulate 4G/3G/5G/Wi-Fi\", \"test on a slow/laggy/bad connection\", \"add latency/ping\", \"throttle the network\", \"network throttling\", \"packet loss\", \"high ping\", \"how does my game feel on a bad connection\", \"measure input delay / responsiveness\", \"how long until the server catches up\", \"client-server desync\", \"hits not registering\", \"slow join / long loading on mobile\", \"rubber-banding\", or names a preset (Ideal Fiber, Wired, Home Wi-Fi, 4G/LTE, 3G). This skill is self-contained \u2014 the complete API and preset values are here; apply via settings().Network directly. It drives `settings().Network` via execute_luau (apply/verify) and measures real ping, action\u2192result response time, server catch-up, and client-server consistency in a playtest \u2014 this works with or without any beta. Recommend enabling the \"New Device Simulator\" beta for the optional toolbar UI (`settings().Network` is always available regardless).</description>\n  </skill>\n  <skill>\n    <name>rbx-open-cloud-usage</name>\n    <source>Roblox</source>\n    <description>IMPORTANT: Before assuming ANY Roblox resource (developer products, game passes, universe settings, assets, etc.) cannot be created or managed programmatically, call this skill. External MCP clients can manage many of these through the Open Cloud API with the open_cloud_invoke tool, without an API key, because open_cloud_invoke authenticates automatically. Try those APIs before suggesting the user do it in the Creator Dashboard. Covers how to call open_cloud_invoke, find endpoints, and handle errors. Applies only to external MCP clients, not the built-in Studio Assistant. Call this skill before any Open Cloud request.</description>\n  </skill>\n  <skill>\n    <name>rbx-perf-profiling</name>\n    <source>Roblox</source>\n    <description>Analyze fine-grained performance data provided by the MicroProfiler through the LibMP Luau module. Use it to investigate CPU and GPU bottlenecks, identify the causes of frame-time spikes, and analyze memory allocations by subsystem.</description>\n  </skill>\n  <skill>\n    <name>rbx-permissions</name>\n    <source>Roblox</source>\n    <description>Work out which MCP permissions a task needs, check which are granted, and ask the user for exactly the missing ones. Covers Open Cloud scopes for open_cloud_invoke, upload directories, the Network capability and HTTP allowlist, and data store and memory store access from Luau. Use before any Open Cloud call, upload, data store, memory store or HTTP access, and whenever one fails with \"has not been granted\", a 403, a capability error, an \"HTTP allowlist\" denial, a 502 \"Access forbidden\", or \"API access is not enabled\".</description>\n  </skill>\n  <skill>\n    <name>rbx-process-receipt-misuse</name>\n    <source>Roblox</source>\n    <description>\"Audit Developer Product receipt handling for ProcessReceipt misuse \u2014 out-of-experience (Store tab / EDP / Personalized Shop) purchase blockers, PromptProductPurchaseFinished used for fulfillment, PurchaseGranted returned before a grant succeeds, missing PurchaseId persistence, and overwritten callbacks. Use when the user asks to audit, review, or debug Developer Product purchases, receipt handling, ProcessReceipt code, or why out-of-experience purchases fail. Report-only: do not edit scripts unless the user explicitly asks for a fix.\"</description>\n  </skill>\n  <skill>\n    <name>rbx-scene-analysis</name>\n    <source>Roblox</source>\n    <description>Analyze and optimize Roblox scenes using SceneAnalysisService \u2014 rendering, memory, instance composition, unparented instances, and animation/audio assets. Use when investigating performance, memory, or leaks in a place.</description>\n  </skill>\n  <skill>\n    <name>rbx-unit-test</name>\n    <source>Roblox</source>\n    <description>Write, run, and debug Luau unit tests for ModuleScripts in Roblox Studio. Use this skill only when the user asks to add unit tests, improve test coverage, run existing tests, or debug failing tests. Do not use it for playtesting, gameplay QA, or validating visuals and UI feel.</description>\n  </skill>\n</available_skills>\n\nWhen to use skills:\n1. When the task involves a domain covered by an available skill\n2. When you need best practices or conventions before writing or reviewing code\n3. When you are unsure about the correct patterns or APIs for a specific area\n\nImportant:\n1. Invoke the skill BEFORE writing code or taking action, not after\n2. Follow the returned guidance closely in your response\n3. Do not mention a skill without actually invoking it first",
       "inputSchema": {
         "properties": {
           "skill_name": {
-            "description": "The name of the skill to retrieve. Options: rbx-create-skill, rbx-debug, rbx-device-simulator-lua, rbx-docs-search, rbx-instrument-analytics, rbx-luau-heap-profiling, rbx-perf-profiling, rbx-process-receipt-misuse, rbx-scene-analysis, rbx-unit-test",
+            "description": "The name of the skill to retrieve. Options: rbx-configs-experimentation, rbx-create-skill, rbx-debug, rbx-device-simulator-lua, rbx-docs-search, rbx-import-asset, rbx-instrument-analytics, rbx-luau-heap-profiling, rbx-network-simulator, rbx-open-cloud-usage, rbx-perf-profiling, rbx-permissions, rbx-process-receipt-misuse, rbx-scene-analysis, rbx-unit-test",
             "type": "string"
           },
           "studio_id": {
@@ -147,7 +228,47 @@
       }
     },
     {
+      "name": "subagent",
+      "title": "Subagent",
+      "description": "Launch a specialized subagent to handle complex, multi-step tasks autonomously.\nSubagents are independent AI assistants with restricted tool access and specialized instructions.\n\n<available_subagents>\n  <subagent>\n    <name>explore</name>\n    <description>Fast agent specialized for exploring codebases and searching for information. Use this when you need to:\n- Find files by patterns (e.g., \"scripts with 'player' in the name\")\n- Search code for keywords or patterns (e.g., \"how are touch events handled?\")\n- Answer questions about the codebase structure\n- Query the current game state via Luau execution\n- Understand existing game architecture before making changes\n- Gather context from multiple files before deciding on an approach</description>\n  </subagent>\n  <subagent>\n    <name>playtest</name>\n    <description>Agent specialized for playtesting Roblox experiences. Use this when you need to:\n- Run playtests that involve moving through the world and interacting with objects like a human player.\n- Verify observable outcomes through world state, GUI changes, and console output.\n- For playtest requests, prefer using this subagent over directly orchestrating individual tools.\n- The agent can use start_stop_play - no need to call start_stop_play.</description>\n  </subagent>\n</available_subagents>\n\nWhen to use subagents:\n1. When you need to explore the codebase before making decisions\n2. When a task requires multiple search/read steps across many files\n3. When you're uncertain about the right approach and need autonomous investigation\n4. To separate concerns (e.g., explore first, then modify)\n\nImportant:\n1. Subagents return a final text result summarizing their work\n2. You cannot have a back-and-forth conversation with a subagent\n3. Subagents cannot spawn other subagents (no nesting)\n4. Choose the most specific subagent for your task",
+      "inputSchema": {
+        "properties": {
+          "description": {
+            "description": "A short 3-5 word description of the task in present continuous tense (e.g., 'Exploring player spawn logic', 'Finding lighting scripts'). Used for display.",
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          },
+          "subagent_type": {
+            "description": "The type of subagent to invoke. Options: explore, playtest, screen_capture, unit_test",
+            "type": "string"
+          },
+          "task": {
+            "description": "Detailed task description and instructions for the subagent. Be specific about what you need the subagent to do and what information to return.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "description",
+          "subagent_type",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Subagent",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "multi_edit",
+      "title": "Multi-Edit",
       "description": "Makes multiple edits to a single script in one operation. More efficient than multiple single edits.\nCan also create new scripts if the path doesn't exist (will need to specify className).\n\nExample Call (correct):\n- Args: {\"file_path\":\"ReplicatedStorage.Platformer.Constants\",\"edits\":[{\"old_string\":\"JUMP_COOLDOWN = 0.15\",\"new_string\":\"JUMP_COOLDOWN = 0.3\"}]}\n\nPath Format:\n- Use dot notation like \"game.ServerScriptService.MyScript\"\n\nCreating New Scripts:\n- If the script doesn't exist, it will be created using the provided className\n- className is required when creating new scripts\n- First edit with empty old_string (\"\") sets the initial content\n- Subsequent edits work normally on the created content\n\nBefore Using:\n- Read or search file to understand existing script contents\n- For new scripts, provide className and start with empty old_string to set initial content\n\nImportant Notes:\n- All edits are applied in sequence, in the order provided\n- Each edit operates on the result of the previous edit\n- All edits must be valid for the operation to succeed - atomic operation\n- Plan edits carefully to avoid conflicts between sequential operations\n\nCritical Requirements:\n- old_string must match script contents exactly (including whitespace)\n- old_string and new_string must be different\n- className required only when creating new scripts\n- For new files: first edit can have empty old_string to set initial content\n\nWhen Making Edits:\n- Ensure all edits result in correct, runnable code\n- Don't leave code in a broken state\n- Use replace_all for renaming variables across the entire script\n",
       "inputSchema": {
         "properties": {
@@ -207,19 +328,29 @@
       "annotations": {
         "title": "Multi-Edit",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
         "openWorldHint": false
       }
     },
     {
-      "name": "start_stop_play",
-      "description": "Start play the game or stop the play.",
+      "name": "execute_luau",
+      "title": "Execute Luau",
+      "description": "Executes Luau code in Roblox Studio. Returns the result of the executed code or an error message if the code fails to execute.\n\nCode runs on Studio's main thread; until it yields, Studio is frozen, the script can't be stopped, and the MCP connection may drop. For heavy work (bulk instance creation or edits, procedural or terrain generation, large loops), split it into logical chunks (e.g. per region, or batches of ~1000 items) and call `task.wait()` once per chunk, not per item. When creating many instances, build each chunk in a container outside the DataModel and parent it before that chunk's `task.wait()`. The cost of a .Parent write into the DataModel scales with the total size of the subtree being inserted (all descendants), so parenting one large container is itself a single unyielding operation that can freeze Studio or drop the connection, no matter how incrementally the container was built. Keeping each flushed subtree small (one chunk's worth) bounds the cost of every .Parent write. A loop that waits for state to change (e.g. `while not ready do`) must call `task.wait()` inside it.",
       "inputSchema": {
         "properties": {
-          "is_start": {
-            "description": "true to start the game, false to stop the game and return to edit mode.",
-            "type": "boolean"
+          "code": {
+            "description": "The Luau code to execute.",
+            "type": "string"
+          },
+          "datamodel_type": {
+            "description": "The target datamodel to operate on, the tool can only be performed in those datamodel types. call get_studio_state to get current available datamodel types. if the target datamodel is not available in current mode, consider using start_stop_play to switch to the desired mode and then use the tools. This is a required argument.",
+            "enum": [
+              "Edit",
+              "Client",
+              "Server"
+            ],
+            "type": "string"
           },
           "studio_id": {
             "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
@@ -227,21 +358,23 @@
           }
         },
         "required": [
-          "is_start",
+          "code",
+          "datamodel_type",
           "studio_id"
         ],
         "type": "object"
       },
       "annotations": {
-        "title": "Start/Stop Play",
+        "title": "Execute Luau",
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": false,
-        "openWorldHint": false
+        "openWorldHint": true
       }
     },
     {
       "name": "get_console_output",
+      "title": "Get Console Output",
       "description": "Get the console output from the Studio output log.",
       "inputSchema": {
         "properties": {
@@ -265,6 +398,7 @@
     },
     {
       "name": "user_mouse_input",
+      "title": "User Mouse Input",
       "description": "Send one or more mouse actions in order: moveTo, mouseButtonDown, mouseButtonUp, mouseButtonClick, scrollUp, scrollDown, or wait. For mouseButtonDown, mouseButtonUp, and mouseButtonClick, set mouse_button to \"left\" or \"right\". After the first step that sets position (x/y or instance_path), later steps may omit coordinates and reuse that position.",
       "inputSchema": {
         "properties": {
@@ -345,7 +479,96 @@
       }
     },
     {
+      "name": "auto_setup_avatar",
+      "title": "Auto Setup Avatar",
+      "description": "Rig a static Workspace Model as an R15 avatar and place the result beside it.\nPass `instance_path` whenever the Model is known; omit it only to use the\nuser's single selected Model. Do not set Selection with execute_luau.\nUsually takes 3-5 minutes.",
+      "inputSchema": {
+        "properties": {
+          "align_front_angle": {
+            "description": "Fix the front to negative Z. Defaults to false, which lets the engine infer it. Use true for ambiguous models that already face negative Z.",
+            "type": "boolean"
+          },
+          "classifications": {
+            "description": "Labels for Models and BaseParts under the input. A Model covers every BasePart inside it. Omit to let the engine decide. Unlisted parts become Body; an R15 body with a Humanoid is skipped.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "classification": {
+                  "description": "Body is the avatar itself. Layered is layered clothing, including shoes. EyeLayered is eyelashes or eyebrows. Rigid is a fixed accessory like a hat.",
+                  "enum": [
+                    "Body",
+                    "Layered",
+                    "EyeLayered",
+                    "Rigid"
+                  ],
+                  "type": "string"
+                },
+                "path": {
+                  "description": "Path under the input Model, such as \"Acc.Staff_Rigid\", or the full path from inspect_instance. A Model covers every BasePart inside it.",
+                  "type": "string"
+                },
+                "uniqueId": {
+                  "description": "uniqueId from inspect_instance. Required only when path matches more than one instance.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "classification"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "decal_to_dynamic_head": {
+            "description": "Create a dynamic head from a 2D face Decal or texture. Defaults to false.",
+            "type": "boolean"
+          },
+          "enable_additional_head_processing": {
+            "description": "Align the head cage to facial features for a better makeup fit. Defaults to true.",
+            "type": "boolean"
+          },
+          "instance_path": {
+            "description": "Workspace path to the input Model, preferably from inspect_instance. Pass it whenever known; omit only for the user's single selected Model.",
+            "type": "string"
+          },
+          "r15_plus": {
+            "description": "Add optional upper-torso, neck, hand, and foot joints for more articulation. Defaults to false.",
+            "type": "boolean"
+          },
+          "reduce_triangles": {
+            "description": "Development only: reduce triangles for validation. Defaults to false. Omit for Platform, which always reduces them.",
+            "type": "boolean"
+          },
+          "setup_type": {
+            "description": "\"Platform\" (default) creates marketplace-compatible avatars. \"Development\" creates experience-only characters such as NPCs.",
+            "enum": [
+              "Platform",
+              "Development"
+            ],
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Auto Setup Avatar",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "store_image",
+      "title": "Store Image",
       "description": "Load an image from a local file path and return an IMAGEID_<id> URI that can be passed to other tools (e.g. as attachedImageUri for generate_procedural_model).\nUse this tool when you need to convert a local image file into an image URI that other tools accept.\nSupported formats: png, jpg, jpeg. Max file size: 5MB.",
       "inputSchema": {
         "properties": {
@@ -374,6 +597,7 @@
     },
     {
       "name": "http_get",
+      "title": "HTTP GET",
       "description": "Fetches the content of a URL via HTTP GET request. Returns the response body as text.\n\nOptionally searches the fetched content for a keyword (query parameter). When a query is provided:\n- Returns only the matching sections with surrounding context lines, saving context window space.\n- Returns a short \"no match\" message if the keyword isn't found.\n- Use context_lines to control how many lines of context around each match (default: 3).\n- Use return_full: true to get the entire document when the keyword matches.\n\nWithout a query, the full response body is returned.\n\nOnly the following URL patterns are allowed:\n- https://create.roblox.com/docs/reference/engine (Roblox Engine API docs \u2014 URLs must end with .md or be llms.txt)\n- https://create.roblox.com/docs/cloud (Roblox Cloud API docs \u2014 URLs must end with .md or be llms.txt)\n- https://create.roblox.com/docs/performance-optimization (Roblox Performance Optimization docs \u2014 URLs must end with .md or be llms.txt)\n- https://github.com/Roblox/libmp (Roblox LibMP repository \u2014 URLs must end with .md or be llms.txt)\n- https://create.roblox.com/docs (Roblox Creator docs (guides, tutorials, etc.) \u2014 URLs must end with .md or be llms.txt)\n\nAny URL that does not match one of the above rules will be rejected.\nOnly GET requests are supported. The full URL must be provided.\n\nExamples:\n- http_get(url: \"https://create.roblox.com/docs/reference/engine/classes/Part.md\")\n- http_get(url: \"https://create.roblox.com/docs/reference/engine/classes/Part.md\", query: \"Anchored\")\n- http_get(url: \"https://create.roblox.com/docs/reference/engine/classes/BasePart.md\", query: \"Position\", context_lines: 10)\n- http_get(url: \"https://create.roblox.com/docs/reference/engine/classes/Part.md\", query: \"Anchored\", return_full: true)\n",
       "inputSchema": {
         "properties": {
@@ -414,6 +638,7 @@
     },
     {
       "name": "character_navigation",
+      "title": "Character Navigation",
       "description": "Navigate the character to the given position, or instance.",
       "inputSchema": {
         "properties": {
@@ -465,6 +690,7 @@
     },
     {
       "name": "script_read",
+      "title": "Read File",
       "description": "Reads a script from the Roblox workspace. The output will be returned with line numbers in format: LINE_NUMBER\u2192LINE_CONTENT.\nWhen using this tool to gather information, ensure you gather the COMPLETE context to fulfill the user's request.\n\nUsage:\n- This tool reads the entire script by default to provide complete context\n- You can read multiple scripts in parallel for efficiency\n- If you need to find specific symbols across multiple scripts, use the grep search tool\n- Avoid re-reading the same script unless the script may have changed since the last read\n- For very large scripts (thousands of lines), consider using grep_search to locate specific functions or patterns first\n\nPath Format:\n- The path needs to be a full path, with no wildcard matching\n- Use dot notation like \"game.ServerScriptService.MyScript\"\n- Script must already exist (use `file_search` or `grep_search` to find the script path first)\n- Will only read existing scripts, never creates new ones\n",
       "inputSchema": {
         "properties": {
@@ -504,30 +730,8 @@
       }
     },
     {
-      "name": "get_studio_state",
-      "description": "Get the state of the studio, including current play state and available datamodel types. If the studio state is not expected, please call start_stop_play tool to start or stop the play.",
-      "inputSchema": {
-        "properties": {
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          }
-        },
-        "required": [
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "Get Studio State",
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": false,
-        "openWorldHint": false
-      }
-    },
-    {
       "name": "screen_capture",
+      "title": "Screen Capture",
       "description": "Capture current edit-time screen, return the image data. If camera_position and look_at_position are provided, the camera will be temporarily set to the camera_position and look at the look_at_position.",
       "inputSchema": {
         "properties": {
@@ -571,59 +775,23 @@
       }
     },
     {
-      "name": "script_grep",
-      "description": "Runs a search for a string pattern over all script contents in the game. To avoid overwhelming output, the results are capped at 50 matches.",
+      "name": "get_studio_state",
+      "title": "Get Studio State",
+      "description": "Get the state of the studio, including current play state and available datamodel types. If the studio state is not expected, please call start_stop_play tool to start or stop the play.",
       "inputSchema": {
         "properties": {
-          "query": {
-            "description": "The string or Luau pattern to search for.",
-            "type": "string"
-          },
           "studio_id": {
             "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
             "type": "string"
           }
         },
         "required": [
-          "query",
           "studio_id"
         ],
         "type": "object"
       },
       "annotations": {
-        "title": "Grep Search",
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      }
-    },
-    {
-      "name": "wait_job_finished",
-      "description": "Wait for a background job to finish. Returns the final status and details when the job reaches a terminal state (Completed, Failed, or Cancelled).\n\nPass the jobId returned when a tool was called with its 'async' argument set to true.\n\nOnly call this tool when:\n- The user EXPLICITLY asks to wait for a backgrounded job to finish (e.g. \"wait for it to complete\", \"let me know when it's done\")\n- You need to confirm a job's result before performing a follow-up action that depends on it",
-      "inputSchema": {
-        "properties": {
-          "jobId": {
-            "description": "The jobId returned when a tool was called with its 'async' argument set to true.",
-            "type": "string"
-          },
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          },
-          "timeout": {
-            "description": "Maximum time in seconds to wait for the job to finish. Defaults to 600 seconds.",
-            "type": "number"
-          }
-        },
-        "required": [
-          "jobId",
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "Wait Job Finished",
+        "title": "Get Studio State",
         "readOnlyHint": true,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -631,48 +799,28 @@
       }
     },
     {
-      "name": "generate_procedural_model",
-      "description": "Creates 3D objects built from primitive parts (blocks, spheres, cylinders, wedges) as a ProceduralModel with configurable attributes.\nUse this tool when the user wants to:\n- Create or build a 3D object, model, character, creature, vehicle, building, scenery, or any physical thing in the workspace\n- Generate something from a reference image\n- Create an object with tunable parameters (e.g. \"add attributes to control head size, arm length, color\")\n- Build anything described as \"procedural\", \"parametric\", \"configurable\", or \"with attributes\"\n\nThe output is a ProceduralModel: a scripted model whose appearance is controlled by user-editable attributes (like size, color, proportions). The user can tweak these attributes after generation without regenerating.\n\nThe tool automatically inserts the generated model into the workspace. You do not need to run any code afterward.\n\nCRITICAL: This is a long-running generative tool. Default to calling it with the 'async' argument set to true, which runs the generation in the background and returns immediately with a jobId. Handle other tasks while the generation is in-progress, and only call the 'wait_job_finished' tool when you absolutely need the result.",
+      "name": "start_stop_play",
+      "title": "Start/Stop Play",
+      "description": "Start play the game or stop the play.",
       "inputSchema": {
         "properties": {
-          "async": {
-            "description": "Run this tool asynchronously and return immediately with a jobId, without blocking on completion. Use this when you want to kick off the work (e.g. several generations at once, or when the user does not need to wait for the result) and continue with other tasks. The tool runs in the background and updates its own UI. Poll the returned jobId with the wait_job_finished tool only when you actually need the final result. If you DO need the result before proceeding, omit this argument (or set it false) and call the tool normally.",
+          "is_start": {
+            "description": "true to start the game, false to stop the game and return to edit mode.",
             "type": "boolean"
           },
-          "attachedImageUri": {
-            "description": "The image URI (IMAGEID_<id>) from the user's attached image. Always pass this when the user provides a reference image.",
-            "type": "string"
-          },
-          "partNames": {
-            "description": "List of part names that define the structure of the generated model. Accepts a comma-separated string (e.g. 'body, left wheel, right wheel, door') or a JSON array of strings (e.g. ['body', 'left wheel', 'right wheel', 'door']). Required when segmentation='explicit'. Maximum 8 parts (excess will be truncated).",
-            "type": "string"
-          },
-          "prompt": {
-            "description": "A text description of what to create and what attributes to expose.\nPass the user's own words. If they mention specific configurable properties (e.g. \"head size\", \"arm length\", \"wheel count\"), include those in the prompt so the generated model exposes them as editable attributes.\nIf an image is attached and the user gave no text description, pass an empty string.\nDo NOT describe or interpret the attached image \u2014 only pass the user's own words.\n",
-            "type": "string"
-          },
-          "segmentation": {
-            "description": "Controls how the model is broken into parts. Pick based on the user's wording:\n- Omit (or \"auto\"): user did NOT mention parts/segmentation (e.g. \"generate a car\"). The tool will derive parts automatically via an internal LLM call.\n- \"none\": user explicitly asked for no parts / a single piece (e.g. \"generate a car with no parts\", \"as one mesh\", \"single piece\").\n- \"explicit\": user named specific parts (e.g. \"a car with body and wheels\"). You MUST also pass partNames with the user's listed parts (max 8).\n",
-            "enum": [
-              "auto",
-              "none",
-              "explicit"
-            ],
-            "type": "string"
-          },
           "studio_id": {
             "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
             "type": "string"
           }
         },
         "required": [
-          "prompt",
+          "is_start",
           "studio_id"
         ],
         "type": "object"
       },
       "annotations": {
-        "title": "Primitive Generation",
+        "title": "Start/Stop Play",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -680,78 +828,74 @@
       }
     },
     {
-      "name": "generate_texture",
-      "description": "Re-textures an existing mesh using AI, given a text prompt describing the desired look. Requires a source MeshPart or Model. Replaces the source in place.",
+      "name": "generate_scene",
+      "title": "Generate Layout",
+      "description": "Generates a scene of models and parts from a text prompt and/or reference images, placed within an optional bounding box, and runs the generated script in the DataModel.",
       "inputSchema": {
         "properties": {
-          "hintImage": {
-            "description": "Optional reference image guiding the texture style. When provided, textPrompt may be an empty string.",
+          "boundingBoxPosition": {
+            "description": "World-space position of the area to generate the scene in.",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "z"
+            ],
             "type": "object"
           },
-          "instance_path": {
-            "description": "Full Studio path to the source MeshPart or Model, e.g. \"Workspace.Model1.Part2\". Resolved directly \u2014 no live Studio selection required. If omitted, falls back to the current Studio selection (which must be exactly one MeshPart or Model).",
-            "type": "string"
-          },
-          "model": {
-            "description": "Generation mode. \"Fast\" trades quality for speed. \"Quality\" (default) is a research preview that only supports a single-MeshPart source and can vary in results.",
-            "enum": [
-              "Fast",
-              "Quality"
+          "boundingBoxSize": {
+            "description": "Size (in studs) of the area to generate the scene in.",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "z"
             ],
-            "type": "string"
+            "type": "object"
           },
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          },
-          "textPrompt": {
-            "description": "Text description of the desired texture/appearance, e.g. \"rusty metal\".",
-            "type": "string"
-          }
-        },
-        "required": [
-          "textPrompt",
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "Texture Generation",
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "idempotentHint": false,
-        "openWorldHint": false
-      }
-    },
-    {
-      "name": "segment_mesh",
-      "description": "Segments an existing mesh into named sub-parts using AI. Requires a source MeshPart or Model and up to 5 part names (e.g. [\"head\", \"body\", \"tail\"]). Returns a new Model containing the segmented parts, inserted as a sibling of the source.",
-      "inputSchema": {
-        "properties": {
-          "instance_path": {
-            "description": "Full Studio path to the source MeshPart or Model, e.g. \"Workspace.Model1.Part2\". Resolved directly \u2014 no live Studio selection required. If omitted, falls back to the current Studio selection (which must be exactly one MeshPart or Model).",
-            "type": "string"
-          },
-          "parts": {
-            "description": "List of part names to segment the mesh into (max 5). Example: [\"head\", \"body\", \"tail\"].",
+          "images": {
+            "description": "Reference images that guide the scene. Each is an image content object ({ type = \"image\", data = <base64>, mimeType = <e.g. \"image/png\"> }) or the URI of an attached image. Either this or textPrompt must be provided.",
             "items": {
-              "type": "string"
+              "type": "object"
             },
             "type": "array"
           },
           "studio_id": {
             "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
             "type": "string"
+          },
+          "textPrompt": {
+            "description": "Text description of the desired scene. Either this or images must be provided.",
+            "type": "string"
           }
         },
         "required": [
-          "parts",
           "studio_id"
         ],
         "type": "object"
       },
       "annotations": {
-        "title": "Mesh Segmentation",
+        "title": "Generate Layout",
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
@@ -760,6 +904,7 @@
     },
     {
       "name": "user_keyboard_input",
+      "title": "User Keyboard Input",
       "description": "Send one or more keyboard inputs to the game in order. Each step is keyDown, keyUp, keyPress (keyDown then keyUp), textInput, or wait.",
       "inputSchema": {
         "properties": {
@@ -1115,7 +1260,285 @@
       }
     },
     {
+      "name": "script_grep",
+      "title": "Grep Search",
+      "description": "Runs a search for a string pattern over all script contents in the game. To avoid overwhelming output, the results are capped at 50 matches.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "The string or Luau pattern to search for.",
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Grep Search",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "wait_job_finished",
+      "title": "Wait Job Finished",
+      "description": "Wait for a background job to finish. Returns the final status and details when the job reaches a terminal state (Completed, Failed, or Cancelled).\n\nPass the jobId returned when a tool was called with its 'async' argument set to true.\n\nOnly call this tool when:\n- The user EXPLICITLY asks to wait for a backgrounded job to finish (e.g. \"wait for it to complete\", \"let me know when it's done\")\n- You need to confirm a job's result before performing a follow-up action that depends on it",
+      "inputSchema": {
+        "properties": {
+          "jobId": {
+            "description": "The jobId returned when a tool was called with its 'async' argument set to true.",
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Maximum time in seconds to wait for the job to finish. Defaults to 600 seconds.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "jobId",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Wait Job Finished",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "generate_procedural_model",
+      "title": "Primitive Generation",
+      "description": "Creates 3D objects built from primitive parts (blocks, spheres, cylinders, wedges) as a ProceduralModel with configurable attributes.\nUse this tool when the user wants to:\n- Create or build a 3D object, model, character, creature, vehicle, building, scenery, or any physical thing in the workspace\n- Generate something from a reference image\n- Create an object with tunable parameters (e.g. \"add attributes to control head size, arm length, color\")\n- Build anything described as \"procedural\", \"parametric\", \"configurable\", or \"with attributes\"\n\nThe output is a ProceduralModel: a scripted model whose appearance is controlled by user-editable attributes (like size, color, proportions). The user can tweak these attributes after generation without regenerating.\n\nThe tool automatically inserts the generated model into the workspace. You do not need to run any code afterward.\n\nCRITICAL: This is a long-running generative tool. Default to calling it with the 'async' argument set to true, which runs the generation in the background and returns immediately with a jobId. Handle other tasks while the generation is in-progress, and only call the 'wait_job_finished' tool when you absolutely need the result.",
+      "inputSchema": {
+        "properties": {
+          "async": {
+            "description": "Run this tool asynchronously and return immediately with a jobId, without blocking on completion. Use this when you want to kick off the work (e.g. several generations at once, or when the user does not need to wait for the result) and continue with other tasks. The tool runs in the background and updates its own UI. Poll the returned jobId with the wait_job_finished tool only when you actually need the final result. If you DO need the result before proceeding, omit this argument (or set it false) and call the tool normally.",
+            "type": "boolean"
+          },
+          "attachedImageUri": {
+            "description": "The image URI (IMAGEID_<id>) from the user's attached image. Always pass this when the user provides a reference image.",
+            "type": "string"
+          },
+          "partNames": {
+            "description": "List of part names that define the structure of the generated model. Accepts a comma-separated string (e.g. 'body, left wheel, right wheel, door') or a JSON array of strings (e.g. ['body', 'left wheel', 'right wheel', 'door']). Required when segmentation='explicit'. Maximum 8 parts (excess will be truncated).",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "A text description of what to create and what attributes to expose.\nPass the user's own words. If they mention specific configurable properties (e.g. \"head size\", \"arm length\", \"wheel count\"), include those in the prompt so the generated model exposes them as editable attributes.\nIf an image is attached and the user gave no text description, pass an empty string.\nDo NOT describe or interpret the attached image \u2014 only pass the user's own words.\n",
+            "type": "string"
+          },
+          "segmentation": {
+            "description": "Controls how the model is broken into parts. Pick based on the user's wording:\n- Omit (or \"auto\"): user did NOT mention parts/segmentation (e.g. \"generate a car\"). The tool will derive parts automatically via an internal LLM call.\n- \"none\": user explicitly asked for no parts / a single piece (e.g. \"generate a car with no parts\", \"as one mesh\", \"single piece\").\n- \"explicit\": user named specific parts (e.g. \"a car with body and wheels\"). You MUST also pass partNames with the user's listed parts (max 8).\n",
+            "enum": [
+              "auto",
+              "none",
+              "explicit"
+            ],
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Primitive Generation",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "segment_mesh",
+      "title": "Mesh Segmentation",
+      "description": "Segments an existing mesh into named sub-parts using AI. Requires a source MeshPart or Model and up to 5 part names (e.g. [\"head\", \"body\", \"tail\"]). Returns a new Model containing the segmented parts, inserted as a sibling of the source.",
+      "inputSchema": {
+        "properties": {
+          "instance_path": {
+            "description": "Full Studio path to the source MeshPart or Model, e.g. \"Workspace.Model1.Part2\". Resolved directly \u2014 no live Studio selection required. If omitted, falls back to the current Studio selection (which must be exactly one MeshPart or Model).",
+            "type": "string"
+          },
+          "parts": {
+            "description": "List of part names to segment the mesh into (max 5). Example: [\"head\", \"body\", \"tail\"].",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parts",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Mesh Segmentation",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "generate_texture",
+      "title": "Texture Generation",
+      "description": "Re-textures an existing mesh using AI, given a text prompt describing the desired look. Requires a source MeshPart or Model. Replaces the source in place.",
+      "inputSchema": {
+        "properties": {
+          "hintImage": {
+            "description": "Optional reference image guiding the texture style. When provided, textPrompt may be an empty string.",
+            "type": "object"
+          },
+          "instance_path": {
+            "description": "Full Studio path to the source MeshPart or Model, e.g. \"Workspace.Model1.Part2\". Resolved directly \u2014 no live Studio selection required. If omitted, falls back to the current Studio selection (which must be exactly one MeshPart or Model).",
+            "type": "string"
+          },
+          "model": {
+            "description": "Generation mode. \"Fast\" (default) trades quality for speed. \"Quality\" is a research preview and can vary in results; it first generates a reference image from an automatically selected view, so it takes longer.",
+            "enum": [
+              "Fast",
+              "Quality"
+            ],
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          },
+          "textPrompt": {
+            "description": "Text description of the desired texture/appearance, e.g. \"rusty metal\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "textPrompt",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Texture Generation",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "create_skill",
+      "title": "Create Skill",
+      "description": "Create a new custom skill. The skill will be published and immediately available to the assistant.",
+      "inputSchema": {
+        "properties": {
+          "skill_body": {
+            "description": "The markdown body content \u2014 instructions the agent follows when the skill is invoked.",
+            "type": "string"
+          },
+          "skill_description": {
+            "description": "One-line description of what the skill does and when to use it. Written in third person.",
+            "type": "string"
+          },
+          "skill_name": {
+            "description": "Unique name for the skill. Lowercase letters, numbers, underscores, dashes only. Cannot start with 'rbx-'.",
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_name",
+          "skill_description",
+          "skill_body",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Create Skill",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "generate_avatar",
+      "title": "Generate Avatar",
+      "description": "Generate a new rigged, animatable R15 avatar (body, head, and clothing) from a text prompt using Roblox's avatar creation pipeline, then upload it as a persistent asset and insert it into Workspace in front of the camera. Use this when the user asks to create, generate, or design a new avatar or character from a description. To rig a Model that already exists in the place, use auto_setup_avatar instead. Long-running (usually several minutes): prefer setting 'async' to true and only call wait_job_finished when you need the result.",
+      "inputSchema": {
+        "properties": {
+          "dynamicHead": {
+            "description": "true generates a dynamic (facially animatable) head, false a static head. Omit to use the default.",
+            "type": "boolean"
+          },
+          "pipelineName": {
+            "description": "npc generates the avatar with clothing baked in. modesty generates the body only, with a modesty layer. Omit to use the default.",
+            "enum": [
+              "npc",
+              "modesty"
+            ],
+            "type": "string"
+          },
+          "r15Plus": {
+            "description": "true generates an R15+ avatar with a HumanoidRigDescription and DigitsRigDescriptions, false a standard R15 avatar. Omit to use the default.",
+            "type": "boolean"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          },
+          "textPrompt": {
+            "description": "Description of the avatar to generate, e.g. 'a knight in silver armor with a red cape'.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "textPrompt",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Generate Avatar",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
       "name": "generate_mesh",
+      "title": "Mesh Generation",
       "description": "Generates a textured mesh from a prompt using AI.",
       "inputSchema": {
         "properties": {
@@ -1183,87 +1606,12 @@
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
-      }
-    },
-    {
-      "name": "subagent",
-      "description": "Launch a specialized subagent to handle complex, multi-step tasks autonomously.\nSubagents are independent AI assistants with restricted tool access and specialized instructions.\n\n<available_subagents>\n  <subagent>\n    <name>explore</name>\n    <description>Fast agent specialized for exploring codebases and searching for information. Use this when you need to:\n- Find files by patterns (e.g., \"scripts with 'player' in the name\")\n- Search code for keywords or patterns (e.g., \"how are touch events handled?\")\n- Answer questions about the codebase structure\n- Query the current game state via Luau execution\n- Understand existing game architecture before making changes\n- Gather context from multiple files before deciding on an approach</description>\n  </subagent>\n  <subagent>\n    <name>playtest</name>\n    <description>Agent specialized for playtesting Roblox experiences. Use this when you need to:\n- Run playtests that involve moving through the world and interacting with objects like a human player.\n- Verify observable outcomes through world state, GUI changes, and console output.\n- For playtest requests, prefer using this subagent over directly orchestrating individual tools.\n- The agent can use start_stop_play - no need to call start_stop_play.</description>\n  </subagent>\n</available_subagents>\n\nWhen to use subagents:\n1. When you need to explore the codebase before making decisions\n2. When a task requires multiple search/read steps across many files\n3. When you're uncertain about the right approach and need autonomous investigation\n4. To separate concerns (e.g., explore first, then modify)\n\nImportant:\n1. Subagents return a final text result summarizing their work\n2. You cannot have a back-and-forth conversation with a subagent\n3. Subagents cannot spawn other subagents (no nesting)\n4. Choose the most specific subagent for your task",
-      "inputSchema": {
-        "properties": {
-          "description": {
-            "description": "A short 3-5 word description of the task in present continuous tense (e.g., 'Exploring player spawn logic', 'Finding lighting scripts'). Used for display.",
-            "type": "string"
-          },
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          },
-          "subagent_type": {
-            "description": "The type of subagent to invoke. Options: explore, playtest, screen_capture, unit_test",
-            "type": "string"
-          },
-          "task": {
-            "description": "Detailed task description and instructions for the subagent. Be specific about what you need the subagent to do and what information to return.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task",
-          "description",
-          "subagent_type",
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "Subagent",
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "idempotentHint": false,
-        "openWorldHint": false
-      }
-    },
-    {
-      "name": "execute_luau",
-      "description": "Executes Luau code in Roblox Studio. Returns the result of the executed code or an error message if the code fails to execute.\n\nCode runs on Studio's main thread; until it yields, Studio is frozen, the script can't be stopped, and the MCP connection may drop. For heavy work (bulk instance creation or edits, procedural or terrain generation, large loops), split it into logical chunks (e.g. per region, or batches of ~1000 items) and call `task.wait()` once per chunk, not per item. When creating many instances, build each chunk in a container outside the DataModel and parent it before that chunk's `task.wait()`. The cost of a .Parent write into the DataModel scales with the total size of the subtree being inserted (all descendants), so parenting one large container is itself a single unyielding operation that can freeze Studio or drop the connection, no matter how incrementally the container was built. Keeping each flushed subtree small (one chunk's worth) bounds the cost of every .Parent write. A loop that waits for state to change (e.g. `while not ready do`) must call `task.wait()` inside it.",
-      "inputSchema": {
-        "properties": {
-          "code": {
-            "description": "The Luau code to execute.",
-            "type": "string"
-          },
-          "datamodel_type": {
-            "description": "The target datamodel to operate on, the tool can only be performed in those datamodel types. call get_studio_state to get current available datamodel types. if the target datamodel is not available in current mode, consider using start_stop_play to switch to the desired mode and then use the tools. This is a required argument.",
-            "enum": [
-              "Edit",
-              "Client",
-              "Server"
-            ],
-            "type": "string"
-          },
-          "studio_id": {
-            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "datamodel_type",
-          "studio_id"
-        ],
-        "type": "object"
-      },
-      "annotations": {
-        "title": "Execute Luau",
-        "readOnlyHint": false,
-        "destructiveHint": true,
-        "idempotentHint": false,
         "openWorldHint": true
       }
     },
     {
       "name": "generate_material",
+      "title": "Material Generation",
       "description": "Returns the BaseMaterial and Name of the generated MaterialVariant. To use, these must both be set to the Material and MaterialVariant properties of BaseParts, respectively.",
       "inputSchema": {
         "properties": {
@@ -1348,11 +1696,12 @@
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
+        "openWorldHint": true
       }
     },
     {
       "name": "inspect_instance",
+      "title": "Inspect Instance",
       "description": "Inspect a specific Roblox instance to get all its properties, attributes, and children summary.\nReturns detailed information about instances including all readable properties, custom attributes, \nand a comprehensive summary of immediate children and recursive child counts.\nIf multiple instances match the same path, all matches will be returned.\nUse this tool after using GameTree to explore specific instances in detail.\n\nSINGLE MATCH OUTPUT FORMAT:\n{\n  \"name\": \"MyPart\",\n  \"className\": \"Part\",\n  \"path\": \"Workspace.MyPart\",\n  \"uniqueId\": \"1234567890ABCDEF\",\n  \"properties\": {\n    \"Anchored\": true,\n    \"CanCollide\": true,\n    \"CFrame.Position\": \"0, 10, 0\",\n    \"CFrame.Rotation\": \"1, 0, 0, 0, 1, 0, 0, 0, 1\",\n    // ... all other readable properties\n  },\n  \"attributes\": {\n    \"CustomTag\": \"PlayerSpawn\",\n    \"SpawnDelay\": 5,\n    \"IsActive\": true\n  },\n  \"children\": {\n    \"immediateChildren\": [\n      {\n        \"className\": \"Part\",\n        \"path\": \"Workspace.MyPart.ChildPart\"\n      },\n      {\n        \"className\": \"Model\",\n        \"path\": \"Workspace.MyPart.ChildModel\"\n      }\n    ],\n    \"childrenCount\": 2,\n    \"totalDescendants\": 8\n  }\n}\n\nCHILDREN SUMMARY FIELDS:\n- immediateChildren: Array of direct children with className and path only (no name, childCount, or uniqueId)\n- childrenCount: Number of direct children\n- totalDescendants: Total count of all descendants (children, children's children, etc.)\n\nuniqueId is included for the main inspected instance when available. This is a unique identifier for each instance in the DataModel.\n\nMULTIPLE MATCHES OUTPUT FORMAT:\n{\n  \"matches\": [\n    { \n      \"name\": \"MyPart\", \n      \"className\": \"Part\", \n      \"path\": \"Workspace.MyPart\",\n      \"uniqueId\": \"RBX1234567890ABCDEF\",\n      \"properties\": {...}, \n      \"attributes\": {...},\n      \"children\": {...}\n    },\n    { \n      \"name\": \"MyPart\", \n      \"className\": \"MeshPart\", \n      \"path\": \"Workspace.MyPart\",\n      \"uniqueId\": \"RBX9876543210FEDCBA\",\n      \"properties\": {...}, \n      \"attributes\": {...},\n      \"children\": {...}\n    }\n  ],\n  \"count\": 2,\n  \"totalFound\": 2,\n  \"note\": \"Multiple instances found with path 'Workspace.MyPart'. All 2 matches are included below.\"\n}\n\nWHEN TOO MANY MATCHES (>20):\n{\n  \"matches\": [ /* first 20 matches with full details */ ],\n  \"count\": 20,\n  \"totalFound\": 45,\n  \"note\": \"Multiple instances found with path 'Workspace.Part'.\",\n  \"warning\": \"Found 45 total matches, but only showing first 20 due to output limits. Consider using a more specific path to narrow down results.\"\n}\n\nPATH SPECIFICATION:\n- Use dot notation: \"Workspace.Model.Part\"\n- Can include or omit \"game.\" prefix\n- Path must match instance hierarchy\n- If multiple instances have the same name at the same level, all will be returned\n- Maximum of 20 matches will be returned (with warning if more exist)\n\nEXAMPLES:\n- Inspect with children: InspectInstance(path: \"Workspace.Baseplate\")\n- Multiple matches: InspectInstance(path: \"Workspace.Part\") \u2192 Returns up to 20 Parts with children summary\n- Case-insensitive: InspectInstance(path: \"workspace.baseplate\")\n- Inspect script: InspectInstance(path: \"ServerScriptService.MainScript\")\n- Inspect GUI: InspectInstance(path: \"StarterGui.ScreenGui.Frame\")\n- With game prefix: InspectInstance(path: \"game.Workspace.Model\")\n\nCHILDREN SUMMARY USE CASES:\n- Understand instance hierarchy structure\n- Count total descendants for performance considerations\n- See immediate children for navigation purposes\n- Identify complex models with many nested children\n- Plan traversal strategies for large hierarchies\n",
       "inputSchema": {
         "properties": {
@@ -1380,7 +1729,32 @@
       }
     },
     {
+      "name": "list_skills",
+      "title": "List Skills",
+      "description": "Lists every available skill with its source and a description of when to use it. Call this before starting a task to find skills that cover it, then load one with skill.",
+      "inputSchema": {
+        "properties": {
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "List Skills",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "search_asset",
+      "title": "Search Asset",
       "description": "Searches for assets across Creator Store (public marketplace) and Creator Inventory (user/group/universe).\nUse this tool to find assets by keyword before inserting them with insert_asset.\nReturns a list of matching assets with metadata (name, type, source, price).\n\nScope controls where to search:\n- 'auto' (default): waterfalls through universe inventory \u2192 universe's owning group \u2192 user inventory \u2192 Creator Store. Best for general \"find me an X\" requests.\n- 'creator_store': searches only the marketplace. Use this when the user wants marketplace assets, paid assets, or when using price/creator filters.\n- 'user': searches the user's personal inventory only.\n- 'group': searches the universe's owning group by default. Pass groupId or groupName to search a different group instead. If the universe has no owning group and you don't pass a groupId, the response lists the user's groups so you can retry.\n- 'universe': searches the current universe's inventory only.\n\nTargeting a specific group: when the user names a particular group (\"in my group X\" / \"in group 12345\"), set scope='group' AND pass groupId or groupName to constrain to that one group. groupId/groupName are only valid with scope='group'; combining with any other scope (including 'auto') is rejected.\n\nResult attribution: each inventory result includes `creatorId` (string, the group or user ID that owns the asset) and `creatorName` (the group/user name when known). `creatorId` semantics depend on `source`: for source='inventory' coming from a group, it's the group ID.\n\nEvery scope='group' or scope='auto' response includes a `groups` field listing { id, name } for each of the user's groups (when the user has any). Use these to make a follow-up scope='group' + groupId call when the default (the universe's owning group, or the first relevant group) doesn't match what the user wants.\n\nEvery response also includes a `context` field describing the current Studio session: { userId, universeId, isPublished, creatorType ('User'/'Group' when published), creatorId, creatorName }. Use this to ground answers about which place is being edited and to disambiguate \"in my group\" requests.\n\nCross-owner inserts caution: when an inventory result's creatorId differs from context.creatorId (the place's owner), inserting it brings another owner's asset into this place. The user may have access to view the asset but might not intend or have the authority to share it across owners. Before calling insert_asset on a cross-owner result, name the source (the asset's creatorName) and the destination (context.creatorName or universe), and ask the user for explicit consent.\n\nWhen to use price filters: If the user asks for paid/premium assets or specifies a price range, set scope='creator_store' and use priceFilter, minPriceCents, and/or maxPriceCents. These filters only apply to Creator Store searches.\nWhen to use asset type: If the user asks for a specific asset type (audio, decals, meshes, packages, etc.), set assetType to filter results. The inventory API requires exactly one assetType per call and defaults to 'Model' when omitted, so cross-type discovery requires explicit assetType=Image / Audio / etc. Packages are stored as Models with a Package subtype \u2014 set assetType='Package' to find them (do not search for the word \"package\" as a query).\nInventory results (source='inventory') are always insertable. Creator Store results may occasionally be restricted \u2014 if insert fails, try the next result.\nEach result includes a thumbnailUrl (Roblox Thumbnails API). Fetch it to get JSON with data[0].imageUrl pointing to a CDN image of the asset \u2014 useful for visually comparing assets before inserting.\n",
       "inputSchema": {
         "properties": {
@@ -1513,7 +1887,49 @@
       }
     },
     {
+      "name": "edit_skill",
+      "title": "Edit Skill",
+      "description": "Edit an existing user skill. Can update the name, description, and/or body. Only user-created skills can be edited.",
+      "inputSchema": {
+        "properties": {
+          "new_description": {
+            "description": "New one-line description for the skill. Omit to keep current description.",
+            "type": "string"
+          },
+          "new_name": {
+            "description": "New name for the skill. Lowercase letters, numbers, underscores, dashes only. Cannot start with 'rbx-'. Omit to keep current name.",
+            "type": "string"
+          },
+          "new_skill_body": {
+            "description": "New markdown body content for the skill. This replaces the entire body. Omit to keep current body.",
+            "type": "string"
+          },
+          "skill_name": {
+            "description": "The current name of the skill to edit.",
+            "type": "string"
+          },
+          "studio_id": {
+            "description": "Selects Roblox Studio instance, use the list_roblox_studios tool to get available instances",
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill_name",
+          "studio_id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "title": "Edit Skill",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "insert_asset",
+      "title": "Insert Asset",
       "description": "Inserts an asset into the game by its numeric Roblox asset ID.\nUse this tool when you have a specific asset ID to insert directly, rather than searching the Creator Store.\nThe asset will be loaded, validated, and placed in the scene.\nAlways provide assetName when you know the name of the asset (e.g. from search results or user request). The inserted instance will be named using assetName \u2014 if omitted, it defaults to a generic name.\nSupports models, meshes, images/decals, audio, video, animations, and packages.\n",
       "inputSchema": {
         "properties": {
@@ -1560,7 +1976,7 @@
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": false
+        "openWorldHint": true
       }
     },
     {

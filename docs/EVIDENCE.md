@@ -2232,6 +2232,61 @@ precisely because the list is paid on every call of every session. And the
 project's operator config**, so a disabled tool gained capability while
 disabled — the deny-list's rationale deserves a look, not a silent keep.
 
+### Upstream surface drifted 28 → 35, and the Open Cloud release landed (2026-11-05)
+
+On 2026-11-04 Roblox announced an MCP expansion — Open Cloud through
+`open_cloud_invoke`, a per-game permission page, and three new skills. The
+post was treated as a lead, not a source: what follows is measured.
+
+**Two captures, one Studio update apart.** The committed snapshot pinned a
+28-tool surface from 2026-10-20. Both captures are read-only by construction
+(handshake + one `tools/list`) and were run with the Windows Python by absolute
+path, the recipe in the section above:
+
+- **before** the update, against `StudioMCP.exe` in
+  `Versions/version-10df9a8218db45da` (2026-10-30): **34 tools**.
+- **after**, against `Versions/version-fee454b8e2094ba9` (2026-11-05 10:41):
+  **35 tools**, and the only name-level difference between the two captures is
+  `open_cloud_invoke`.
+
+So six of the seven arrived *before* this release — `auto_setup_avatar`,
+`create_skill`, `edit_skill`, `generate_avatar`, `generate_scene`,
+`list_skills` — and had sat unrecorded since 2026-10-20, because the live
+comparison only runs when someone asks for it. The release added the seventh.
+
+**The grader's reading.** `compare_snapshot(committed, live)` returns 7
+WARNING `new`, 1 WARNING `description-length`, **0 FAIL**, and no property or
+required-set change: additive, and nothing a caller built against the old
+snapshot breaks.
+
+**What it costs.** Relayed description text went 26,809 → 34,933 chars
+(**+8,124, +30%**), and that list is paid on every call of every session. The
+largest single jump is `skill`, 4,860 → 8,997 (**+4,137**), and the cause is
+readable in the text: it now embeds all **15** `<name>` entries. Three of them
+are the announced `rbx-open-cloud-usage`, `rbx-permissions` and
+`rbx-import-asset` — which is also the confirmation that the skills shipped,
+taken from the live `tools/list` with no Studio attached. `open_cloud_invoke`
+itself is 2,653 chars.
+
+**Acted on.** `contract/upstream_live_dump.json` and
+`contract/upstream_tools.json` refreshed to the 35-tool surface; `docs/catalog.js`
+gained rows for all seven, including a new **Open Cloud (relayed)** category;
+the `skill` catalog row stopped quoting a count (it said "7 available" against a
+live 15); the merged-list comment in `extended_server.py` stopped quoting counts
+altogether — that was the third place a count rotted; and `rsx-discovery` now
+points at `list_skills` for the roster instead of carrying a closed one.
+
+**Not established.** `open_cloud_invoke`'s runtime behaviour. No game was
+selected and no Studio was attached during either capture, so the permission
+gate, the error shape for a missing scope, and `files` uploads are unmeasured —
+the description is the only evidence. It is also neither deny-listed nor
+steered: there is no `extended_*` alternative to redirect a caller to.
+
+**What a reader should not conclude.** That this release moved the surface. It
+moved by one tool; the other six had been live for at least three weeks. The
+gate did not miss them because it was wrong, but because nothing samples the
+live surface on a schedule — it compares on demand, and nobody had asked.
+
 ### `extended_tree_snapshot`: built, and verified against a live Studio (2026-10-20)
 
 A peer session needed a bounded live-tree read. The maintainer's ruling closed

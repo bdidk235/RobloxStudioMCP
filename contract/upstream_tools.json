@@ -1,10 +1,51 @@
 {
   "_comment": "The upstream (relayed) tool surface, captured from a live tools/list through the StudioMCP proxy. Trust label: proxied_upstream - owned by Roblox Studio, not this repo, so it is graded, not asserted byte-for-byte. Refresh after a Studio update with `python contract/build_upstream.py --live` (writes this file and contract/upstream_live_dump.json together), and check any time with `python -m roblox_studio_mcp.doctor --upstream`. Generated file; do not hand-edit.",
   "trust": "proxied_upstream",
-  "captured": "2026-10-20",
+  "captured": "2026-11-05",
   "source": "live tools/list through the StudioMCP proxy (cmd.exe /c \"cd /d %LOCALAPPDATA%\\Roblox && .\\mcp.bat\")",
-  "tool_count": 28,
+  "tool_count": 35,
   "tools": [
+    {
+      "name": "auto_setup_avatar",
+      "description_chars": 248,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "align_front_angle": {
+          "type": "boolean"
+        },
+        "classifications": {
+          "type": "array",
+          "items_type": "object"
+        },
+        "decal_to_dynamic_head": {
+          "type": "boolean"
+        },
+        "enable_additional_head_processing": {
+          "type": "boolean"
+        },
+        "instance_path": {
+          "type": "string"
+        },
+        "r15_plus": {
+          "type": "boolean"
+        },
+        "reduce_triangles": {
+          "type": "boolean"
+        },
+        "setup_type": {
+          "type": "string",
+          "enum": [
+            "Platform",
+            "Development"
+          ]
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
     {
       "name": "character_navigation",
       "description_chars": 58,
@@ -40,6 +81,55 @@
       }
     },
     {
+      "name": "create_skill",
+      "description_chars": 98,
+      "required": [
+        "skill_body",
+        "skill_description",
+        "skill_name",
+        "studio_id"
+      ],
+      "properties": {
+        "skill_body": {
+          "type": "string"
+        },
+        "skill_description": {
+          "type": "string"
+        },
+        "skill_name": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "edit_skill",
+      "description_chars": 115,
+      "required": [
+        "skill_name",
+        "studio_id"
+      ],
+      "properties": {
+        "new_description": {
+          "type": "string"
+        },
+        "new_name": {
+          "type": "string"
+        },
+        "new_skill_body": {
+          "type": "string"
+        },
+        "skill_name": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
       "name": "execute_luau",
       "description_chars": 1108,
       "required": [
@@ -60,6 +150,35 @@
           ]
         },
         "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "generate_avatar",
+      "description_chars": 535,
+      "required": [
+        "studio_id",
+        "textPrompt"
+      ],
+      "properties": {
+        "dynamicHead": {
+          "type": "boolean"
+        },
+        "pipelineName": {
+          "type": "string",
+          "enum": [
+            "npc",
+            "modesty"
+          ]
+        },
+        "r15Plus": {
+          "type": "boolean"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "textPrompt": {
           "type": "string"
         }
       }
@@ -211,6 +330,31 @@
       }
     },
     {
+      "name": "generate_scene",
+      "description_chars": 169,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "boundingBoxPosition": {
+          "type": "object"
+        },
+        "boundingBoxSize": {
+          "type": "object"
+        },
+        "images": {
+          "type": "array",
+          "items_type": "object"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "textPrompt": {
+          "type": "string"
+        }
+      }
+    },
+    {
       "name": "generate_texture",
       "description_chars": 154,
       "required": [
@@ -352,6 +496,19 @@
       "read_only": true
     },
     {
+      "name": "list_skills",
+      "description_chars": 169,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "studio_id": {
+          "type": "string"
+        }
+      },
+      "read_only": true
+    },
+    {
       "name": "multi_edit",
       "description_chars": 1599,
       "required": [
@@ -376,6 +533,44 @@
         },
         "file_path": {
           "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "open_cloud_invoke",
+      "description_chars": 2653,
+      "required": [
+        "endpoint",
+        "method",
+        "studio_id"
+      ],
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items_type": "object"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "scopes": {
+          "type": "array",
+          "items_type": "string"
         },
         "studio_id": {
           "type": "string"
@@ -613,7 +808,7 @@
     },
     {
       "name": "skill",
-      "description_chars": 4860,
+      "description_chars": 8997,
       "required": [
         "skill_name",
         "studio_id"

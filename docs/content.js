@@ -45,10 +45,10 @@ window.DOC = {
           type: "p",
           html: "<code>python -m roblox_studio_mcp.server</code> (from <code>python/</code>) is a transparent proxy: same tools, same raw responses as " +
             "StudioMCP, one upstream process reused for the server's lifetime. " +
-            "<code>python -m roblox_studio_mcp.extended_server</code> layers 16 convenience tools on top and is what opencode " +
+            "<code>python -m roblox_studio_mcp.extended_server</code> layers its own convenience tools on top and is what opencode " +
             "actually runs (<code>Roblox_Studio</code> in <code>opencode.jsonc</code>). The extended count is " +
-            "<code>contract/tools.json</code>'s <code>tool_count</code>; the relayed count is not recorded here because " +
-            "it needs a live <code>tools/list</code> to measure.",
+            "<code>contract/tools.json</code>'s <code>tool_count</code>; the relayed count lives in " +
+            "<code>contract/upstream_tools.json</code> and is refreshed from a live <code>tools/list</code>.",
         },
         {
           type: "code",

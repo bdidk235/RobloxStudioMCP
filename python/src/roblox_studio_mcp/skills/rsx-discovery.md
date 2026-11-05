@@ -73,15 +73,16 @@ for why it is not a substitute for the `-task StartServer` route.
 ## Prefer the shipped skills to re-deriving this
 
 Roblox ships these through the relayed `skill` tool, and they are far more
-complete than anything reconstructed by hand:
+complete than anything reconstructed by hand. The set is Studio's and grows
+(`list_skills` returns the current list); the ones that matter most here:
 
 - `rbx-debug` - debugger, `OnStopped`, structured variable inspection
 - `rbx-device-simulator-lua` - device profiles, orientation, layout
 - `rbx-perf-profiling` - MicroProfiler through `LibMP`
 - `rbx-scene-analysis` - `SceneAnalysisService`
-- `rbx-unit-test` - ModuleScript tests
 - `rbx-docs-search` - engine API and creator docs
-- `rbx-create-skill` - author your own
+- `rbx-open-cloud-usage` / `rbx-permissions` - Open Cloud calls and the
+  per-game MCP permission model
 
 Check there before writing a probe. The `rsx-*` skills in this folder cover
 only what is specific to this transport, which is where the traps actually are.

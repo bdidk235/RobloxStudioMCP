@@ -1905,11 +1905,11 @@ async def _handle_message(
                     "description": f"{t.get('description') or ''} {steer}".strip(),
                 }
             annotated.append(t)
-        # Every row says where it came from. The merged list is 28 relayed rows
-        # plus 16 of ours, and nothing else on the wire distinguishes them: a
-        # caller comparing descriptions cannot tell a Roblox one from an
-        # `extended_*` one, which matters the moment they differ — and the
-        # steers above make them differ on purpose.
+        # Every row says where it came from. The merged list is Studio's relayed
+        # rows plus this repo's `extended_*` rows, and nothing else on the wire
+        # distinguishes them: a caller comparing descriptions cannot tell a
+        # Roblox one from an `extended_*` one, which matters the moment they
+        # differ — and the steers above make them differ on purpose.
         base_tools = [
             {**t, "origin": ORIGIN_RELAYED} if isinstance(t, dict) else t
             for t in annotated
