@@ -61,7 +61,7 @@ Always guard member reads in a loop over names you did not write yourself.
 |---|---|
 | `StudioTestService` | `AddPlayers`, `EndTest`, `LeaveTest`, `CanLeaveTest`, `EditModeActive` — all confirmed by use — plus `ExecuteMultiplayerTestAsync`, which is **not** (see below) |
 | `ScriptDebuggerService` | `AddBreakpoint`, `RemoveBreakpoint`, `ClearBreakpoints`, `OnStopped` |
-| `StudioDeviceSimulatorService` | `GetDeviceListAsync` (45 devices), `SetDeviceAsync`, `SetResolutionAsync`, `SetOrientationAsync`, `GetPixelDensityAsync`, `StopSimulationAsync` |
+| `StudioDeviceSimulatorService` | `GetDeviceListAsync` (47 devices), `SetDeviceAsync`, `SetResolutionAsync`, `SetOrientationAsync`, `GetPixelDensityAsync` (needs an active device — call `SetDeviceAsync` first), `StopSimulationAsync` |
 | `CaptureService` + `AssetService` | `CaptureScreenshot` then `CreateEditableImageAsync` |
 | `ScriptEditorService` | `UpdateSourceAsync` for chunked writes |
 | `SceneAnalysisService` | rendering, memory, instance composition |

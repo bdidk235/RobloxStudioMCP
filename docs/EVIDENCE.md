@@ -2262,7 +2262,9 @@ snapshot breaks.
 **What it costs.** Relayed description text went 26,809 → 34,933 chars
 (**+8,124, +30%**), and that list is paid on every call of every session. The
 largest single jump is `skill`, 4,860 → 8,997 (**+4,137**), and the cause is
-readable in the text: it now embeds all **15** `<name>` entries. Three of them
+readable in the text: it now embeds the **15 enabled** of 17 `<name>` entries
+(two more exist but are disabled on this machine: `rbx-convert-to-streaming`
+and `rbx-input-action-system`). Three of them are the announced
 are the announced `rbx-open-cloud-usage`, `rbx-permissions` and
 `rbx-import-asset` — which is also the confirmation that the skills shipped,
 taken from the live `tools/list` with no Studio attached. `open_cloud_invoke`
@@ -2286,6 +2288,59 @@ steered: there is no `extended_*` alternative to redirect a caller to.
 moved by one tool; the other six had been live for at least three weeks. The
 gate did not miss them because it was wrong, but because nothing samples the
 live surface on a schedule — it compares on demand, and nobody had asked.
+
+### DPI: measured live against an emulated device (2026-11-05)
+
+The question was "how to get the exact DPI from Roblox". Measured on a user-launched
+Studio (`Place2`, an unsaved local place, place_id 0), in Edit mode, via
+`execute_luau`. The Studio was restored to default (no device active) after each
+probe with `StopSimulationAsync`.
+
+**What the engine exposes.** `StudioDeviceSimulatorService` has exactly six members
+in this build — `GetDeviceListAsync`, `SetDeviceAsync`, `SetResolutionAsync`,
+`SetOrientationAsync`, `GetPixelDensityAsync`, `StopSimulationAsync`. (The member
+list in `rsx-discovery.md` previously carried eight names from the client-side
+`StudioDeviceEmulatorService` class; those are **not** members of the Studio
+service and have been corrected.)
+
+**The read-back.** `GetPixelDensityAsync` returns the per-device **logical** DPI
+(raw PPI ÷ scale factor). It requires an active device — with none active it
+raises `StudioDeviceSimulatorService: no device is active — call SetDeviceAsync()
+first`. Measured:
+
+| device | GetPixelDensityAsync | ViewportSize (logical px) |
+|---|---|---|
+| ipad_10th_generation | 132 | 818 × 1178 |
+| iphone_16_pro | 153.33 | 818 × 1178 |
+| 5K (custom, dpi 96) | 96 | 5119 × 2880 |
+| average_laptop | 96 | 5119 × 2880 |
+| meta_quest_3 | 406 | 687 × 736 |
+| samsung_galaxy_tab_S11 | 137 | 687 × 736 |
+| iphone_6_Plus | 133.67 | 413 × 735 |
+
+The custom-device rows match the registry's `d<N>dpi` field (5K → 96; the
+iPad's 132 matches the earlier measurement). `SetDeviceAsync` succeeds for every
+device tested and `StopSimulationAsync` restores the default cleanly.
+
+**What is *not* exposed to game code.** `GuiService.GetRawScreenScale`,
+`GetResolutionScale`, `GetAutoUIScaleHundredths` and `GetEffectiveUIScaleHundredths`
+all exist in the client API dump but are `RobloxScriptSecurity`; called from
+`execute_luau` they raise `The current thread cannot call '...' (lacking
+capability RobloxScript)`. `ViewportSize` is in **logical** pixels, so the
+physical render size is `ViewportSize × (rawPPI / GetPixelDensityAsync)` —
+but raw PPI is not available in-game.
+
+**The one fully-measurable route from inside a place** is to compare the
+capture PNG's pixel dimensions (physical) against `ViewportSize` (logical):
+`scale = png_width / viewport_width`. That is the only way to recover the exact
+DPI scale without Studio or the registry, and it is what `extended_capture`
+already produces byte-exactly.
+
+**What a reader should not conclude.** That ViewportSize is the device's
+physical resolution — it is the logical resolution, and it does not always update
+between consecutive `SetDeviceAsync` calls in one script (some rows above repeat a
+previous viewport). And that `GetPixelDensityAsync` is a global: it is undefined
+until a device is active.
 
 ### `extended_tree_snapshot`: built, and verified against a live Studio (2026-10-20)
 
