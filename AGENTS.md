@@ -136,11 +136,17 @@ backstop and the `TypedDict` on `WatchResult` is the actual fix.
 
 ## Launching a Studio
 
-`extended_manage_instance` `action=launch` takes one argument, the place. Two
-routes, and their traps differ - read the one you are on.
+`extended_manage_instance` `action=launch` takes one argument, `place_path`,
+and it must be a **file that exists on disk** - the tool refuses without it and
+has no route by place id. Two routes exist in `extended/instance.py` and their
+traps differ, but only the file one is reachable from a tool; read the one you
+are on.
 
 **URI route** (a published place), dispatched with `os.startfile`;
-`subprocess.Popen` cannot do it:
+`subprocess.Popen` cannot do it. **No tool exposes this**: `launch_via_uri()`
+has no caller in `python/src`, so opening a place by id means calling it
+directly against the repo source - measured 2026-11-08, when that was the only
+way to open place 115059942886966 (universe 10767424665) on request:
 
 ```
 roblox-studio:1+task:EditPlace+placeId:<id>+universeId:<id>

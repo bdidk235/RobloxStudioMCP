@@ -2262,13 +2262,23 @@ snapshot breaks.
 **What it costs.** Relayed description text went 26,809 → 34,933 chars
 (**+8,124, +30%**), and that list is paid on every call of every session. The
 largest single jump is `skill`, 4,860 → 8,997 (**+4,137**), and the cause is
-readable in the text: it now embeds the **15 enabled** of 17 `<name>` entries
-(two more exist but are disabled on this machine: `rbx-convert-to-streaming`
-and `rbx-input-action-system`). Three of them are the announced
-are the announced `rbx-open-cloud-usage`, `rbx-permissions` and
+readable in the text: it embeds each enabled skill as a `<name>` entry. Three
+of them are the announced `rbx-open-cloud-usage`, `rbx-permissions` and
 `rbx-import-asset` — which is also the confirmation that the skills shipped,
 taken from the live `tools/list` with no Studio attached. `open_cloud_invoke`
 itself is 2,653 chars.
+
+**Re-measured 2026-11-08, and the skill count is a roster property, not a
+release one.** `skill` is now 10,013 chars embedding **17 of 17** entries, and
+the 35-tool total is 35,807 (**+874** over the figures above). Two independent
+readings agree: `list_skills` on a live Studio returns all 17, and
+`AssistantDisabledSkills` in
+`%LOCALAPPDATA%\Roblox\AssistantSettings\<userId>.json` is `[]` — both
+including `rbx-convert-to-streaming` and `rbx-input-action-system`. An earlier
+version of this paragraph called those two "disabled on this machine": true
+when written, and misleading as recorded, because the embedded set tracks the
+operator's roster rather than anything the release fixed. The cost is real; the
+specific skill count is not a stable figure to quote.
 
 **Acted on.** `contract/upstream_live_dump.json` and
 `contract/upstream_tools.json` refreshed to the 35-tool surface; `docs/catalog.js`
