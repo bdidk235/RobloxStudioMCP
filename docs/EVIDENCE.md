@@ -2288,11 +2288,40 @@ live 15); the merged-list comment in `extended_server.py` stopped quoting counts
 altogether — that was the third place a count rotted; and `rsx-discovery` now
 points at `list_skills` for the roster instead of carrying a closed one.
 
-**Not established.** `open_cloud_invoke`'s runtime behaviour. No game was
-selected and no Studio was attached during either capture, so the permission
-gate, the error shape for a missing scope, and `files` uploads are unmeasured —
-the description is the only evidence. It is also neither deny-listed nor
-steered: there is no `extended_*` alternative to redirect a caller to.
+**Measured 2026-11-08, with a published game and a Studio attached** (place
+115059942886966, universe 10767424665, full access granted on its Assistant MCP
+Permissions page). The scope gate has two tiers: `scopes` passed is checked
+before any HTTP, and an ungranted one returns `Could not acquire an Open Cloud
+access token: Scope 'X' has not been granted.` — including for a fabricated
+name like `foo:bar`, so the check compares the literal string rather than
+consulting a vocabulary. Omitting `scopes` calls the endpoint, where a missing
+grant is `403 INSUFFICIENT_SCOPE`. Reads that returned 200: universe, place,
+game-pass list, user-restriction list. `standard-datastores` returned 403
+`INSUFFICIENT_SCOPE` even with `universe-datastores.objects:list` passed — a
+scope-name mistake in the probe, not re-tested. Badge, developer-product and
+memory-store paths returned 404 with `{"errors":[{"code":0,"message":""}]}`,
+which answers path or availability, not permission.
+
+**`files` was exercised, not only read.** The gates fire in a fixed order:
+extension first (`files[1].path must be an asset file with one of these
+extensions: …`, so `.txt` and extensionless paths never reach the directory
+check), then the approved-directory check against
+`approvedUploadDirectories` in
+`%LOCALAPPDATA%\Roblox\AssistantSettings\<userId>.json`. A real upload then
+worked: `POST /assets/v1/assets` with `happy.png` (68,016 bytes, 337×347) from
+the approved directory returned 200 with `operations/d366547d-…`, and polling
+it returned `done: true`, `assetId 88700585882443`, `assetType Image`,
+`moderationState Approved`, `state Active`, `isPublished true`. Read back
+independently through the Cloud server's API-key path with the same fields, so
+this is not the Studio token agreeing with itself.
+
+**Still not established.** Which Open Cloud endpoints reject the Studio token
+outright, as the FAQ claims. One 68 KB PNG went through once — the 5-file /
+20 MB / 15-extension caps are still description-only, and no rejected upload was
+attempted, so a failure leaving a partial asset is unknown. No mutating endpoint
+other than the asset upload was called. `open_cloud_invoke` is also neither
+deny-listed nor steered: there is no `extended_*` alternative to redirect a
+caller to.
 
 **What a reader should not conclude.** That this release moved the surface. It
 moved by one tool; the other six had been live for at least three weeks. The
