@@ -43,17 +43,17 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      before that there was none.** All four local statuses are measured:
      `NotNeeded` when clean; `Saved`, which moved the throwaway file 91,210 ->
      91,474 bytes; `Busy` from a running playtest; `NeedsUserAction`
-     (`location: Unsaved`) for a never-saved `Place1`, telling the caller to ask
-     for File > Save. **`Saved` and `NotNeeded` describe Studio's state, not
-     disk:** `stress-city` answered `NotNeeded` with a `filePath` in a directory
-     that does not exist, after an attempt that failed with
-     `PlaceSave.savePlace ... No OnInvoke handler responded`. Nothing matching
-     exists under `/home/ai`, the Windows user tree or Temp. **Verify with mtime
-     and size, never the status.** Concurrent saves serialise **per connection,
+     (`location: Unsaved`) for a never-saved `Place1`. **The status was right and
+     the `filePath` was wrong:** `stress-city` saved 39 MB but reported
+     `/home/ai/.config/.../stress-city.mcp-test.rbxlx`, while the file is at
+     `C:/Users/User/.config/...` - a translated path, so a caller checking the
+     reported one concludes the save failed. Verify at Studio's own path, not the
+     reported string. Concurrent saves serialise **per connection,
      not per Studio:** five simultaneous calls from one client gave one `Saved`
      and four `NotNeeded` (5 of 5 rounds, ~1 s), but two clients collide - one
-     `Saved`, one `Failed`, in 5 of 5 races - so `Busy` needs a playtest, and
-     `Failed` does not mean nothing was written. Still open: the cloud path. It is
+     `Saved`, one `Failed` in 5 of 5 races, where `Failed` is Studio's "another
+     save in progress" rather than `Busy`, and does not mean nothing was written.
+     Still open: the cloud path. It is
      still a write - ask first. For anything not that tool the older finding
      stands: no plugin-side save exists, and `rodeo` drives one from the **host**
      side by firing `Cmd+S` and waiting for the working file's mtime to move.

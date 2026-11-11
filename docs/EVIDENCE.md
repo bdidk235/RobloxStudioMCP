@@ -2906,3 +2906,45 @@ saved" and moves on is wrong about the disk either way.
 clients racing. Only a running playtest produced it. So the description's
 "another save or publish is in progress" does not describe what two MCP clients
 see: they collide on the file instead of being refused.
+
+**The collision is `Busy`'s condition, reported as `Failed`.** Studio's own log
+carries `Error saving file '<path>' - Another save in progress, please try
+again later.` once per losing call: **6 lines for 6 collisions** across the three
+races, while the tool reported `Failed` every time. So the state the description
+calls `Busy` *is* reachable - it is simply not reported as `Busy`. The file-save
+layer returns an error string, and the wrapper maps it to `Failed` with "check
+the Output window for details", which is where the actual reason lives. A caller
+branching on `Busy` will never see it from a save race; a caller reading only the
+status cannot tell a lost race from a failed write.
+
+The same Output had two unrelated lines: `ContentId: rbxassetid://6034281898
+failed due to: Asset is not approved for the requester`, which is a content
+permission warning with nothing to do with saving, and `auto-recovery file was
+created`, which is what a failed save leaves behind. The Studio then shut down
+cleanly (`DataModelShutdown`, `RCC: 288`), so the race does not crash it.
+
+### `save_place` reports a translated `filePath` (2026-11-11)
+
+`stress-city.mcp-test.rbxlx` saved to disk - 39,419,248 bytes - and the tool
+reported
+`filePath=/home/ai/.config/opencode/agent-records/stress-city/stress-city.mcp-test.rbxlx`.
+That path does not exist. The file is at
+`C:/Users/User/.config/opencode/agent-records/stress-city/`: same tail, different
+root, so the reported string is the Windows path with `C:/Users/User` rewritten
+to `/home/ai`. A caller that stats the reported path concludes the save failed
+when it succeeded - and a caller that trusts the status was right here, which is
+the reverse of what this note first said.
+
+**The false negative was mine, and it came from an errored command.** Two
+searches came back empty and I read them as absence:
+
+- `timeout 45 find /mnt/c/Users/User -maxdepth 5 -iname "stress-city*"` followed
+  by `echo done`. The directory sits 4 levels down and would have matched. With a
+  9p `find` under `timeout`, a killed search prints nothing and `done` prints
+  anyway, so an empty result and a truncated result are indistinguishable.
+- `find /home/ai -name "stress-city*"`, which was correct: the WSL path really
+  does not exist, which is what made the wrong conclusion feel confirmed.
+
+The rule this earns: a bounded search whose command can be killed is not a
+measurement - check the exit status, and treat "no matches" from `timeout ... |
+head` as unknown until re-run unbounded.
