@@ -53,10 +53,11 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      and four `NotNeeded` (5 of 5 rounds, ~1 s); two clients collide - one
      `Saved`, one `Failed`, which is Studio's "another save in progress" rather
      than `Busy`. **A single client fails too on a 39 MB place:** real saves take
-     4-7 s, 2 of 12 returned a ~5 s "Target is not reachable" timeout with the
+     4-7 s, 4 of 16 returned a ~5 s "Target is not reachable" timeout with the
      write landing anyway, and the next call then collides with the save still
-     running. So place size, not client count, is what breaks saves. Cloud saves
-     work (`location: TeamCreate`, `version: 76`). It is
+     running. So place size, not client count, is what breaks saves - a 91 KB
+     place: 10 of 10 `Saved`, 0.3-2.3 s. Cloud saves work (`location:
+     TeamCreate`, `version: 76`). It is
      still a write - ask first. For anything not that tool the older finding
      stands: no plugin-side save exists, and `rodeo` drives one from the **host**
      side by firing `Cmd+S` and waiting for the working file's mtime to move.

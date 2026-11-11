@@ -3019,3 +3019,22 @@ text format reaches when a matched line's content comes back empty. Three tests
 now pin both paths: a prefixed relay excerpt is stripped, an unprefixed one is
 left byte-identical, and a prefixed `script_read` body is stripped before
 excerpting.
+
+### Place size, measured against a small place (2026-11-11)
+
+The 39 MB results above needed one control: the same dirty-save loop on a
+different place. `make_place` + `launch` gave a **91,061-byte** baseplate, and
+ten rounds of (write a script, save) returned **10 of 10 `Saved`** in
+**332-2,285 ms** (median 416 ms), growing the file to 91,439 bytes. No timeouts,
+no `Failed`.
+
+Against **4 timeouts in 16** saves on the 39 MB place that is a clean split
+across a **430x** size difference, so the ~5 s failure tracks the place's save
+cost rather than the client count or the connection. The failure is still not a
+hard threshold - successful 39 MB saves ran to 5,966 ms while one timed out at
+4,082 ms - so it reads as "slow enough to lose a race inside Studio", not as a
+fixed cutoff.
+
+**Fourth confirmed "failed but wrote".** After the probe script was destroyed,
+the save reported the ~5 s timeout (5,731 ms) and the file nevertheless shrank
+39,461,292 -> 39,460,346 bytes with `AnchorProbe` and its marker gone from disk.
