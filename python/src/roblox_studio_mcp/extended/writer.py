@@ -113,8 +113,13 @@ _MAX_CHUNKED_RETRIES = 5
 
 
 def _strip_line_prefixes(text: str) -> str:
-    """Remove ``LINE_NUMBER→`` prefixes returned by ``script_read``."""
-    return "\n".join(_LINE_PREFIX_RE.sub("", line, count=1) for line in text.splitlines())
+    """Remove ``LINE_NUMBER→`` prefixes returned by ``script_read``.
+
+    Split on ``"\\n"`` rather than ``splitlines()``: ``splitlines`` discards a
+    trailing newline, and this result is written back to the script, so a body
+    ending in a newline came back one byte shorter on every edit.
+    """
+    return "\n".join(_LINE_PREFIX_RE.sub("", line, count=1) for line in text.split("\n"))
 
 
 def _validate_class_name(className: str) -> str:

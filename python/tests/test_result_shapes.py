@@ -586,14 +586,6 @@ class WriterAndUpdaterShape(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(got, "unchanged")
         self.assertEqual(studio.sent, [], "an unchanged write must not call a tool")
 
-    def test_the_multi_edit_wire_entry_has_exactly_two_keys(self):
-        """`MultiEditEntry` is serialised straight into an outbound tool call, so
-        a misspelled key would leave this process with nothing to catch it."""
-        self.assertEqual(
-            set(typing.get_type_hints(updater.MultiEditEntry)),
-            {"old_string", "new_string"},
-        )
-
     async def test_a_successful_batch_sends_exactly_that_wire_shape(self):
         class Existing(FakeStudio):
             async def script_read(self, target_file, **kwargs):

@@ -251,6 +251,9 @@ async def extended_script_grep(
         # Coerced in one step rather than via `or ""`, so a non-string excerpt
         # (a number, a nested object) is dropped here rather than typed as text.
         excerpt = raw_excerpt if isinstance(raw_excerpt, str) else ""
+        # Same shape as the fallback below: a caller copying this excerpt into
+        # an edit should not have to remove line numbers by hand.
+        excerpt = _strip_line_prefixes(excerpt)
         if not excerpt:
             try:
                 src = await studio.script_read(target_file=path)

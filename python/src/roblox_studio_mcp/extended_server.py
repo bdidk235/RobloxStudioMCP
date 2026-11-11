@@ -172,9 +172,10 @@ _EXTENDED_TOOLS: List[Tool] = [
     Tool(
         name="extended_update_script",
         description=(
-            "Batch ordered string replacements in a game-tree script; one bad "
-            "edit skips with a warning instead of sinking the call, unlike "
-            "multi_edit. Strict mode available."
+            "Batch replacements in a game-tree script; one bad edit skips "
+            "instead of sinking the call, unlike multi_edit. Anchors exact, "
+            "then without script_read line numbers, then ignoring trailing "
+            "whitespace, and says which. strict:true refuses a fallback."
         ),
         input_schema={
             "type": "object",
@@ -241,6 +242,15 @@ _EXTENDED_TOOLS: List[Tool] = [
                     "description": (
                         "If true (default), skip edits where old_string == "
                         "new_string.  If false, raise an error instead."
+                    ),
+                },
+                "strict": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "If true, only a byte-exact old_string is applied; a match "
+                        "that needed the prefix-stripped or trailing-whitespace "
+                        "fallback raises instead.  Off by default."
                     ),
                 },
                 "studio_id": {
@@ -382,6 +392,7 @@ async def _call_extended_update(
         )
     skip_missing: bool = arguments.get("skip_missing", True)
     skip_no_ops: bool = arguments.get("skip_no_ops", True)
+    strict: bool = bool(arguments.get("strict", False))
     studio_id: Optional[str] = arguments.get("studio_id")
 
     # Was annotated `Sequence`, which has no `append`. The annotation was wrong,
@@ -428,6 +439,7 @@ async def _call_extended_update(
         edits,
         skip_missing=skip_missing,
         skip_no_ops=skip_no_ops,
+        strict=strict,
     )
 
     text = str(result)

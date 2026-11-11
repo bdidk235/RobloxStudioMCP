@@ -328,12 +328,12 @@
     {
       "site": "update: no match",
       "code": "INVALID_ARGUMENT",
-      "message": "edits[0].old_string not found in content. Re-read the script and copy the text exactly - matching is exact, including indentation and line endings."
+      "message": "edits[0].old_string not found in content. Re-read the script and copy the text exactly. Matching tries an exact match, then the text with script_read's line prefixes removed, then line-by-line ignoring trailing whitespace."
     },
     {
       "site": "update: ambiguous",
       "code": "INVALID_ARGUMENT",
-      "message": "edits[0].old_string matched 2 times; exactly 1 is required. Add surrounding lines to narrow it to a unique block, or set replace_all=true on this edit to replace all occurrences."
+      "message": "edits[0].old_string matched 2 times (exact); exactly 1 is required. Add surrounding lines to narrow it to a unique block, or set replace_all=true on this edit to replace all occurrences."
     },
     {
       "site": "update: noop",

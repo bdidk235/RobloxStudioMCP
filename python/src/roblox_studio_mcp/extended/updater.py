@@ -4,9 +4,13 @@ Mirrors Claude Code Edit semantics for game-tree scripts:
 
 * Reads first: the current source is always fetched via ``script_read``
   before editing (like Edit requires Read before Edit).
-* Exact matching: ``old_string`` must match exactly.  A missing
-  ``old_string`` fails with an ``old_string not found in content`` error in
-  strict mode (or is skipped with a warning by default).
+* Anchored, not exact-by-requirement: ``old_string`` is matched three ways in
+  order — exact, then with ``script_read``'s ``NN→`` line prefixes removed,
+  then line-by-line ignoring trailing whitespace. Every applied edit reports
+  which one matched in ``matched_by`` so a fallback is never silent.
+  ``strict=True`` refuses a fallback; it is off by default.
+  A miss fails with an ``old_string not found`` error in strict mode (or is
+  skipped with a warning by default).
 * Uniqueness: an ``old_string`` matching multiple regions fails with a
   ``Found multiple matches for old_string ... Provide more surrounding
   lines ... or set replace_all=True`` error in strict mode (or is skipped
@@ -47,7 +51,7 @@ Usage
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, List, Mapping, Sequence, Tuple, TypedDict, Union
+from typing import Any, Dict, List, Mapping, Sequence, Tuple, Union
 
 from .writer import _strip_line_prefixes, validate_game_tree_path, write_script
 from .errors import INVALID_ARGUMENT, ToolError, describe
@@ -60,32 +64,11 @@ from ..roblox import RobloxStudio
 EditInput = Union[Tuple[str, str], Mapping[str, Any]]
 
 
-class MultiEditEntry(TypedDict):
-    """One element of the ``edits`` array sent to the raw ``multi_edit`` tool.
-
-    This is the wire format, not our own: the keys are ``old_string`` and
-    ``new_string`` because that is what ``multi_edit`` reads, and there is no
-    ``replace_all`` because the raw tool requires exactly one match per
-    ``old_string`` and so cannot express it. That constraint is why
-    :func:`update_script` has a separate sequential path for any edit that sets
-    the flag.
-
-    Typed because it is the argument to an outbound tool call: a misspelled key
-    here would be serialised straight into the request, where nothing on this
-    side would complain.
-    """
-
-    old_string: str
-    new_string: str
-
-
 def _edit_fault(index: int, field: str, problem: str, remedy: str) -> ToolError:
-    """The strict-mode failure for one edit in a batch.
+    """The failure raised for one edit in a batch.
 
-    Built in one place because the same four faults were raised twice - once in
-    the ``replace_all`` path and once in the batch path - and the two copies had
-    already drifted. Naming the field and the element index here is what stops
-    ``edits[3].old_string`` from decaying back into ``Edit 3``.
+    Built in one place: naming the field and the element index here is what
+    stops ``edits[3].old_string`` from decaying back into ``Edit 3``.
 
     Every one of these is the caller's own edit, so every one is
     ``INVALID_ARGUMENT``.
@@ -113,11 +96,18 @@ class UpdateResult:
     skipped_no_op: List[int] = field(default_factory=list)
     skipped_ambiguous: List[int] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    #: Per applied edit, which anchor pass matched: ``exact``,
+    #: ``prefix-stripped`` or ``rstrip``. Every edit is listed, so the odd ones
+    #: out are visible without reading the warnings.
+    matched_by: Dict[int, str] = field(default_factory=dict)
 
     def __str__(self) -> str:
         parts = []
         if self.updated:
             parts.append(f"Updated edits at positions: {self.updated}")
+        loose = {i: s for i, s in self.matched_by.items() if s != "exact"}
+        if loose:
+            parts.append(f"Matched without an exact hit: {loose}")
         if self.skipped_no_match:
             parts.append(f"Skipped (no match): positions {self.skipped_no_match}")
         if self.skipped_no_op:
@@ -158,7 +148,72 @@ def _normalize_edit(edit: EditInput, index: int) -> Tuple[str, str, bool]:
     )
 
 
-async def _apply_sequentially(
+def _all_spans(source: str, needle: str) -> List[Tuple[int, int]]:
+    """Every ``(start, end)`` where ``needle`` appears, overlaps included."""
+    spans: List[Tuple[int, int]] = []
+    start = source.find(needle)
+    while start != -1:
+        spans.append((start, start + len(needle)))
+        start = source.find(needle, start + 1)
+    return spans
+
+
+def _span_for_line_run(source: str, query_lines: List[str]) -> List[Tuple[int, int]]:
+    """Spans where consecutive lines match ``query_lines`` ignoring trailing space.
+
+    Both sides are rstripped. Only one would make the fallback one-directional:
+    a query pasted with trailing spaces would never match a clean file.
+    """
+    src_lines = source.split("\n")
+    wanted = [line.rstrip() for line in query_lines]
+    count = len(wanted)
+    if count == 0 or count > len(src_lines):
+        return []
+    offsets = [0]
+    for line in src_lines[:-1]:
+        offsets.append(offsets[-1] + len(line) + 1)
+    spans: List[Tuple[int, int]] = []
+    for start in range(len(src_lines) - count + 1):
+        if all(src_lines[start + k].rstrip() == wanted[k] for k in range(count)):
+            last = start + count - 1
+            spans.append((offsets[start], offsets[last] + len(src_lines[last])))
+    return spans
+
+
+def _locate(source: str, old_str: str) -> Tuple[List[Tuple[int, int]], str]:
+    """Every span ``old_str`` anchors to, plus the strategy that found them.
+
+    Three passes, stopping at the first that finds anything:
+
+    ``exact``           - the bytes match, as they always did.
+    ``prefix-stripped`` - the caller pasted ``script_read`` output. Those
+                          ``NN→`` prefixes are already stripped from the file
+                          side, so refusing them was this tool rejecting the
+                          text it had just handed over.
+    ``rstrip``          - lines match once trailing whitespace is ignored.
+                          Internal whitespace and indentation are deliberately
+                          **not** ignored: reflowing those turns a visible miss
+                          into a plausible wrong edit, which is the one outcome
+                          a caller cannot detect afterwards.
+    """
+    spans = _all_spans(source, old_str)
+    if spans:
+        return spans, "exact"
+
+    stripped = _strip_line_prefixes(old_str)
+    if stripped != old_str:
+        spans = _all_spans(source, stripped)
+        if spans:
+            return spans, "prefix-stripped"
+
+    return _span_for_line_run(source, old_str.split("\n")), "rstrip"
+
+
+def _line_of(source: str, offset: int) -> int:
+    return source.count("\n", 0, offset) + 1
+
+
+async def _apply_batch(
     studio: RobloxStudio,
     target_path: str,
     current_source: str,
@@ -166,12 +221,15 @@ async def _apply_sequentially(
     *,
     skip_missing: bool,
     skip_no_ops: bool,
+    strict: bool,
 ) -> UpdateResult:
-    """Apply a batch sequentially in memory, then write the final body once.
+    """Apply the batch in memory, then write the body once.
 
-    Used when any edit sets ``replace_all`` (like Edit's ``replaceAll``).
-    Each edit operates on the result of the previous edit.  Edits without
-    ``replace_all`` still require exactly one match at application time.
+    One path for every batch. It used to be two - ``multi_edit`` for plain
+    edits and this loop when any edit set ``replace_all`` - which meant two
+    matching implementations and two places for an anchor rule to drift. The
+    fallbacks below have to run here anyway, because ``multi_edit`` matches on
+    the file's raw bytes and cannot express "equal after rstrip".
     """
     summary = UpdateResult()
     evolving = current_source
@@ -201,38 +259,55 @@ async def _apply_sequentially(
                 "An empty old_string has no unique match; send the text to replace.",
             )
 
-        occurrences = evolving.count(old_str)
-        if occurrences == 0:
+        spans, strategy = _locate(evolving, old_str)
+
+        if not spans:
             summary.skipped_no_match.append(i)
             if skip_missing:
                 summary.warnings.append(
-                    f"Edit {i}: old_string not found in content — skipped."
+                    f"Edit {i}: old_string not found, even after ignoring "
+                    f"trailing whitespace — skipped."
                 )
                 continue
             raise _edit_fault(
                 i, "old_string", "not found in content.",
-                "Re-read the script and copy the text exactly - matching is "
-                "exact, including indentation and line endings.",
+                "Re-read the script and copy the text exactly. Matching tries "
+                "an exact match, then the text with script_read's line prefixes "
+                "removed, then line-by-line ignoring trailing whitespace.",
             )
 
-        if occurrences > 1 and not replace_all:
+        if len(spans) > 1 and not replace_all:
             summary.skipped_ambiguous.append(i)
             if skip_missing:
                 summary.warnings.append(
-                    f"Edit {i}: Found multiple matches for old_string "
-                    f"({occurrences} occurrences) — skipped as ambiguous. "
-                    f"Provide more surrounding lines to narrow it to a unique "
-                    f"block, or set replace_all=True to replace all occurrences."
+                    f"Edit {i}: matched {len(spans)} times ({strategy}) — "
+                    f"skipped as ambiguous. Add surrounding lines to narrow it "
+                    f"to a unique block, or set replace_all=True."
                 )
                 continue
             raise _edit_fault(
                 i, "old_string",
-                f"matched {occurrences} times; exactly 1 is required.",
+                f"matched {len(spans)} times ({strategy}); exactly 1 is required.",
                 "Add surrounding lines to narrow it to a unique block, or set "
                 "replace_all=true on this edit to replace all occurrences.",
             )
 
-        evolving = evolving.replace(old_str, new_str) if replace_all else evolving.replace(old_str, new_str, 1)
+        if strategy != "exact":
+            if strict:
+                raise _edit_fault(
+                    i, "old_string",
+                    f"matched only after the {strategy} fallback, and strict is on.",
+                    "Send the text exactly as it appears in the script, or set "
+                    "strict=false to accept the fallback.",
+                )
+            summary.warnings.append(
+                f"Edit {i}: matched on {strategy} at line {_line_of(evolving, spans[0][0])} "
+                f"— the text is not byte-identical to the script."
+            )
+
+        summary.matched_by[i] = strategy
+        for start, end in reversed(spans):
+            evolving = evolving[:start] + new_str + evolving[end:]
         summary.updated.append(i)
 
     if not summary.updated:
@@ -253,135 +328,39 @@ async def update_script(
     *,
     skip_missing: bool = True,
     skip_no_ops: bool = True,
+    strict: bool = False,
 ) -> UpdateResult:
     """Apply edits to a game-tree script with graceful skipping.
 
-    Like Claude Code Edit, the current source is read first, edits apply in
-    sequence (each operating on the result of the previous edit), and every
-    edit must be valid unless skipping is enabled.
+    Reads first, applies in sequence in memory (each edit operating on the
+    result of the previous one), and writes the body once.
 
-    Parameters
-    ----------
-    studio
-        An initialised :class:`RobloxStudio` instance.
-    target_path
-        DataModel dot-path, e.g. ``"game.ServerScriptService.MyScript"``.
-    edits
-        A sequence of ``(old_string, new_string)`` tuples or dicts with
-        ``old_string``/``new_string`` (plus optional ``replace_all``, like
-        Edit's ``replaceAll``, to replace every occurrence).
-    skip_missing
-        If true (default), skip edits whose ``old_string`` is missing or
-        ambiguous with a warning.  If false, raise an Edit-like error.
-    skip_no_ops
-        If true (default), skip edits where ``old_string == new_string``.
-        If false, raise an error for such edits.
-
-    Returns
-    -------
-    UpdateResult
-        Summary of what was applied and what was skipped.
+    Anchoring has three passes — exact, prefix-stripped, trailing-whitespace —
+    and every applied edit reports which one matched in ``matched_by``. A
+    fallback is therefore never silent. ``strict=True`` refuses a fallback
+    instead of applying it; it is off by default because the fallbacks exist to
+    absorb the two shapes of text this package itself emits (``script_read``
+    output and code copied out of an editor), and refusing those by default was
+    the failure this replaced.
     """
+    if not edits:
+        return UpdateResult()
+
     validate_game_tree_path(target_path, field="target_path")
 
-    # Read current source first (like Edit requires Read before Edit).
+    # Read first (like Edit requires Read before Edit), and normalise the file
+    # side the same way the query side is normalised in `_locate`.
     result = await studio.script_read(target_path)
     current_source = _strip_line_prefixes(result.text())
 
     normalized = [_normalize_edit(e, i) for i, e in enumerate(edits)]
 
-    # When any edit opts into replace-all, apply the batch sequentially in
-    # memory and write the final body once.  The raw multi_edit requires
-    # exactly one match per old_string, so it cannot express replace-all.
-    if any(replace_all for _, _, replace_all in normalized):
-        return await _apply_sequentially(
-            studio, target_path, current_source, normalized,
-            skip_missing=skip_missing, skip_no_ops=skip_no_ops,
-        )
-
-    # Classify each edit against the current source.
-    valid_edits: List[MultiEditEntry] = []
-    summary = UpdateResult()
-
-    for i, (old_str, new_str, _replace_all) in enumerate(normalized):
-        # No-op guard: oldString and newString must be different.
-        if old_str == new_str:
-            summary.skipped_no_op.append(i)
-            if skip_no_ops:
-                summary.warnings.append(
-                    f"Edit {i}: old_string matches new_string — skipped as no-op."
-                )
-                continue
-            else:
-                raise _edit_fault(
-                    i, "old_string", "equals new_string.",
-                    "Send different text, or set skip_no_ops=true to drop it.",
-                )
-
-        if not old_str:
-            summary.skipped_no_match.append(i)
-            if skip_missing:
-                summary.warnings.append(
-                    f"Edit {i}: old_string must not be empty — skipped."
-                )
-                continue
-            else:
-                raise _edit_fault(
-                    i, "old_string", "is empty.",
-                    "An empty old_string has no unique match; "
-                    "send the text to replace.",
-                )
-
-        occurrences = current_source.count(old_str)
-        # Check if old_string exists at all.
-        if occurrences == 0:
-            summary.skipped_no_match.append(i)
-            if skip_missing:
-                summary.warnings.append(
-                    f"Edit {i}: old_string not found in content — skipped."
-                )
-                continue
-            else:
-                raise _edit_fault(
-                    i, "old_string", "not found in content.",
-                    "Re-read the script and copy the text exactly - matching is "
-                    "exact, including indentation and line endings.",
-                )
-
-        # multi_edit requires exactly one match; duplicates would fail downstream.
-        if occurrences > 1:
-            summary.skipped_ambiguous.append(i)
-            if skip_missing:
-                summary.warnings.append(
-                    f"Edit {i}: Found multiple matches for old_string "
-                    f"({occurrences} occurrences) — skipped as ambiguous. "
-                    f"Provide more surrounding lines to narrow it to a unique "
-                    f"block, or set replace_all=True to replace all occurrences."
-                )
-                continue
-            else:
-                raise _edit_fault(
-                    i, "old_string",
-                    f"matched {occurrences} times; exactly 1 is required.",
-                    "Add surrounding lines to narrow it to a unique block, or "
-                    "set replace_all=true on this edit to replace all occurrences.",
-                )
-
-        valid_edits.append({"old_string": old_str, "new_string": new_str})
-        summary.updated.append(i)
-
-    if not valid_edits:
-        summary.warnings.append("No valid edits to apply.")
-        return summary
-
-    # Apply remaining edits in a single atomic multi_edit call.
-    await studio.call(
-        "multi_edit",
-        {
-            "file_path": target_path,
-            "datamodel_type": "Edit",
-            "edits": valid_edits,
-        },
+    return await _apply_batch(
+        studio,
+        target_path,
+        current_source,
+        normalized,
+        skip_missing=skip_missing,
+        skip_no_ops=skip_no_ops,
+        strict=strict,
     )
-
-    return summary
