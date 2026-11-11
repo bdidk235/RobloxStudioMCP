@@ -47,11 +47,13 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      `NotNeeded` with `location: LocalFile` when nothing had changed, then
      `Saved` after creating a script, and the file itself moved (91,210 ->
      91,474 bytes, mtime advanced). Still unmeasured: the cloud path, and the
-     `NeedsUserAction` / `Busy` / `Failed` statuses. It is still a write - ask
-     first. For anything that is not that tool the older finding stands: no
-     plugin-side save exists, and `rodeo`, which does implement one end-to-end,
-     drives it from the **host** side by firing `Cmd+S` and then waiting for the
-     working file's mtime to move.
+     `NeedsUserAction` / `Busy` / `Failed` statuses. `Busy` is measured too:
+     a save during a playtest returns `Busy`, "A playtest is running. Stop it
+     before saving." Still open: the cloud path, `NeedsUserAction` and `Failed`.
+     It is still a write - ask first. For anything that is not that tool the
+     older finding stands: no plugin-side save exists, and `rodeo`, which does
+     implement one end-to-end, drives it from the **host** side by firing
+     `Cmd+S` and then waiting for the working file's mtime to move.
      - **Corrected 2026-10-03: the flakiness is in the *verification*, not the
        keystroke.** An earlier version of this line said the emulation "is flaky",
        which put the blame in the wrong place. What makes naive emulation
