@@ -2948,3 +2948,37 @@ searches came back empty and I read them as absence:
 The rule this earns: a bounded search whose command can be killed is not a
 measurement - check the exit status, and treat "no matches" from `timeout ... |
 head` as unknown until re-run unbounded.
+
+### save_place under three clients, and the cloud path (2026-11-11)
+
+**One client is the control.** A solo save on the 39 MB `stress-city` place took
+**27 ms** and returned `NotNeeded`. So a slow save there is not the place being
+too big.
+
+**Three clients: every call reports failure and the save still lands.** Three
+independent client processes saving at one instant each returned
+`Network action PlaceSave.savePlace ... Target is not reachable ... No OnInvoke
+handler responded`, all three at **5,075 ms** - an identical figure, so a timeout
+rather than a race outcome. The place was written regardless: the file grew
+39,419,248 -> 39,461,273 bytes, and a solo save immediately after returned
+`NotNeeded` in 27 ms.
+
+The ladder, measured: **1 client works; 2 clients give one `Saved` and one
+`Failed`; 3 clients give three `Failed` and one write.** The error text is the
+same at both counts, so a caller cannot tell "I lost a race" from "I could not
+reach the DataModel" - and in the three-client case none of the three callers was
+told the truth about the file.
+
+**The cloud path.** `save_place` on a published, Team Create place returned
+`Saved`, `location: "TeamCreate"`, `version: 76`, "Saved to Roblox." That
+confirms the description's "saved to Roblox as a new place version", and names a
+`location` value the local cases never show.
+
+**The two new anchor passes ran live**, against a probe script inside that place
+rather than its own code: `strict: true` refused an rstrip-only anchor with
+"matched only after the rstrip fallback, and strict is on", and a `script_read`
+line copied verbatim - prefixes included - applied with
+`matched_by {0: "prefix-stripped"}`. `replace_all` replaced three occurrences in
+one call. One artefact worth knowing: the prefix line used as `new_string`
+carried its `NN->` into the script, since only the anchor is stripped - correct,
+but easy to do by accident when reusing a read line for both sides.

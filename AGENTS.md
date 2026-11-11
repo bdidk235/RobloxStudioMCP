@@ -52,8 +52,9 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      not per Studio:** five simultaneous calls from one client gave one `Saved`
      and four `NotNeeded` (5 of 5 rounds, ~1 s), but two clients collide - one
      `Saved`, one `Failed` in 5 of 5 races, where `Failed` is Studio's "another
-     save in progress" rather than `Busy`, and does not mean nothing was written.
-     Still open: the cloud path. It is
+     save in progress" rather than `Busy`, and does not mean nothing was written;
+     three clients all fail yet one writes. Cloud saves work (`location:
+     TeamCreate`, `version: 76`). It is
      still a write - ask first. For anything not that tool the older finding
      stands: no plugin-side save exists, and `rodeo` drives one from the **host**
      side by firing `Cmd+S` and waiting for the working file's mtime to move.
