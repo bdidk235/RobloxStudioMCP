@@ -2868,3 +2868,26 @@ count lines up: two claimants, two pre-existing rows.
 **The limit that remains, stated rather than implied:** a mesh row with no
 live process behind it cannot be detected. In practice every mesh row has
 one - the mesh is local - so the check sees it.
+
+### The proxy is one serial queue per Studio (2026-11-11)
+
+Measured while testing `save_place` under load, and it decides what "simultaneous"
+can mean here. A `Promise.all` of six `save_place` calls is **not** six concurrent
+saves: each one took 6.5-7.0 s, in the order they were issued, while a
+5,000-part spawn took 5.7 s. The saves did not interleave with the spawn - they
+queued behind it and only then ran, returning `Saved` followed by five
+`NotNeeded` at 0.1-0.2 s each.
+
+Consequences worth knowing before writing a caller:
+
+- **A long `execute_luau` blocks every other tool call.** There is no parallel
+  window to save into, so a save cannot land mid-mutation - which is the safe
+  failure, but it also means a slow spawn cannot be overlapped with status reads.
+- **`Busy` is unreachable from one client**, for the same reason. It needs a
+  second client, or the Studio UI's own Ctrl+S.
+- **Twenty sequential saves of an unchanged place cost 2.07 s total** (median
+  90 ms, max 206 ms), all `NotNeeded`, with no write: the file's mtime did not
+  move across them.
+
+The burst left one write: 5,000 identical parts grew the `.rbxl` by 970 bytes
+(91,751 -> 92,721), which is compression doing its job rather than a small save.
