@@ -20,8 +20,8 @@ on:
 #
 # This runs alongside CI on the same push, not after it: there is no
 # cross-workflow gate, so a tag on a red tree still publishes. Do not tag red -
-# `python scripts/pypi_release.py publish` already refuses a dirty tree, and a
-# tag is the same deliberate act.
+# a tag is the deliberate act, and this file checks only the tag/version
+# mapping, never the tree's health.
 
 jobs:
   publish:

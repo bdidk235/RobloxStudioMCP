@@ -113,9 +113,14 @@ behaviour - the regenerated contract diff is the record of what moved - while
 a fix changes no surface at all. The version lives in two files,
 `python/pyproject.toml` and `python/src/roblox_studio_mcp/_version.py`, and
 `test_packaging.py` pins them together, so bump both or the gate fails.
-Current: `0.1.0`, pre-proud. Release with `python/scripts/pypi_release.py`
-(`test`, then `dry-run`, then `publish`); tokens live in untracked
-`python/.env` per `python/.env.example`.
+Current: `0.3.0`.
+
+**Release is a tag.** Push `v<version>` matching `pyproject.toml`;
+`.github/workflows/release.yml` builds and publishes through PyPI Trusted
+Publishing (OIDC, no tokens, no `.env`), behind the `release` environment's
+approval. The job's first step refuses a tag that does not equal the version, so
+a mismatch fails before anything is built. There is no cross-workflow gate - a
+tag on a red tree still publishes - so tag only a green tree.
 
 ## Commit messages
 

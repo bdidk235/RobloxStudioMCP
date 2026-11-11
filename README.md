@@ -375,6 +375,10 @@ mode this project exists to prevent. The rest live in the `rsx-*` skills.
 
 ## Examples
 
+Run from `python/` — `python -m examples.<name>` needs that directory on
+`sys.path`, and from the repository root it fails with
+`No module named 'examples'`.
+
 | What it shows | Python |
 | --- | --- |
 | List every tool | `python -m examples.list_tools` |
