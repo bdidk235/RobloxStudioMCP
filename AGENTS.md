@@ -43,11 +43,15 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      before that there was none.** The relayed `save_place` (in
      `contract/upstream_tools.json`) describes a file-opened place as written
      back to that file, and a Roblox-hosted one as a new place version.
-     **Unmeasured here** - the description is the only evidence, and calling it
-     is a write, so ask first. For anything that is not that tool the older
-     finding stands: no plugin-side save exists, and `rodeo`, which does
-     implement one end-to-end, drives it from the **host** side by firing
-     `Cmd+S` and then waiting for the working file's mtime to move.
+     **Measured for the local case 2026-11-11 on a throwaway file place:**
+     `NotNeeded` with `location: LocalFile` when nothing had changed, then
+     `Saved` after creating a script, and the file itself moved (91,210 ->
+     91,474 bytes, mtime advanced). Still unmeasured: the cloud path, and the
+     `NeedsUserAction` / `Busy` / `Failed` statuses. It is still a write - ask
+     first. For anything that is not that tool the older finding stands: no
+     plugin-side save exists, and `rodeo`, which does implement one end-to-end,
+     drives it from the **host** side by firing `Cmd+S` and then waiting for the
+     working file's mtime to move.
      - **Corrected 2026-10-03: the flakiness is in the *verification*, not the
        keystroke.** An earlier version of this line said the emulation "is flaky",
        which put the blame in the wrong place. What makes naive emulation
