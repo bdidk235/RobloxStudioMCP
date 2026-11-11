@@ -2328,6 +2328,46 @@ moved by one tool; the other six had been live for at least three weeks. The
 gate did not miss them because it was wrong, but because nothing samples the
 live surface on a schedule — it compares on demand, and nobody had asked.
 
+### Upstream surface drifted 35 → 38, and the Assistant's list is not this list (2026-11-11)
+
+Re-captured with `contract/build_upstream.py --live`. Three additions and no
+removals: `generate_animation`, `save_place`, `submit_feedback`. Relayed
+description text went 35,807 → 38,535 chars (**+2,728**), which is the whole
+cost change — `save_place` alone is 1,330 and `submit_feedback` 855.
+
+**The grader's reading** (`compare_snapshot` against the 2026-11-05 snapshot):
+six WARNINGs, **0 FAIL** — three `new` (`generate_animation`, `save_place`,
+`submit_feedback`), one `property-added` (`generate_scene` gained an optional
+`useMeshGen`), and two `description-length` (`list_roblox_studios` 435 → 608,
+`skill` 8,997 → 9,948). No removal, no required-set change, so nothing a caller
+built against the old snapshot breaks. The `skill` figure differs from the
+10,013 measured on 2026-11-08 from the proxy's own tool cache — same roster of
+17, slightly different text, and the point stands either way: it is paid every
+session and it grew.
+
+`save_place` changes a rule rather than a list. `AGENTS.md` said local save "has
+no API" and to ask the user, which was true when written; the new description
+says a file-opened place is written back to that file and a Roblox-hosted one
+becomes a new place version. **Not measured** — calling it is a write — so the
+rule now says confirm first and names the description as the only evidence.
+
+**The comparison that prompted this.** Roblox Assistant's own enumeration of 37
+tools is not the MCP surface. The names only look interchangeable because the
+Assistant prefixes `studio_`, and once that is stripped:
+
+| | count | which |
+| --- | --- | --- |
+| shared | 33 | same name |
+| Assistant only | 4 | `from_history`, `ask_questions`, `update_plan`, `complete_todo_items` |
+| MCP only | 5 | `list_roblox_studios`, `list_skills`, `open_cloud_invoke`, `screen_capture`, `submit_feedback` |
+
+Neither list contains the other, so a claim about what "the assistant can do"
+does not transfer to the relayed surface, or back. The Assistant keeps
+conversation-scoped tools no MCP client can call (`from_history` replays earlier
+reads), and the MCP surface carries tools its list never mentions. One caveat
+worth keeping: the 37 is the Assistant's own description of itself, pasted by
+the user — a claim, not a capture, unlike the 38.
+
 ### DPI: measured live against an emulated device (2026-11-05)
 
 The question was "how to get the exact DPI from Roblox". Measured on a user-launched

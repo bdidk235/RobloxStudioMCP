@@ -37,14 +37,17 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      gone. Restarting is not yours alone - another agent restarting the same
      MCP mid-session drops the namespace out from under you too, and it
      changes *which* code you are measuring without announcing it.
-3. **Saving a place: ask the user for local, `SavePlaceAsync` for cloud. These are
-   different operations and conflating them wastes a session.**
-   - **Local (`.rbxl` on disk) - there is no API. Ask the user to save.** Not a
-     preference: the feature request for a local-save API is still open, and
-     there is no plugin-side save either - `rodeo`, which does implement one
-     end-to-end, drives it from the **host** side by firing `Cmd+S` and then
-     waiting for the working file's mtime to move. So the mechanism is confirmed
-     as keystroke emulation.
+3. **Saving a place: local and cloud are different operations, easy to conflate,
+   and both are writes - confirm first.**
+   - **Local (`.rbxl` on disk) - `save_place` exists upstream as of 2026-11-11;
+     before that there was none.** The relayed `save_place` (in
+     `contract/upstream_tools.json`) describes a file-opened place as written
+     back to that file, and a Roblox-hosted one as a new place version.
+     **Unmeasured here** - the description is the only evidence, and calling it
+     is a write, so ask first. For anything that is not that tool the older
+     finding stands: no plugin-side save exists, and `rodeo`, which does
+     implement one end-to-end, drives it from the **host** side by firing
+     `Cmd+S` and then waiting for the working file's mtime to move.
      - **Corrected 2026-10-03: the flakiness is in the *verification*, not the
        keystroke.** An earlier version of this line said the emulation "is flaky",
        which put the blame in the wrong place. What makes naive emulation

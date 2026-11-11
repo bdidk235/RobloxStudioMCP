@@ -1,9 +1,9 @@
 {
   "_comment": "The upstream (relayed) tool surface, captured from a live tools/list through the StudioMCP proxy. Trust label: proxied_upstream - owned by Roblox Studio, not this repo, so it is graded, not asserted byte-for-byte. Refresh after a Studio update with `python contract/build_upstream.py --live` (writes this file and contract/upstream_live_dump.json together), and check any time with `python -m roblox_studio_mcp.doctor --upstream`. Generated file; do not hand-edit.",
   "trust": "proxied_upstream",
-  "captured": "2026-11-05",
+  "captured": "2026-11-11",
   "source": "live tools/list through the StudioMCP proxy (cmd.exe /c \"cd /d %LOCALAPPDATA%\\Roblox && .\\mcp.bat\")",
-  "tool_count": 35,
+  "tool_count": 38,
   "tools": [
     {
       "name": "auto_setup_avatar",
@@ -150,6 +150,30 @@
           ]
         },
         "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "generate_animation",
+      "description_chars": 293,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "duration": {
+          "type": "number"
+        },
+        "inputAssetId": {
+          "type": "string"
+        },
+        "instance_path": {
+          "type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        },
+        "textPrompt": {
           "type": "string"
         }
       }
@@ -351,6 +375,9 @@
         },
         "textPrompt": {
           "type": "string"
+        },
+        "useMeshGen": {
+          "type": "boolean"
         }
       }
     },
@@ -490,7 +517,7 @@
     },
     {
       "name": "list_roblox_studios",
-      "description_chars": 435,
+      "description_chars": 608,
       "required": [],
       "properties": {},
       "read_only": true
@@ -571,6 +598,21 @@
         "scopes": {
           "type": "array",
           "items_type": "string"
+        },
+        "studio_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "save_place",
+      "description_chars": 1330,
+      "required": [
+        "studio_id"
+      ],
+      "properties": {
+        "notes": {
+          "type": "string"
         },
         "studio_id": {
           "type": "string"
@@ -808,7 +850,7 @@
     },
     {
       "name": "skill",
-      "description_chars": 8997,
+      "description_chars": 9948,
       "required": [
         "skill_name",
         "studio_id"
@@ -875,6 +917,22 @@
           "type": "string"
         },
         "task": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "name": "submit_feedback",
+      "description_chars": 855,
+      "required": [
+        "feedback",
+        "studio_id"
+      ],
+      "properties": {
+        "feedback": {
+          "type": "string"
+        },
+        "studio_id": {
           "type": "string"
         }
       }
