@@ -208,6 +208,34 @@ class MatchMeshName(unittest.TestCase):
             logid.match_mesh_name("Baseplate-555883251.rbxl", self.identities), [16240]
         )
 
+    def test_the_place_id_name_form_reaches_the_logs(self):
+        """A place-id launch's mesh name carries the place id, and the log
+        states that place id, so the two join.
+
+        Measured 2026-10-22: a live place-id instance was named
+        ``Game (placeId: 129343547756529)`` on the mesh while its log stated
+        ``place_id=129343547756529`` - and the resolver refused with "no
+        Studio log mentions place 'Game (placeId: 129343547756529)'", because
+        the matcher knew only the autorecovery form.
+        """
+        self.assertEqual(
+            sorted(logid.match_mesh_name("Game (placeId: 95206881)",
+                                         self.identities)),
+            [12324, 19500],
+        )
+
+    def test_the_place_id_name_form_with_a_title_still_reaches_the_logs(self):
+        self.assertEqual(
+            sorted(logid.match_mesh_name("Game TESTING (placeId: 95206881)",
+                                         self.identities)),
+            [12324, 19500],
+        )
+
+    def test_a_place_id_name_form_for_another_place_matches_nothing(self):
+        self.assertEqual(
+            logid.match_mesh_name("Game (placeId: 11111111)", self.identities), []
+        )
+
 
 class Ambiguity(unittest.TestCase):
     """``ambiguous_reason(mesh_name, candidates, identities)``.
@@ -307,6 +335,10 @@ class NameMatchesIdentity(unittest.TestCase):
             ("Template_7_AutoRecovery_2.rbxl", {"place_path": None, "place_id": 7}),
             ("Baseplate-8.rbxl", {"place_path": r"C:\tmp\Baseplate-9.rbxl", "place_id": 7}),
             (None, {"place_path": r"C:\tmp\Baseplate-9.rbxl", "place_id": 7}),
+            # The place-id name form, both directions.
+            ("Game (placeId: 7)", {"place_path": None, "place_id": 7}),
+            ("Game TESTING (placeId: 7)", {"place_path": None, "place_id": 7}),
+            ("Game (placeId: 9)", {"place_path": None, "place_id": 7}),
         ]
         for name, identity in cases:
             by_name = bool(logid.match_mesh_name(name, {1: identity}))

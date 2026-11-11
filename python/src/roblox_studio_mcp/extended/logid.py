@@ -521,6 +521,17 @@ _TRANSPORT_RE = re.compile(r"-rbxTransportToken\s+(\S+)")
 #: mesh and absent from the log, which is exactly why that route cannot join.
 _MESH_URI_NAME_RE = re.compile(r"^Template_(\d+)_AutoRecovery_(\d+)\.rbxl$")
 
+#: The mesh's name for a place-id launch: ``Game (placeId: 129343547756529)``,
+#: and the same with a title in front of it,
+#: ``Game TESTING (placeId: 114727448637763)``.
+#:
+#: The place id is in the name *and* in the log's identity, so this form joins
+#: exactly as the autorecovery form does. It did not: the matcher knew only
+#: ``Template_<id>_AutoRecovery_<N>.rbxl``, so a place-id instance had no name
+#: that reached a log - and the resolver refused with "no Studio log mentions
+#: place 'Game (placeId: ...)'" while the log plainly stated that place id.
+_MESH_PLACE_ID_NAME_RE = re.compile(r"\(placeId:\s*(\d+)\)\s*$")
+
 #: Filename stamp, e.g. ``0.741.19.7411056_20260930T091820Z_Studio_D4ED5_last.log``.
 LOG_STAMP_RE = re.compile(r"_(\d{8}T\d{6})Z_")
 
@@ -1205,9 +1216,11 @@ def match_mesh_name(mesh_name: Optional[str], identities: Dict[int, Dict[str, An
     1. The mesh name is the opened file's **basename** for a file launch, and the
        log's command line holds the full path, so a basename match is an exact
        string comparison between two things that already exist.
-    2. The mesh name is ``Template_<placeId>_AutoRecovery_<N>.rbxl`` for a URI
-       launch. Only the placeId is in both, which identifies the *place* but not
-       the *instance*, so this rule is allowed to return several PIDs.
+    2. The mesh name carries a **place id** for a launch that was not a file -
+       ``Template_<placeId>_AutoRecovery_<N>.rbxl`` for a URI launch, and
+       ``Game (placeId: <N>)`` for a place-id launch. Only the placeId is in
+       both, which identifies the *place* but not the *instance*, so this rule
+       is allowed to return several PIDs.
     """
     if not mesh_name:
         return []
@@ -1224,13 +1237,21 @@ def match_mesh_name(mesh_name: Optional[str], identities: Dict[int, Dict[str, An
 
 def _mesh_rows_for_place_id(mesh_name: str, identities: Dict[int, Dict[str, Any]]) -> List[int]:
     uri = _MESH_URI_NAME_RE.match(mesh_name)
-    if not uri:
-        return []
-    place_id = int(uri.group(1))
+    if uri:
+        place_id = int(uri.group(1))
+    else:
+        named = _MESH_PLACE_ID_NAME_RE.search(mesh_name)
+        if not named:
+            return []
+        place_id = int(named.group(1))
     candidates = [
         pid for pid, identity in identities.items() if identity.get("place_id") == place_id
     ]
     if len(candidates) < 2:
+        return candidates
+    if not uri:
+        # The place-id name form carries no counter to compare, so several
+        # candidates stay several.
         return candidates
 
     # Two or more URI launches of one place. The ``AutoRecovery_N`` in the mesh
@@ -1274,7 +1295,12 @@ def name_matches_identity(mesh_name: Optional[str], identity: Dict[str, Any]) ->
     if identity.get("place_path") and platform.basename(identity["place_path"]) == mesh_name:
         return True
     if identity.get("place_id") is not None:
-        return mesh_name.startswith("Template_%d_AutoRecovery_" % identity["place_id"])
+        if mesh_name.startswith("Template_%d_AutoRecovery_" % identity["place_id"]):
+            return True
+        # The place-id name form, e.g. "Game (placeId: 129343547756529)".
+        named = _MESH_PLACE_ID_NAME_RE.search(mesh_name)
+        if named and int(named.group(1)) == identity["place_id"]:
+            return True
     return False
 
 
