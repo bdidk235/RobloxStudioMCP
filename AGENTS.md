@@ -49,10 +49,11 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      that does not exist, after an attempt that failed with
      `PlaceSave.savePlace ... No OnInvoke handler responded`. Nothing matching
      exists under `/home/ai`, the Windows user tree or Temp. **Verify with mtime
-     and size, never the status.** Concurrent saves serialise per Studio: five
-     simultaneous calls gave one `Saved` and four `NotNeeded` (5 of 5 rounds,
-     ~1 s), so `Busy` needs a second client and a duplicate save is harmless.
-     Still open: the cloud path and `Failed`. It is
+     and size, never the status.** Concurrent saves serialise **per connection,
+     not per Studio:** five simultaneous calls from one client gave one `Saved`
+     and four `NotNeeded` (5 of 5 rounds, ~1 s), but two clients collide - one
+     `Saved`, one `Failed`, in 5 of 5 races - so `Busy` needs a playtest, and
+     `Failed` does not mean nothing was written. Still open: the cloud path. It is
      still a write - ask first. For anything not that tool the older finding
      stands: no plugin-side save exists, and `rodeo` drives one from the **host**
      side by firing `Cmd+S` and waiting for the working file's mtime to move.

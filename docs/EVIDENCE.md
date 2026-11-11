@@ -2891,3 +2891,18 @@ Consequences worth knowing before writing a caller:
 
 The burst left one write: 5,000 identical parts grew the `.rbxl` by 970 bytes
 (91,751 -> 92,721), which is compression doing its job rather than a small save.
+
+**Across two clients the queue does not hold.** It is per connection, not per
+Studio. Two independent MCP client processes - separate `python.exe`, separate
+proxy - calling `save_place` at the same wall-clock instant returned one `Saved`
+and one `Failed` (*"Saving the local place file failed. Check the Output window
+for details."*) in **4 of 4 rounds** with a dirtying write first, and in the one
+ad-hoc attempt before that: **5 for 5**. The file grew once per round, so the
+loser's `Failed` does not mean nothing was written - it means that call lost. A
+caller who retries on `Failed` writes twice; a caller who treats it as "not
+saved" and moves on is wrong about the disk either way.
+
+**`Busy` never appeared.** Not with six calls in one client, not with two
+clients racing. Only a running playtest produced it. So the description's
+"another save or publish is in progress" does not describe what two MCP clients
+see: they collide on the file instead of being refused.
