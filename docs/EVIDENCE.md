@@ -2869,7 +2869,7 @@ count lines up: two claimants, two pre-existing rows.
 live process behind it cannot be detected. In practice every mesh row has
 one - the mesh is local - so the check sees it.
 
-### The proxy is one serial queue per Studio (2026-11-11)
+### The proxy is one serial queue per connection (2026-11-11)
 
 Measured while testing `save_place` under load, and it decides what "simultaneous"
 can mean here. A `Promise.all` of six `save_place` calls is **not** six concurrent
@@ -2951,23 +2951,34 @@ head` as unknown until re-run unbounded.
 
 ### save_place under three clients, and the cloud path (2026-11-11)
 
-**One client is the control.** A solo save on the 39 MB `stress-city` place took
-**27 ms** and returned `NotNeeded`. So a slow save there is not the place being
-too big.
+**The first control was invalid, and it hid the real variable.** A solo save on
+the 39 MB `stress-city` place took **27 ms** and returned `NotNeeded` - a save
+with nothing to write, which measures the status check and never touches the
+disk. A save that actually writes there takes **4.1-7.5 s**, so "the place being
+too big" was dismissed on a measurement that did no work.
 
 **Three clients: every call reports failure and the save still lands.** Three
 independent client processes saving at one instant each returned
 `Network action PlaceSave.savePlace ... Target is not reachable ... No OnInvoke
 handler responded`, all three at **5,075 ms** - an identical figure, so a timeout
 rather than a race outcome. The place was written regardless: the file grew
-39,419,248 -> 39,461,273 bytes, and a solo save immediately after returned
-`NotNeeded` in 27 ms.
+39,419,248 -> 39,461,273 bytes.
 
-The ladder, measured: **1 client works; 2 clients give one `Saved` and one
-`Failed`; 3 clients give three `Failed` and one write.** The error text is the
-same at both counts, so a caller cannot tell "I lost a race" from "I could not
-reach the DataModel" - and in the three-client case none of the three callers was
-told the truth about the file.
+**Corrected the same day: one client does this too.** A single client, strictly
+sequential - dirty, save, wait for the reply, nothing else in flight - failed
+**4 of 16** real saves with a ~5 s `Target is not reachable` timeout (4,082,
+5,149, 5,820, 7,450 ms), plus **3 more** that failed in 169-312 ms because the
+previous timed-out save was still running. Successful saves in the same series
+took 4,351-5,966 ms, so the durations overlap: the same elapsed time ends in
+`Saved` or in a timeout depending on something below the tool. Every failure
+that could be checked had written the file anyway (markers 201 and 206 present
+on disk after the call reported `ERROR`).
+
+So client count is not the trigger; place size is. The two-client result stands
+on its own - the loser failed in ~450 ms, before any timeout, which is a real
+file-lock collision - but the "1 / 2 / 3 clients" ladder I recorded was
+measuring the place's save cost, and the "1 client works" rung was a `NotNeeded`
+call that did not test anything.
 
 **The cloud path.** `save_place` on a published, Team Create place returned
 `Saved`, `location: "TeamCreate"`, `version: 76`, "Saved to Roblox." That
@@ -2982,3 +2993,29 @@ line copied verbatim - prefixes included - applied with
 one call. One artefact worth knowing: the prefix line used as `new_string`
 carried its `NN->` into the script, since only the anchor is stripped - correct,
 but easy to do by accident when reusing a read line for both sides.
+
+### A non-Luau call queues a save, and grep carries no prefixes (2026-11-11)
+
+**The serial queue is not specific to Luau.** `extended_capture` is a ~1.1 s
+call that runs no user code. Alone, a `NotNeeded` save on the 39 MB place
+returns in **95-109 ms** (n=2). Issued while a capture was in flight on the same
+connection, the same save returned at **1,167-1,297 ms** - 43-77 ms *after* the
+capture reported - so it waited for the capture and then did its own ~50 ms of
+work. **3 of 3.** The queue therefore holds for a screenshot call, not only for
+an `execute_luau`. That is one non-Luau call type, not all of them.
+
+**Studio's grep excerpt is not numbered.** Raw `script_grep` returns plain text:
+
+    Path: ServerScriptService.AnchorProbe | Line: 1 | local a = return 3
+
+No `NN->` prefix anywhere in the reply, and `extended_script_grep` returns
+`"excerpt": "local a = return 3"` unchanged - same text, no strip needed. But
+`script_read` *is* numbered (`     1->local function add(a, b)`, measured the
+same day), and `script_read` is what the enrichment fallback excerpts from.
+
+So the strip added in `grep.py` is **defensive on the relay path** - this build
+sends nothing to strip - and **load-bearing only on the fallback**, which the
+text format reaches when a matched line's content comes back empty. Three tests
+now pin both paths: a prefixed relay excerpt is stripped, an unprefixed one is
+left byte-identical, and a prefixed `script_read` body is stripped before
+excerpting.

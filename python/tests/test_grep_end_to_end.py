@@ -72,8 +72,8 @@ class _Studio:
         return R()
 
 
-def run(reply, **kwargs):
-    studio = _Studio(reply)
+def run(reply, source="print(42)\nlocal x = 1\nprint(x)\n", **kwargs):
+    studio = _Studio(reply, source=source)
     hits = asyncio.run(extended_script_grep(studio, "print", **kwargs))
     return hits, studio
 
@@ -146,6 +146,34 @@ class JsonStillWorks(unittest.TestCase):
         # context_lines=1 is one line either side, so line 2 of a 3-line source
         # yields all three. An earlier version of this test expected two lines and
         # was wrong - `context_lines` is a radius, not a total.
+        self.assertEqual(hits[0]["excerpt"], "print(42)\nlocal x = 1\nprint(x)")
+
+
+class LinePrefixesAreStripped(unittest.TestCase):
+    """``script_read`` numbers its lines (``     2→print(42)``); ``script_grep``
+    does not. Measured live 2026-11-11 on a 39 MB place: every raw grep line was
+    ``Path: … | Line: N | <content>`` with no prefix, and the enriched excerpt
+    came back as bare source. So the strip matters on the *fallback* path and is
+    defensive on the relay path - it must not corrupt an excerpt that has none.
+    """
+
+    def test_a_prefixed_excerpt_from_the_relay_is_stripped(self):
+        reply = "Path: game.ServerScriptService.A | Line: 2 |      2\u2192print(42)"
+        hits, studio = run(reply)
+        self.assertEqual(hits[0]["excerpt"], "print(42)")
+        self.assertEqual(studio.reads, [], "content was supplied; no read needed")
+
+    def test_an_unprefixed_excerpt_is_left_byte_identical(self):
+        reply = "Path: game.ServerScriptService.A | Line: 2 | local x = 1"
+        hits, _ = run(reply)
+        self.assertEqual(hits[0]["excerpt"], "local x = 1")
+
+    def test_the_read_fallback_strips_prefixes_before_excerpting(self):
+        """The fallback reads a whole script, and that body *is* prefixed."""
+        reply = '[{"path": "game.ServerScriptService.A", "line_number": 2}]'
+        prefixed = "     1\u2192print(42)\n     2\u2192local x = 1\n     3\u2192print(x)\n"
+        hits, studio = run(reply, context_lines=1, source=prefixed)
+        self.assertEqual(studio.reads, ["game.ServerScriptService.A"])
         self.assertEqual(hits[0]["excerpt"], "print(42)\nlocal x = 1\nprint(x)")
 
 

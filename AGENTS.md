@@ -50,22 +50,21 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
      reported one concludes the save failed. Verify at Studio's own path, not the
      reported string. Concurrent saves serialise **per connection,
      not per Studio:** five simultaneous calls from one client gave one `Saved`
-     and four `NotNeeded` (5 of 5 rounds, ~1 s), but two clients collide - one
-     `Saved`, one `Failed` in 5 of 5 races, where `Failed` is Studio's "another
-     save in progress" rather than `Busy`, and does not mean nothing was written;
-     three clients all fail yet one writes. Cloud saves work (`location:
-     TeamCreate`, `version: 76`). It is
+     and four `NotNeeded` (5 of 5 rounds, ~1 s); two clients collide - one
+     `Saved`, one `Failed`, which is Studio's "another save in progress" rather
+     than `Busy`. **A single client fails too on a 39 MB place:** real saves take
+     4-7 s, 2 of 12 returned a ~5 s "Target is not reachable" timeout with the
+     write landing anyway, and the next call then collides with the save still
+     running. So place size, not client count, is what breaks saves. Cloud saves
+     work (`location: TeamCreate`, `version: 76`). It is
      still a write - ask first. For anything not that tool the older finding
      stands: no plugin-side save exists, and `rodeo` drives one from the **host**
      side by firing `Cmd+S` and waiting for the working file's mtime to move.
      - **Corrected 2026-10-03: the flakiness is in the *verification*, not the
-       keystroke.** An earlier version of this line said the emulation "is flaky",
-       which put the blame in the wrong place. What makes naive emulation
-       unreliable is that **nothing confirms the save happened**. Waiting for the
-       file's mtime to change, failing loudly when it does not, and copying
-       atomically makes it dependable. **Still ask the user** - this is
-       source-read evidence, not measured here, and the instruction should not
-       move on someone else's implementation.
+       keystroke.** Naive emulation fails because nothing confirms the save
+       happened - wait for the file's mtime, fail loudly if it does not move, and
+       copy atomically. **Still ask the user**: source-read evidence, not measured
+       here.
      - `user_keyboard_input` does **not** help - the docs
        file it under *Player input simulation* and it is client-datamodel only, so
        it drives the game, not the editor. Ask, then verify the file changed.
