@@ -163,8 +163,10 @@ rule 1. It governs reads as well as writes.
 memory: a config change restarts it, a code fix does not. Until you restart, the
 next live call measures the old code, which looks exactly like "the fix did
 nothing" — a plausible wrong answer, not an error. Restart after editing and
-before measuring anything live; `AGENTS.md` rule 2 names the command for this
-harness (`opencode service restart`). Two things follow from a restart:
+before measuring anything live, in whatever way your setup starts the server: a
+terminal running `python -m roblox_studio_mcp.extended_server` is stopped and
+started again, and a client-managed process is restarted the way that client
+restarts its servers. Two things follow from a restart:
 
 - the `studio_id` is re-minted, so re-resolve it instead of reusing the one you
   had;
