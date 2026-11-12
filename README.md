@@ -369,9 +369,6 @@ mode this project exists to prevent. The rest live in the `rsx-*` skills.
   restart; `GetDebugId` also changes on restart. Re-resolve each session, never
   write one into a file, and pass it explicitly whenever more than one Studio is
   attached.
-- **Editing a `.py` file needs an MCP server restart.** A config change
-  restarts the process; a code fix does not, so without a restart you are
-  measuring the old code.
 
 ## Examples
 

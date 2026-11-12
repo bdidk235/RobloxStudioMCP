@@ -158,3 +158,18 @@ Any Studio instance you did not launch yourself is off limits unless a user puts
 it in scope explicitly. This is a standing constraint, not a style preference —
 the full rule and its reasoning are at the top of `TODO.md` and in `AGENTS.md`
 rule 1. It governs reads as well as writes.
+
+**A `.py` edit does not reach a running server.** The process holds the module in
+memory: a config change restarts it, a code fix does not. Until you restart, the
+next live call measures the old code, which looks exactly like "the fix did
+nothing" — a plausible wrong answer, not an error. Restart after editing and
+before measuring anything live; `AGENTS.md` rule 2 names the command for this
+harness (`opencode service restart`). Two things follow from a restart:
+
+- the `studio_id` is re-minted, so re-resolve it instead of reusing the one you
+  had;
+- the tool namespace is rebuilt, so re-read the catalog rather than assuming a
+  tool disappeared.
+
+The same trap exists one level down: a stale `dist/` or an editable install that
+points at a moved `src/` runs old code with no error at all.
