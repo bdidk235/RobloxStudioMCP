@@ -24,19 +24,19 @@ AGENTS.md on 2026-10-03 - they are not specific to this repository.
    - Before any call needing an explicit `studio_id`, resolve it with
      `extended_list_studios`. An omitted `studio_id` is a guess whenever more
      than one Studio is attached.
-2. **A `.py` edit needs an MCP restart, and the command is
-   `opencode service restart`.** The process holds the module in memory: a
-   config change restarts it, a code fix does not. Without a restart you are
-   measuring the old code and will conclude the fix did not work. It is
-   `service`, not `server` - `opencode service restart`, verified against
-   `opencode service --help`.
+2. **A `.py` edit needs the MCP server restarted.** The process holds the module
+   in memory: a config change may restart it, but a code edit never does and
+   there is no reload path, so without a restart you measure the old code and
+   conclude the fix failed. How you restart depends on what launched it - a
+   terminal process is stopped and started again, a client-managed one that
+   client's way.
    - Restart **after** editing, **before** measuring anything live. Every
-     result from a pre-restart Studio describes the old code, not the fix.
-   - A restart re-initialises the `Roblox_Studio` namespace, so re-read the
-     catalog with `search(...)` after one instead of assuming the tools are
-     gone. Restarting is not yours alone - another agent restarting the same
-     MCP mid-session drops the namespace out from under you too, and it
-     changes *which* code you are measuring without announcing it.
+     pre-restart result describes the old code, not the fix.
+   - A restart re-initialises the tool namespace and re-mints `studio_id`: re-read
+     the catalog and re-resolve the id rather than assuming tools vanished or
+     reusing the old address. Restarting is not yours alone - another agent
+     restarting mid-session drops the namespace out from under you and changes
+     *which* code you measure.
 3. **Saving a place: local and cloud are different operations, easy to conflate,
    and both are writes - confirm first.**
    - **Local (`.rbxl` on disk) - `save_place` exists upstream as of 2026-11-11;
